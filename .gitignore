@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Logs
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Config with potential secrets
+.env
+
+# Test files
+test_*.py
+
+# Audio files
+*.wav
+*.mp3
+
+# Model files
+models/
+*.bin
+*.pth
+*.pt
+
+# Temporary files
+*.tmp
+temp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Package files
+dist/
+build/
+*.egg-info/
+
+# Downloaded installers
+*.pkg
+*.dmg
+dv8vd5km1s91jq1p8ioq9ryg3h0zzx*
+InstallMacOSCatalina.pkg

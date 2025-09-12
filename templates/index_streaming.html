@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AssistedVoice - Streaming Interface</title>
+    <link rel="stylesheet" href="/static/style_streaming.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🎤 AssistedVoice</h1>
+            <div class="status-bar">
+                <span id="status" class="status">Connecting...</span>
+                <span id="model-info" class="model-info"></span>
+            </div>
+        </header>
+
+        <!-- Mode Selector -->
+        <div class="mode-selector">
+            <div class="mode-title">Conversation Mode:</div>
+            <div class="mode-buttons">
+                <button class="mode-btn" data-mode="continuous" title="Continuous real-time streaming">
+                    <span class="mode-icon">⚡</span>
+                    <span class="mode-name">Continuous</span>
+                    <span class="mode-desc">Real-time flow</span>
+                </button>
+                <button class="mode-btn" data-mode="smart" title="Wait for natural pauses">
+                    <span class="mode-icon">🎯</span>
+                    <span class="mode-name">Smart Pause</span>
+                    <span class="mode-desc">Natural pauses</span>
+                </button>
+                <button class="mode-btn active" data-mode="ptt" title="Click to record">
+                    <span class="mode-icon">🎤</span>
+                    <span class="mode-name">Push to Talk</span>
+                    <span class="mode-desc">Manual control</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <div class="welcome-message">
+                <p>Welcome to AssistedVoice Streaming!</p>
+                <p>Choose a conversation mode above:</p>
+                <ul>
+                    <li><strong>Continuous:</strong> Real-time streaming, instant responses</li>
+                    <li><strong>Smart Pause:</strong> Waits for natural pauses in speech</li>
+                    <li><strong>Push to Talk:</strong> Click button to record</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Real-time Transcription Display -->
+        <div class="transcription-display" id="transcriptionDisplay" style="display: none;">
+            <div class="transcription-label">Live Transcription:</div>
+            <div class="transcription-text" id="partialTranscription"></div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <!-- Streaming Indicators -->
+            <div class="streaming-indicators" id="streamingIndicator" style="display: none;">
+                <div class="audio-visualizer">
+                    <div class="audio-level-container">
+                        <div class="audio-level" id="audioLevel"></div>
+                    </div>
+                </div>
+                <div class="vad-indicator" id="vadIndicator">
+                    <span class="vad-dot"></span>
+                    <span class="vad-text">Detecting speech...</span>
+                </div>
+            </div>
+
+            <!-- Main Action Button (changes based on mode) -->
+            <div class="action-container">
+                <button id="conversationBtn" class="conversation-button">
+                    <svg class="mic-icon" viewBox="0 0 24 24" width="40" height="40">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                    <span class="button-text">Click to Talk</span>
+                </button>
+                <div class="recording-indicator" id="recordingIndicator">
+                    <span class="pulse"></span>
+                    Recording...
+                </div>
+            </div>
+
+            <!-- Text Input (always available) -->
+            <div class="text-input-container">
+                <input type="text" 
+                       id="textInput" 
+                       class="text-input" 
+                       placeholder="Or type your message here..."
+                       autocomplete="off">
+                <button id="sendButton" class="send-button">Send</button>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settingsPanel">
+            <div class="settings-header">
+                <span>Settings</span>
+                <button class="settings-toggle" id="settingsToggle">⚙️</button>
+            </div>
+            <div class="settings-content" id="settingsContent" style="display: none;">
+                <!-- Continuous Mode Settings -->
+                <div class="setting-group" data-mode="continuous">
+                    <h4>Continuous Mode</h4>
+                    <label>
+                        Response Speed:
+                        <input type="range" id="responseSpeed" min="1" max="10" value="5">
+                        <span id="responseSpeedValue">5</span>
+                    </label>
+                </div>
+                
+                <!-- Smart Pause Settings -->
+                <div class="setting-group" data-mode="smart">
+                    <h4>Smart Pause Mode</h4>
+                    <label>
+                        Pause Duration:
+                        <input type="range" id="pauseDuration" min="500" max="3000" step="100" value="1500">
+                        <span id="pauseDurationValue">1.5s</span>
+                    </label>
+                </div>
+                
+                <!-- General Settings -->
+                <div class="setting-group">
+                    <h4>General</h4>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="ttsToggle" checked>
+                        <span>Enable Text-to-Speech</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="showTranscription" checked>
+                        <span>Show Live Transcription</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="clearButton" class="control-button">Clear Chat</button>
+            <div class="mode-indicator">
+                Mode: <span id="currentMode">Push to Talk</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the appropriate JavaScript based on mode -->
+    <script src="/static/app_multi_mode.js"></script>
+</body>
+</html>

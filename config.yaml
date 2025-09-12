@@ -1,0 +1,71 @@
+# AssistedVoice Configuration
+
+# Speech Recognition (Whisper)
+whisper:
+  model: "turbo"              # Options: tiny, base, small, medium, large, turbo
+  language: "en"              # Language code (en, es, fr, etc.)
+  device: "auto"              # auto, cpu, cuda, mps (Metal Performance Shaders)
+  compute_type: "int8"        # int8 for Apple Silicon, float16 for CUDA GPUs
+  
+# Language Model (Ollama)
+ollama:
+  model: "llama3.2:3b"     # Model name (using available model)
+  fallback_model: "mistral:latest"  # Fallback option
+  temperature: 0.7            # Response randomness (0.0-1.0)
+  max_tokens: 500             # Maximum response length
+  context_window: 4096        # Context size
+  system_prompt: |
+    You are a helpful voice assistant. Keep responses concise and natural for speech.
+    Avoid using markdown, special characters, or formatting that doesn't work well when spoken aloud.
+    Be conversational and friendly.
+
+# User Interface
+ui:
+  mode: "text"                # Options: text, voice, both
+  theme: "default"            # Terminal color theme
+  show_timestamps: true       # Display message timestamps
+  show_latency: true          # Show response times
+  clear_on_start: true        # Clear terminal on startup
+
+# Audio Settings
+audio:
+  input_device: null          # null for default, or device index
+  sample_rate: 16000          # Sample rate for recording
+  channels: 1                 # Mono audio
+  chunk_duration: 0.5         # Audio chunk size in seconds
+  silence_threshold: 500      # VAD silence threshold
+  
+# Voice Activity Detection
+vad:
+  enabled: true               # Enable VAD
+  mode: 2                     # Aggressiveness (0-3, 3 most aggressive)
+  speech_timeout: 1.5         # Seconds of silence to stop recording
+  min_speech_duration: 0.5    # Minimum speech duration
+  
+# Text-to-Speech
+tts:
+  engine: "none"              # Options: macos, pyttsx3, edge-tts, none (text-only mode)
+  voice: "Samantha"           # macOS voice name
+  rate: 180                   # Speech rate (words per minute)
+  volume: 0.9                 # Volume (0.0-1.0)
+  
+# Hotkeys
+hotkeys:
+  push_to_talk: "space"       # Key to hold for recording
+  toggle_mode: "m"            # Switch between text/voice mode
+  clear_history: "c"          # Clear conversation
+  exit: "q"                   # Quit application
+  
+# Logging
+logging:
+  level: "INFO"               # DEBUG, INFO, WARNING, ERROR
+  file: "logs/assistant.log"  # Log file path
+  max_size: "10MB"            # Maximum log file size
+  backup_count: 3             # Number of backup files
+  
+# Performance
+performance:
+  response_streaming: true    # Stream responses as they generate
+  cache_responses: true       # Cache common responses
+  max_cache_size: 100         # Maximum cached responses
+  parallel_processing: true   # Process audio while generating response

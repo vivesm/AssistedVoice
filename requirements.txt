@@ -1,0 +1,20 @@
+# Core dependencies  
+faster-whisper                 # Speech recognition (optimized)
+ollama                         # LLM interface
+rich                           # Terminal UI
+sounddevice                    # Audio capture
+numpy                          # Audio processing
+
+# Audio processing
+pyaudio                        # Audio I/O
+webrtcvad                      # Voice activity detection
+
+# Configuration
+pyyaml                         # Config file parsing
+python-dotenv                  # Environment variables
+
+# Optional TTS
+pyttsx3                        # Fallback TTS engine
+
+# Utilities
+keyboard                       # Keyboard input detection

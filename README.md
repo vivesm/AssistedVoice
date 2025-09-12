@@ -1,21 +1,22 @@
 # AssistedVoice 🎤
 
-A powerful local AI voice assistant that runs entirely on your Mac, featuring state-of-the-art speech recognition, language models, and text-to-speech capabilities.
+A powerful local AI voice assistant that runs entirely on your Mac, combining Whisper speech recognition with Ollama language models for completely private, offline AI conversations. Features a modern web interface with push-to-talk functionality.
 
 ## Features
 
 ### 🎯 Core Capabilities
 - **100% Local & Private**: All processing happens on your device
-- **Dual Mode Operation**: Text-only (silent) or voice interaction
-- **Real-time Streaming**: See and hear responses as they generate
-- **Push-to-Talk**: Hold SPACE to record, release to process
-- **Voice Activity Detection**: Automatic speech detection
+- **Web Interface**: Modern, responsive UI accessible from any browser
+- **Push-to-Talk**: Click and hold the microphone button to record
+- **Text Input**: Type messages when you prefer not to speak
+- **Model Selection**: Switch between Ollama models on the fly
+- **Real-time Processing**: Fast responses with streaming support
 
 ### 🚀 Optimized for Apple Silicon
 - Metal Performance Shaders acceleration
-- Whisper Turbo for fast transcription
-- DeepSeek R1 8B for intelligent responses
-- Sub-200ms first response latency
+- Whisper models for accurate transcription
+- Multiple Ollama models available
+- Fast response times with local processing
 
 ## Quick Start
 
@@ -29,51 +30,59 @@ A powerful local AI voice assistant that runs entirely on your Mac, featuring st
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/AssistedVoice.git
+git clone https://github.com/vivesm/AssistedVoice.git
 cd AssistedVoice
 
-# 2. Run the setup script
+# 2. Install Ollama (if not already installed)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 3. Pull an Ollama model
+ollama pull llama3.2:3b  # Fast, lightweight
+# or
+ollama pull deepseek-r1:8b  # Better quality
+# or
+ollama pull mistral:7b  # Good balance
+
+# 4. Run the setup script
 ./setup.sh
 
 # This will:
 # - Create a Python virtual environment
 # - Install all dependencies
-# - Download Whisper Turbo model
-# - Pull DeepSeek R1 8B from Ollama
+# - Download Whisper model
 ```
 
 ### Usage
 
-#### Text-Only Mode (Silent)
-Perfect for quiet environments or when you prefer text interaction:
+#### Start the Application
 
 ```bash
-./run.sh --mode text
+# 1. Start Ollama (if not already running)
+ollama serve
+
+# 2. Start AssistedVoice
+./start.sh
+
+# 3. Open your browser to:
+http://localhost:5001
 ```
 
-#### Voice Mode
-Full voice interaction with speech synthesis:
+#### Using the Web Interface
 
-```bash
-./run.sh --mode voice
-```
+1. **Voice Input**: Click and hold the microphone button, speak, then release
+2. **Text Input**: Type in the text box and press Enter or click Send
+3. **Model Selection**: Choose your preferred Ollama model from the dropdown (if available)
+4. **Clear Chat**: Click the Clear Chat button to start fresh
 
-#### Default Mode
-Uses the mode specified in config.yaml:
+## Web Interface Controls
 
-```bash
-./run.sh
-```
-
-## Controls
-
-| Key | Action |
-|-----|--------|
-| **SPACE** | Hold to record (Push-to-Talk) |
-| **M** | Toggle between text/voice mode |
-| **C** | Clear conversation history |
-| **H** | Show help |
-| **Q** | Quit application |
+| Control | Action |
+|---------|--------|
+| **Microphone Button** | Click and hold to record voice |
+| **Text Input** | Type messages directly |
+| **Send Button** | Send typed message |
+| **Clear Chat** | Clear conversation history |
+| **TTS Toggle** | Enable/disable voice responses |
 
 ## Configuration
 
@@ -82,8 +91,8 @@ Edit `config.yaml` to customize:
 ### Language Models
 ```yaml
 ollama:
-  model: "deepseek-r1:8b"     # Primary model
-  fallback_model: "llama3.2:3b"  # Faster alternative
+  model: "llama3.2:3b"        # Primary model (change to any installed model)
+  fallback_model: "mistral:7b"  # Fallback if primary fails
   temperature: 0.7             # Response creativity (0.0-1.0)
 ```
 
@@ -104,13 +113,21 @@ tts:
 
 ## Models
 
-### Recommended Setup (M1 Max with 64GB RAM)
+### Recommended Models by Hardware
 
-| Component | Model | Performance |
-|-----------|-------|------------|
-| **LLM** | DeepSeek R1 8B | 68.5 tokens/sec, 145ms latency |
-| **Speech** | Whisper Turbo | 5-8x faster than large models |
-| **TTS** | macOS Samantha | Instant, zero latency |
+#### 8GB RAM
+| Component | Model | Notes |
+|-----------|-------|-------|
+| **LLM** | llama3.2:3b | Fast and lightweight |
+| **Speech** | Whisper base/small | Good balance |
+| **TTS** | None (text-only) | Saves resources |
+
+#### 16GB+ RAM
+| Component | Model | Notes |
+|-----------|-------|-------|
+| **LLM** | deepseek-r1:8b or mistral:7b | Better quality |
+| **Speech** | Whisper turbo/large | Best accuracy |
+| **TTS** | macOS voices | Native and fast |
 
 ### Alternative Models
 
@@ -126,15 +143,20 @@ tts:
 
 ```
 AssistedVoice/
-├── assistant.py          # Main application
-├── config.yaml          # Configuration
+├── web_assistant_simple.py  # Main Flask application
+├── config.yaml             # Configuration
 ├── modules/
-│   ├── stt.py          # Speech recognition (Whisper)
-│   ├── llm.py          # Language model (Ollama)
-│   ├── tts.py          # Text-to-speech engines
-│   └── ui.py           # Terminal UI (Rich)
-├── models/             # Downloaded Whisper models
-└── logs/              # Conversation logs
+│   ├── stt.py             # Speech recognition (Whisper)
+│   ├── llm.py             # Language model (Ollama)
+│   ├── tts.py             # Text-to-speech engines
+│   └── ui.py              # Terminal UI (legacy)
+├── static/                # Frontend assets
+│   ├── app_simple.js      # JavaScript
+│   └── style_simple.css   # Styling
+├── templates/             # HTML templates
+│   └── index_simple.html  # Main web UI
+├── models/                # Downloaded Whisper models
+└── logs/                  # Conversation logs
 ```
 
 ## Performance Optimization
@@ -176,8 +198,9 @@ pip install --no-cache-dir pyaudio
 ### Model Not Found
 ```bash
 # Pull the model manually
-ollama pull deepseek-r1:8b
 ollama pull llama3.2:3b
+ollama pull mistral:7b
+ollama pull deepseek-r1:8b
 ```
 
 ### Permission Issues
@@ -212,21 +235,19 @@ performance:
 
 ## Development
 
-### Running in Debug Mode
+### Running in Development Mode
 ```bash
-./run.sh --debug
+# Activate virtual environment
+source venv/bin/activate
+
+# Run the web server
+python web_assistant_simple.py
 ```
 
-### Using Different Models
+### Using Different Ports
 ```bash
-./run.sh --model mistral:7b
-```
-
-### Minimal UI Mode
-For a simpler interface without Rich formatting:
-
-```bash
-python3 assistant.py --config config.yaml
+# Edit web_assistant_simple.py and change:
+app.run(host='0.0.0.0', port=5001)  # Change 5001 to your preferred port
 ```
 
 ## Privacy & Security

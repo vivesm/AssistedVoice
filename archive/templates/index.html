@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AssistedVoice - Web Interface</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🎤 AssistedVoice</h1>
+            <div class="status-bar">
+                <span id="status" class="status">Connecting...</span>
+                <span id="model-info" class="model-info"></span>
+            </div>
+        </header>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <div class="welcome-message">
+                <p>Welcome to AssistedVoice!</p>
+                <p>Hold the microphone button to speak, or type your message below.</p>
+            </div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <!-- Push-to-Talk Button -->
+            <div class="ptt-container">
+                <button id="pttButton" class="ptt-button">
+                    <svg class="mic-icon" viewBox="0 0 24 24" width="40" height="40">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                    <span class="button-text">Click to Talk</span>
+                </button>
+                <div class="recording-indicator" id="recordingIndicator">
+                    <span class="pulse"></span>
+                    Recording...
+                </div>
+            </div>
+
+            <!-- Text Input -->
+            <div class="text-input-container">
+                <input type="text" 
+                       id="textInput" 
+                       class="text-input" 
+                       placeholder="Or type your message here..."
+                       autocomplete="off">
+                <button id="sendButton" class="send-button">Send</button>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="clearButton" class="control-button">Clear Chat</button>
+            <label class="tts-toggle">
+                <input type="checkbox" id="ttsToggle" checked>
+                <span>Enable TTS</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Audio Recording Setup -->
+    <audio id="audioPlayback" style="display: none;"></audio>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

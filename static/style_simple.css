@@ -177,8 +177,8 @@ header h1 {
     background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
     color: white;
     border: none;
-    border-radius: 50%;
-    width: 40px;
+    border-radius: 20px;
+    width: 70px;
     height: 40px;
     display: flex;
     align-items: center;
@@ -187,7 +187,6 @@ header h1 {
     transition: all 0.3s ease;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
     flex-shrink: 0;
-    order: -1;
 }
 
 .record-button:hover {

@@ -311,6 +311,19 @@ function addMessage(role, text) {
     labelDiv.className = 'message-label';
     labelDiv.textContent = role === 'user' ? 'You' : 'Assistant';
     
+    // Add speaker button for assistant messages
+    if (role === 'assistant') {
+        const speakerButton = document.createElement('button');
+        speakerButton.className = 'speaker-button';
+        speakerButton.innerHTML = '🔊';
+        speakerButton.title = 'Speak this message';
+        speakerButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            speakText(text);
+        });
+        labelDiv.appendChild(speakerButton);
+    }
+    
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.textContent = text;
@@ -354,6 +367,14 @@ function appendToCurrentResponse(text) {
         labelDiv.className = 'message-label';
         labelDiv.textContent = currentModel ? `Assistant • ${currentModel}` : 'Assistant';
         
+        // Add speaker button for assistant messages
+        const speakerButton = document.createElement('button');
+        speakerButton.className = 'speaker-button';
+        speakerButton.innerHTML = '🔊';
+        speakerButton.title = 'Speak this message';
+        speakerButton.style.display = 'none'; // Hide until response is complete
+        labelDiv.appendChild(speakerButton);
+        
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         
@@ -383,10 +404,42 @@ function appendToCurrentResponse(text) {
 function completeResponse(fullText) {
     if (currentResponseDiv) {
         currentResponseDiv.parentElement.classList.remove('streaming');
+        
+        // Show and activate speaker button
+        const labelDiv = currentResponseDiv.parentElement.querySelector('.message-label');
+        const speakerButton = labelDiv.querySelector('.speaker-button');
+        if (speakerButton) {
+            speakerButton.style.display = 'inline-block';
+            speakerButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                speakText(fullText);
+            });
+        }
     }
     
     currentResponse = '';
     currentResponseDiv = null;
+}
+
+/**
+ * Speak text using server-side TTS (reuse existing TTS pathway)
+ */
+function speakText(text) {
+    if (!text || text.trim() === '') {
+        return;
+    }
+    
+    // Check socket connection
+    if (!socket || !socket.connected) {
+        console.error('WebSocket not connected');
+        return;
+    }
+    
+    // Send to server for TTS processing using the same pathway as responses
+    socket.emit('replay_text', { 
+        text: text.trim(),
+        enable_tts: true 
+    });
 }
 
 /**
@@ -482,6 +535,19 @@ function loadConversation() {
             const labelDiv = document.createElement('div');
             labelDiv.className = 'message-label';
             labelDiv.textContent = msg.role === 'user' ? 'You' : 'Assistant';
+            
+            // Add speaker button for assistant messages
+            if (msg.role === 'assistant') {
+                const speakerButton = document.createElement('button');
+                speakerButton.className = 'speaker-button';
+                speakerButton.innerHTML = '🔊';
+                speakerButton.title = 'Speak this message';
+                speakerButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    speakText(msg.content);
+                });
+                labelDiv.appendChild(speakerButton);
+            }
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';

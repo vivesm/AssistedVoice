@@ -282,12 +282,8 @@ def handle_change_model(data):
     try:
         new_model = data.get('model')
         if new_model:
-            # Special handling for gpt-oss models with broken templates
-            if 'gpt-oss' in new_model:
-                # Use a fallback model for gpt-oss due to template issues
-                logger.warning(f"gpt-oss models have template issues, using fallback")
-                emit('error', {'message': 'Note: gpt-oss models have template issues. Using mistral instead. A fix is being worked on.'})
-                new_model = 'mistral:latest'
+            # Note: gpt-oss template issues have been fixed
+            logger.info(f"Switching to model: {new_model}")
             
             # Save old model in case we need to revert
             old_model = config['ollama']['model']
@@ -360,7 +356,7 @@ def handle_change_whisper_model(data):
                 emit('loading_progress', {'message': 'Downloading model if needed...', 'progress': 30})
                 # Reinitialize STT with new model
                 # This may take 5-10 seconds for larger models
-                stt = SpeechToText(config)
+                stt = WhisperSTT(config)
                 emit('loading_progress', {'message': 'Model loaded successfully!', 'progress': 90})
                 emit('whisper_model_changed', {'model': new_model})
                 emit('status', {'message': 'Ready', 'type': 'ready'})
@@ -368,12 +364,40 @@ def handle_change_whisper_model(data):
             except Exception as model_error:
                 # Revert to old model if new one fails
                 config['whisper']['model'] = old_model
-                stt = SpeechToText(config)
+                stt = WhisperSTT(config)
                 logger.error(f"Failed to switch to Whisper {new_model}, reverting to {old_model}: {model_error}")
                 emit('error', {'message': f"Failed to load Whisper {new_model}. Keeping {old_model}."})
                 emit('status', {'message': 'Ready', 'type': 'ready'})
     except Exception as e:
         logger.error(f"Error changing Whisper model: {e}")
+        emit('error', {'message': str(e)})
+        emit('status', {'message': 'Ready', 'type': 'ready'})
+
+@socketio.on('replay_text')
+def handle_replay_text(data):
+    """Replay text using TTS (same as normal response TTS)"""
+    logger.info(f"🔊 REPLAY_TEXT EVENT RECEIVED: {data}")
+    try:
+        text = data.get('text', '').strip()
+        enable_tts = data.get('enable_tts', True)
+        
+        if not text:
+            return
+            
+        # Generate TTS if enabled by user (same logic as process_text)
+        if enable_tts and config['tts']['engine'] != 'none':
+            emit('status', {'message': 'Speaking...', 'type': 'speaking'})
+            # Use the TTS engine we initialized (exact same code as process_text)
+            if hasattr(tts, 'speak_async'):
+                tts.speak_async(text)
+            else:
+                tts.speak(text)
+            emit('tts_complete', {})
+        
+        emit('status', {'message': 'Ready', 'type': 'ready'})
+        
+    except Exception as e:
+        logger.error(f"Error replaying text: {e}")
         emit('error', {'message': str(e)})
         emit('status', {'message': 'Ready', 'type': 'ready'})
 

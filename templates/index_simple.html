@@ -12,10 +12,10 @@
         <!-- Header -->
         <header>
             <h1>🎤 AssistedVoice</h1>
-            <div class="status-bar">
+            <span class="status-bar">
                 <span id="status" class="status">Connecting...</span>
                 <span id="model-info" class="model-info"></span>
-            </div>
+            </span>
         </header>
 
         <!-- Chat Container -->
@@ -29,65 +29,71 @@
 
         <!-- Input Section -->
         <div class="input-section">
-            <!-- Main Action Button -->
             <div class="action-container">
-                <button id="recordBtn" class="record-button">
-                    <svg class="mic-icon" viewBox="0 0 24 24" width="40" height="40">
+                <button id="recordBtn" class="record-button" title="Click to Talk">
+                    <svg class="mic-icon" viewBox="0 0 24 24">
                         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                         <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                     </svg>
-                    <span class="button-text">Click to Talk</span>
                 </button>
                 <div class="recording-indicator" id="recordingIndicator">
                     <span class="pulse"></span>
                     Recording...
                 </div>
-            </div>
-
-            <!-- Text Input -->
-            <div class="text-input-container">
-                <input type="text" 
-                       id="textInput" 
-                       class="text-input" 
-                       placeholder="Or type your message here..."
-                       autocomplete="off">
-                <button id="sendButton" class="send-button">Send</button>
+                
+                <!-- Text Input -->
+                <div class="text-input-container">
+                    <input type="text" 
+                           id="textInput" 
+                           class="text-input" 
+                           placeholder="Type your message here..."
+                           autocomplete="off">
+                    <button id="sendButton" class="send-button">Send</button>
+                </div>
             </div>
         </div>
 
-        <!-- Controls -->
-        <div class="controls">
-            <button id="clearButton" class="control-button">Clear Chat</button>
-            
-            <!-- Model Selector -->
-            <div class="model-selector">
-                <label for="modelSelect">AI Model:</label>
-                <select id="modelSelect" class="control-select">
-                    <option value="">Loading models...</option>
-                </select>
-            </div>
-            
-            <!-- TTS Controls -->
-            <div class="tts-controls">
-                <div class="tts-toggle">
-                    <label>
-                        <input type="checkbox" id="ttsToggle" checked>
-                        <span>Voice Response</span>
-                    </label>
-                </div>
-                
-                <div class="tts-engine-selector">
-                    <label for="ttsEngineSelect">Voice Type:</label>
-                    <select id="ttsEngineSelect" class="control-select">
-                        <option value="">Loading...</option>
-                    </select>
-                </div>
-                
-                <div class="voice-selector">
-                    <label for="voiceSelect">Voice:</label>
-                    <select id="voiceSelect" class="control-select">
-                        <option value="">Select engine first</option>
-                    </select>
+        <!-- Collapsible Controls -->
+        <div class="controls collapsed" id="controlsPanel">
+            <button class="controls-toggle" id="controlsToggle">
+                <span>⚙️ Settings</span>
+                <span id="toggleIcon">▶</span>
+            </button>
+            <div class="controls-content">
+                <div class="controls-grid">
+                    <button id="clearButton" class="control-button">🗑️ Clear Chat</button>
+                    
+                    <!-- Model Selector -->
+                    <div class="model-selector">
+                        <label for="modelSelect">AI Model:</label>
+                        <select id="modelSelect" class="control-select">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    
+                    <!-- TTS Controls -->
+                    <div class="tts-controls">
+                        <div class="tts-toggle">
+                            <label>
+                                <input type="checkbox" id="ttsToggle" checked>
+                                <span>Enable Voice</span>
+                            </label>
+                        </div>
+                        
+                        <div class="tts-engine-selector">
+                            <label for="ttsEngineSelect">Voice Type:</label>
+                            <select id="ttsEngineSelect" class="control-select">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="voice-selector">
+                            <label for="voiceSelect">Voice:</label>
+                            <select id="voiceSelect" class="control-select">
+                                <option value="">Select engine first</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

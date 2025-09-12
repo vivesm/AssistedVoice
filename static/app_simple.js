@@ -85,6 +85,8 @@ function setupEventListeners() {
     const textInput = document.getElementById('textInput');
     const sendButton = document.getElementById('sendButton');
     const clearButton = document.getElementById('clearButton');
+    const controlsToggle = document.getElementById('controlsToggle');
+    const controlsPanel = document.getElementById('controlsPanel');
     
     // Push-to-talk button - click to start, click to stop
     recordBtn.addEventListener('click', () => {
@@ -108,6 +110,22 @@ function setupEventListeners() {
     clearButton.addEventListener('click', () => {
         socket.emit('clear_conversation');
     });
+    
+    // Controls panel toggle
+    if (controlsToggle) {
+        controlsToggle.addEventListener('click', () => {
+            const toggleIcon = document.getElementById('toggleIcon');
+            if (controlsPanel.classList.contains('collapsed')) {
+                controlsPanel.classList.remove('collapsed');
+                controlsPanel.classList.add('expanded');
+                toggleIcon.textContent = '▼';
+            } else {
+                controlsPanel.classList.remove('expanded');
+                controlsPanel.classList.add('collapsed');
+                toggleIcon.textContent = '▶';
+            }
+        });
+    }
     
     // TTS toggle
     const ttsToggle = document.getElementById('ttsToggle');

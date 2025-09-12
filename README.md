@@ -9,9 +9,13 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Web Interface**: Modern, responsive UI accessible from any browser
 - **Push-to-Talk**: Click and hold the microphone button to record
 - **Text Input**: Type messages when you prefer not to speak
-- **Model Selection**: Switch between Ollama models on the fly
+- **Model Selection**: Switch between Ollama models on the fly with automatic fallback
+- **Whisper Model Selection**: Choose from tiny, base, small, medium, large, or turbo models
 - **Real-time Processing**: Fast responses with streaming support
 - **Realistic Voices**: Microsoft Edge neural voices for natural-sounding speech
+- **Visual Loading Indicators**: Progress bars and overlays for model loading operations
+- **Conversation Persistence**: Chat history survives browser refreshes
+- **Model Identification**: Each response shows which model generated it
 
 ### 🚀 Optimized for Apple Silicon
 - Metal Performance Shaders acceleration
@@ -83,7 +87,10 @@ http://localhost:5001
 | **Text Input** | Type messages directly |
 | **Send Button** | Send typed message |
 | **Clear Chat** | Clear conversation history |
-| **TTS Toggle** | Enable/disable voice responses |
+| **Model Selector** | Switch between Ollama models with automatic fallback |
+| **Whisper Selector** | Choose speech recognition model (tiny to turbo) |
+| **Voice Engine** | Select TTS engine: Neural (Edge), Classic (macOS), or Text Only |
+| **Voice Selector** | Choose specific voice for selected TTS engine |
 
 ## Configuration
 
@@ -220,6 +227,20 @@ ollama pull deepseek-r1:8b
 # Grant terminal microphone access
 System Preferences → Security & Privacy → Microphone → Terminal
 ```
+
+## Enhanced User Experience
+
+### Visual Feedback
+- **Loading Overlays**: Full-screen loading indicators with progress bars for model operations
+- **Status Indicators**: Real-time status updates (Ready, Recording, Processing, Speaking)
+- **Model Identification**: Each assistant response shows which model generated it
+- **Conversation Persistence**: Chat history automatically saves and restores on page refresh
+
+### Performance Optimizations
+- **Model Fallback**: Automatic fallback to working models when problematic models are selected
+- **Fast Model Switching**: Instant switching between available Ollama models
+- **Optimized Whisper**: Direct turbo model support for fastest speech recognition
+- **Streaming Responses**: Real-time response generation with typing indicators
 
 ## Advanced Features
 

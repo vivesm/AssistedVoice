@@ -8,7 +8,9 @@ let mediaRecorder = null;
 let audioStream = null;
 let audioChunks = [];
 let isRecording = false;
-let ttsEnabled = false; // Default to text-only mode
+let ttsEnabled = true; // Default to enabled
+let currentTTSEngine = 'edge-tts'; // Track current TTS engine
+let currentModel = null; // Track current model for responses
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
@@ -47,11 +49,15 @@ function initializeWebSocket() {
     });
     
     socket.on('response_chunk', (data) => {
+        if (data.model) currentModel = data.model;
         appendToCurrentResponse(data.text);
     });
     
     socket.on('response_complete', (data) => {
+        if (data.model) currentModel = data.model;
         completeResponse(data.text);
+        // Save conversation after response is complete
+        setTimeout(saveConversation, 100);
     });
     
     socket.on('tts_complete', () => {
@@ -59,6 +65,7 @@ function initializeWebSocket() {
     });
     
     socket.on('error', (data) => {
+        hideLoadingOverlay(); // Hide loading on any error
         showError(data.message);
     });
     
@@ -67,12 +74,22 @@ function initializeWebSocket() {
     });
     
     socket.on('model_changed', (data) => {
+        currentModel = data.model;  // Update current model
         updateStatus(`Model changed to ${data.model}`, 'ready');
         loadModels();
     });
     
     socket.on('tts_changed', (data) => {
         updateStatus('Voice settings updated', 'ready');
+    });
+    
+    socket.on('whisper_model_changed', (data) => {
+        hideLoadingOverlay();
+        updateStatus(`Whisper model changed to ${data.model}`, 'ready');
+    });
+    
+    socket.on('loading_progress', (data) => {
+        updateLoadingProgress(data.message, data.progress);
     });
 }
 
@@ -108,12 +125,29 @@ function setupEventListeners() {
         socket.emit('clear_conversation');
     });
     
-    // TTS toggle
-    const ttsToggle = document.getElementById('ttsToggle');
-    ttsToggle.addEventListener('change', (e) => {
-        ttsEnabled = e.target.checked;
-        localStorage.setItem('ttsEnabled', ttsEnabled);
-        updateStatus(ttsEnabled ? 'Voice enabled' : 'Text-only mode', 'ready');
+    // TTS engine selector
+    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
+    ttsEngineSelect.addEventListener('change', (e) => {
+        const engine = e.target.value;
+        currentTTSEngine = engine;
+        localStorage.setItem('ttsEngine', engine);
+        
+        // Update voice selector visibility and options
+        updateVoiceSelector(engine);
+        
+        // Update ttsEnabled based on engine
+        ttsEnabled = (engine !== 'none');
+        
+        // Notify server of engine change
+        if (engine !== 'none') {
+            const voiceSelect = document.getElementById('voiceSelect');
+            const voice = voiceSelect.value;
+            if (voice) {
+                socket.emit('change_tts', { engine: engine, voice: voice });
+            }
+        }
+        
+        updateStatus(engine === 'none' ? 'Text-only mode' : `Voice: ${engine}`, 'ready');
     });
     
     // Model selector
@@ -126,13 +160,32 @@ function setupEventListeners() {
         }
     });
     
+    // Whisper model selector
+    const whisperSelect = document.getElementById('whisperSelect');
+    if (whisperSelect) {
+        whisperSelect.addEventListener('change', (e) => {
+            const model = e.target.value;
+            if (model) {
+                showLoadingOverlay(model, `Switching to ${model} model for speech recognition`);
+                socket.emit('change_whisper_model', { model: model });
+                localStorage.setItem('selectedWhisperModel', model);
+            }
+        });
+        
+        // Load saved Whisper model preference
+        const savedWhisperModel = localStorage.getItem('selectedWhisperModel');
+        if (savedWhisperModel) {
+            whisperSelect.value = savedWhisperModel;
+        }
+    }
+    
     // Voice selector
     const voiceSelect = document.getElementById('voiceSelect');
     voiceSelect.addEventListener('change', (e) => {
         const voice = e.target.value;
-        if (voice) {
-            socket.emit('change_tts', { engine: 'edge-tts', voice: voice });
-            localStorage.setItem('selectedVoice', voice);
+        if (voice && currentTTSEngine !== 'none') {
+            socket.emit('change_tts', { engine: currentTTSEngine, voice: voice });
+            localStorage.setItem(`selectedVoice_${currentTTSEngine}`, voice);
         }
     });
 }
@@ -272,6 +325,9 @@ function addMessage(role, text) {
     
     chatContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    // Save conversation after adding message
+    setTimeout(saveConversation, 100);
 }
 
 let currentResponse = '';
@@ -296,7 +352,7 @@ function appendToCurrentResponse(text) {
         
         const labelDiv = document.createElement('div');
         labelDiv.className = 'message-label';
-        labelDiv.textContent = 'Assistant';
+        labelDiv.textContent = currentModel ? `Assistant • ${currentModel}` : 'Assistant';
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
@@ -368,6 +424,86 @@ function clearChatDisplay() {
             <p>Click the microphone to start recording, or type your message below.</p>
         </div>
     `;
+    // Clear saved conversation
+    localStorage.removeItem('assistedVoiceConversation');
+}
+
+/**
+ * Save conversation to localStorage
+ */
+function saveConversation() {
+    const messages = [];
+    const messageElements = document.querySelectorAll('.message');
+    
+    messageElements.forEach(elem => {
+        const label = elem.querySelector('.message-label')?.textContent;
+        const content = elem.querySelector('.message-content')?.textContent;
+        if (label && content) {
+            messages.push({
+                role: label === 'You' ? 'user' : 'assistant',
+                content: content
+            });
+        }
+    });
+    
+    if (messages.length > 0) {
+        localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+            version: 1,
+            timestamp: Date.now(),
+            messages: messages
+        }));
+    }
+}
+
+/**
+ * Load conversation from localStorage
+ */
+function loadConversation() {
+    try {
+        const saved = localStorage.getItem('assistedVoiceConversation');
+        if (!saved) return;
+        
+        const data = JSON.parse(saved);
+        if (data.version !== 1) return; // Skip if version mismatch
+        
+        const chatContainer = document.getElementById('chatContainer');
+        
+        // Remove welcome message if it exists
+        const welcomeMsg = chatContainer.querySelector('.welcome-message');
+        if (welcomeMsg) {
+            welcomeMsg.remove();
+        }
+        
+        // Restore messages
+        data.messages.forEach(msg => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.role}-message`;
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'message-label';
+            labelDiv.textContent = msg.role === 'user' ? 'You' : 'Assistant';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = msg.content;
+            
+            const timestampDiv = document.createElement('div');
+            timestampDiv.className = 'message-timestamp';
+            timestampDiv.textContent = 'Restored';
+            
+            messageDiv.appendChild(labelDiv);
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(timestampDiv);
+            
+            chatContainer.appendChild(messageDiv);
+        });
+        
+        // Scroll to bottom
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+    } catch (err) {
+        console.error('Failed to load conversation:', err);
+    }
 }
 
 /**
@@ -378,12 +514,12 @@ async function fetchConfig() {
         const response = await fetch('/config');
         const config = await response.json();
         
-        const modelInfo = document.getElementById('model-info');
-        modelInfo.textContent = `Model: ${config.model} | Whisper: ${config.whisper_model}`;
-        
         // Load available models
         loadModels();
-        loadSimpleVoices();
+        // Voice loading is now handled by loadSettings()
+        
+        // Load saved conversation
+        loadConversation();
     } catch (err) {
         console.error('Failed to fetch config:', err);
     }
@@ -407,6 +543,7 @@ async function loadModels() {
             option.textContent = model;
             if (model === data.current || model === savedModel) {
                 option.selected = true;
+                currentModel = model;  // Set current model
             }
             modelSelect.appendChild(option);
         });
@@ -416,15 +553,179 @@ async function loadModels() {
 }
 
 /**
- * Load simple voice options
+ * Update voice selector based on TTS engine
+ */
+function updateVoiceSelector(engine) {
+    const voiceSelector = document.getElementById('voiceSelector');
+    const voiceSelect = document.getElementById('voiceSelect');
+    
+    if (engine === 'none') {
+        // Hide voice selector for text-only mode
+        voiceSelector.style.display = 'none';
+    } else {
+        // Show voice selector
+        voiceSelector.style.display = 'flex';
+        
+        // Clear current options
+        voiceSelect.innerHTML = '';
+        
+        if (engine === 'edge-tts') {
+            // Neural voices
+            const neuralVoices = [
+                { value: 'en-US-JennyNeural', label: 'Jenny (Female)' },
+                { value: 'en-US-GuyNeural', label: 'Guy (Male)' },
+                { value: 'en-US-AriaNeural', label: 'Aria (Female)' },
+                { value: 'en-GB-SoniaNeural', label: 'Sonia (British)' },
+                { value: 'en-GB-RyanNeural', label: 'Ryan (British)' }
+            ];
+            
+            neuralVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.value;
+                option.textContent = voice.label;
+                voiceSelect.appendChild(option);
+            });
+            
+            // Restore saved selection
+            const savedVoice = localStorage.getItem('selectedVoice_edge-tts');
+            if (savedVoice) {
+                voiceSelect.value = savedVoice;
+            }
+        } else if (engine === 'macos') {
+            // Classic macOS voices
+            const macVoices = [
+                { value: 'Samantha', label: 'Samantha' },
+                { value: 'Alex', label: 'Alex' },
+                { value: 'Victoria', label: 'Victoria' },
+                { value: 'Fred', label: 'Fred' },
+                { value: 'Karen', label: 'Karen' }
+            ];
+            
+            macVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.value;
+                option.textContent = voice.label;
+                voiceSelect.appendChild(option);
+            });
+            
+            // Restore saved selection
+            const savedVoice = localStorage.getItem('selectedVoice_macos');
+            if (savedVoice) {
+                voiceSelect.value = savedVoice;
+            }
+        }
+    }
+}
+
+/**
+ * Load voice options (deprecated, kept for compatibility)
  */
 function loadSimpleVoices() {
-    const voiceSelect = document.getElementById('voiceSelect');
-    const savedVoice = localStorage.getItem('selectedVoice');
+    // This function is now handled by updateVoiceSelector
+    const savedEngine = localStorage.getItem('ttsEngine') || 'edge-tts';
+    updateVoiceSelector(savedEngine);
+}
+
+/**
+ * Loading overlay functions
+ */
+const modelLoadingTimes = {
+    'tiny': 2,
+    'base': 3,
+    'small': 5,
+    'medium': 10,
+    'large': 15,
+    'turbo': 5
+};
+
+function showLoadingOverlay(modelName, message) {
+    const overlay = document.getElementById('loadingOverlay');
+    const title = document.getElementById('loadingTitle');
+    const messageEl = document.getElementById('loadingMessage');
+    const timeEl = document.getElementById('loadingTime');
+    const progressFill = document.getElementById('progressFill');
     
-    if (savedVoice) {
-        voiceSelect.value = savedVoice;
+    const estimatedTime = modelLoadingTimes[modelName] || 5;
+    
+    title.textContent = `Loading ${modelName} model...`;
+    messageEl.textContent = message || 'Please wait while the model loads';
+    timeEl.textContent = `Estimated time: ~${estimatedTime} seconds`;
+    
+    // Reset progress
+    progressFill.style.width = '0%';
+    
+    overlay.classList.add('show');
+    
+    // Simulate progress (since we don't have real progress from the backend yet)
+    let progress = 0;
+    const interval = setInterval(() => {
+        progress += (100 / (estimatedTime * 10)); // Update every 100ms
+        if (progress > 90) progress = 90; // Don't go to 100% until we get confirmation
+        progressFill.style.width = `${progress}%`;
+        
+        if (progress >= 90) {
+            clearInterval(interval);
+        }
+    }, 100);
+    
+    // Store interval ID for cleanup
+    overlay.progressInterval = interval;
+    
+    // Disable controls during loading
+    disableControls(true);
+}
+
+function hideLoadingOverlay() {
+    const overlay = document.getElementById('loadingOverlay');
+    const progressFill = document.getElementById('progressFill');
+    
+    // Complete the progress bar
+    progressFill.style.width = '100%';
+    
+    // Clear any running progress interval
+    if (overlay.progressInterval) {
+        clearInterval(overlay.progressInterval);
+        overlay.progressInterval = null;
     }
+    
+    // Hide after a brief delay to show completion
+    setTimeout(() => {
+        overlay.classList.remove('show');
+        // Re-enable controls
+        disableControls(false);
+    }, 500);
+}
+
+function updateLoadingProgress(message, progress) {
+    const messageEl = document.getElementById('loadingMessage');
+    const progressFill = document.getElementById('progressFill');
+    const overlay = document.getElementById('loadingOverlay');
+    
+    if (messageEl && overlay.classList.contains('show')) {
+        messageEl.textContent = message;
+        if (progressFill && progress !== undefined) {
+            // Clear any existing interval since we're getting real progress
+            if (overlay.progressInterval) {
+                clearInterval(overlay.progressInterval);
+                overlay.progressInterval = null;
+            }
+            progressFill.style.width = `${progress}%`;
+        }
+    }
+}
+
+function disableControls(disabled) {
+    const whisperSelect = document.getElementById('whisperSelect');
+    const modelSelect = document.getElementById('modelSelect');
+    const recordBtn = document.getElementById('recordBtn');
+    const textInput = document.getElementById('textInput');
+    const sendButton = document.getElementById('sendButton');
+    
+    if (whisperSelect) whisperSelect.disabled = disabled;
+    if (modelSelect) modelSelect.disabled = disabled;
+    if (recordBtn) recordBtn.disabled = disabled;
+    if (textInput) textInput.disabled = disabled;
+    if (sendButton) sendButton.disabled = disabled;
 }
 
 
@@ -432,15 +733,18 @@ function loadSimpleVoices() {
  * Load saved settings
  */
 function loadSettings() {
-    // Load TTS preference from localStorage
-    const savedTTS = localStorage.getItem('ttsEnabled');
-    if (savedTTS !== null) {
-        ttsEnabled = savedTTS === 'true';
+    // Load TTS engine preference
+    const savedEngine = localStorage.getItem('ttsEngine');
+    if (savedEngine) {
+        currentTTSEngine = savedEngine;
+        document.getElementById('ttsEngineSelect').value = savedEngine;
+        ttsEnabled = (savedEngine !== 'none');
     } else {
-        ttsEnabled = true; // Default to enabled
-        localStorage.setItem('ttsEnabled', 'true');
+        currentTTSEngine = 'edge-tts';
+        ttsEnabled = true;
+        localStorage.setItem('ttsEngine', 'edge-tts');
     }
     
-    // Update UI
-    document.getElementById('ttsToggle').checked = ttsEnabled;
+    // Update voice selector based on engine
+    updateVoiceSelector(currentTTSEngine);
 }

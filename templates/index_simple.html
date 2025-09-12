@@ -14,7 +14,6 @@
             <h1>🎤 AssistedVoice</h1>
             <span class="status-bar">
                 <span id="status" class="status">Connecting...</span>
-                <span id="model-info" class="model-info"></span>
             </span>
         </header>
 
@@ -36,19 +35,18 @@
                         <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                     </svg>
                 </button>
+                
+                <input type="text" 
+                       id="textInput" 
+                       class="text-input" 
+                       placeholder="Type your message here..."
+                       autocomplete="off">
+                       
+                <button id="sendButton" class="send-button">Send</button>
+                
                 <div class="recording-indicator" id="recordingIndicator">
                     <span class="pulse"></span>
                     Recording...
-                </div>
-                
-                <!-- Text Input -->
-                <div class="text-input-container">
-                    <input type="text" 
-                           id="textInput" 
-                           class="text-input" 
-                           placeholder="Type your message here..."
-                           autocomplete="off">
-                    <button id="sendButton" class="send-button">Send</button>
                 </div>
             </div>
         </div>
@@ -64,27 +62,52 @@
                         <option value="">Loading...</option>
                     </select>
                 </div>
+                
+                <div class="model-selector">
+                    <label for="whisperSelect">Whisper:</label>
+                    <select id="whisperSelect" class="control-select">
+                        <option value="tiny">Tiny (Fastest)</option>
+                        <option value="base">Base</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                        <option value="turbo" selected>Turbo (Optimized)</option>
+                    </select>
+                </div>
             </div>
             
             <div class="controls-right">
                 <div class="tts-controls">
-                    <div class="tts-toggle">
-                        <label>
-                            <input type="checkbox" id="ttsToggle" checked>
-                            <span>Voice</span>
-                        </label>
+                    <div class="tts-engine-selector">
+                        <label for="ttsEngineSelect">Voice:</label>
+                        <select id="ttsEngineSelect" class="control-select">
+                            <option value="edge-tts">Neural</option>
+                            <option value="macos">Classic</option>
+                            <option value="none">Text Only</option>
+                        </select>
                     </div>
                     
-                    <div class="voice-selector">
+                    <div class="voice-selector" id="voiceSelector">
                         <select id="voiceSelect" class="control-select">
-                            <option value="en-US-JennyNeural">Jenny (Female)</option>
-                            <option value="en-US-GuyNeural">Guy (Male)</option>
-                            <option value="en-US-AriaNeural">Aria (Female)</option>
-                            <option value="en-GB-SoniaNeural">Sonia (British)</option>
-                            <option value="en-GB-RyanNeural">Ryan (British)</option>
+                            <!-- Dynamically populated based on engine -->
                         </select>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <h3 id="loadingTitle">Loading...</h3>
+            <p id="loadingMessage">Please wait while the model loads</p>
+            <div class="loading-progress">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <p id="loadingTime">Estimated time: ~5 seconds</p>
             </div>
         </div>
     </div>

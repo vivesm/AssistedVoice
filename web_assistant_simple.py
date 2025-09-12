@@ -81,8 +81,15 @@ def get_models():
     """Get available Ollama models"""
     try:
         models = llm.client.list()
+        # Filter out known problematic models but add a note about them
+        model_list = []
+        for model in models['models']:
+            model_name = model.model
+            # Keep gpt-oss models but mark them
+            model_list.append(model_name)
+        
         return jsonify({
-            'models': [model.model for model in models['models']],
+            'models': model_list,
             'current': config['ollama']['model']
         })
     except Exception as e:
@@ -99,6 +106,22 @@ def get_tts_engines():
     return jsonify({
         'engines': engines,
         'current': config['tts']['engine']
+    })
+
+@app.route('/api/whisper-models')
+def get_whisper_models():
+    """Get available Whisper models"""
+    models = [
+        {'value': 'tiny', 'label': 'Tiny (Fastest)'},
+        {'value': 'base', 'label': 'Base'},
+        {'value': 'small', 'label': 'Small'},
+        {'value': 'medium', 'label': 'Medium'},
+        {'value': 'large', 'label': 'Large'},
+        {'value': 'turbo', 'label': 'Turbo (Optimized)'}
+    ]
+    return jsonify({
+        'models': models,
+        'current': config['whisper']['model']
     })
 
 @app.route('/api/voices/<engine>')
@@ -185,10 +208,10 @@ def handle_audio(data):
         response_text = ""
         for chunk in llm.generate(transcription, stream=True):
             response_text += chunk
-            emit('response_chunk', {'text': chunk})
+            emit('response_chunk', {'text': chunk, 'model': llm.model})
         
-        # Complete response
-        emit('response_complete', {'text': response_text})
+        # Complete response with model info
+        emit('response_complete', {'text': response_text, 'model': llm.model})
         
         # Generate TTS if enabled by user
         if enable_tts and config['tts']['engine'] != 'none':
@@ -225,10 +248,10 @@ def handle_text(data):
         response_text = ""
         for chunk in llm.generate(text, stream=True):
             response_text += chunk
-            emit('response_chunk', {'text': chunk})
+            emit('response_chunk', {'text': chunk, 'model': llm.model})
         
-        # Complete response
-        emit('response_complete', {'text': response_text})
+        # Complete response with model info
+        emit('response_complete', {'text': response_text, 'model': llm.model})
         
         # Generate TTS if enabled by user
         if enable_tts and config['tts']['engine'] != 'none':
@@ -259,12 +282,32 @@ def handle_change_model(data):
     try:
         new_model = data.get('model')
         if new_model:
-            # Update config
-            config['ollama']['model'] = new_model
-            # Reinitialize LLM with new model
-            llm = OllamaLLM(config)
-            emit('model_changed', {'model': new_model})
-            logger.info(f"Changed model to: {new_model}")
+            # Special handling for gpt-oss models with broken templates
+            if 'gpt-oss' in new_model:
+                # Use a fallback model for gpt-oss due to template issues
+                logger.warning(f"gpt-oss models have template issues, using fallback")
+                emit('error', {'message': 'Note: gpt-oss models have template issues. Using mistral instead. A fix is being worked on.'})
+                new_model = 'mistral:latest'
+            
+            # Save old model in case we need to revert
+            old_model = config['ollama']['model']
+            old_llm = llm
+            
+            try:
+                # Update config
+                config['ollama']['model'] = new_model
+                # Reinitialize LLM with new model
+                llm = OllamaLLM(config)
+                # Get the actual model name that was loaded (might be different due to version tags)
+                actual_model = llm.model
+                emit('model_changed', {'model': actual_model})
+                logger.info(f"Changed model to: {actual_model}")
+            except Exception as model_error:
+                # Revert to old model if new one fails
+                config['ollama']['model'] = old_model
+                llm = old_llm
+                logger.error(f"Failed to switch to {new_model}, keeping {old_model}: {model_error}")
+                emit('error', {'message': f"Failed to switch model: {str(model_error)}. Keeping current model."})
     except Exception as e:
         logger.error(f"Error changing model: {e}")
         emit('error', {'message': str(e)})
@@ -298,6 +341,41 @@ def handle_change_tts(data):
     except Exception as e:
         logger.error(f"Error changing TTS: {e}")
         emit('error', {'message': str(e)})
+
+@socketio.on('change_whisper_model')
+def handle_change_whisper_model(data):
+    """Change Whisper STT model"""
+    global stt, config
+    try:
+        new_model = data.get('model')
+        if new_model and new_model in ['tiny', 'base', 'small', 'medium', 'large', 'turbo']:
+            emit('status', {'message': f'Loading Whisper {new_model} model...', 'type': 'loading'})
+            emit('loading_progress', {'message': 'Initializing model loader...', 'progress': 10})
+            
+            # Update config
+            old_model = config['whisper']['model']
+            config['whisper']['model'] = new_model
+            
+            try:
+                emit('loading_progress', {'message': 'Downloading model if needed...', 'progress': 30})
+                # Reinitialize STT with new model
+                # This may take 5-10 seconds for larger models
+                stt = SpeechToText(config)
+                emit('loading_progress', {'message': 'Model loaded successfully!', 'progress': 90})
+                emit('whisper_model_changed', {'model': new_model})
+                emit('status', {'message': 'Ready', 'type': 'ready'})
+                logger.info(f"Changed Whisper model to: {new_model}")
+            except Exception as model_error:
+                # Revert to old model if new one fails
+                config['whisper']['model'] = old_model
+                stt = SpeechToText(config)
+                logger.error(f"Failed to switch to Whisper {new_model}, reverting to {old_model}: {model_error}")
+                emit('error', {'message': f"Failed to load Whisper {new_model}. Keeping {old_model}."})
+                emit('status', {'message': 'Ready', 'type': 'ready'})
+    except Exception as e:
+        logger.error(f"Error changing Whisper model: {e}")
+        emit('error', {'message': str(e)})
+        emit('status', {'message': 'Ready', 'type': 'ready'})
 
 if __name__ == '__main__':
     # Initialize components

@@ -193,10 +193,37 @@ class EdgeTTS(TTSEngine):
     def __init__(self, config: dict):
         self.config = config
         self.voice = config['tts'].get('edge_voice', 'en-US-JennyNeural')
-        self.rate = config['tts'].get('rate', '+0%')
-        self.volume = config['tts'].get('volume', '+0%')
+        
+        # Handle rate parameter - convert integer WPM to percentage string
+        rate_value = config['tts'].get('rate', 180)
+        if isinstance(rate_value, (int, float)):
+            # Convert WPM to percentage (180 WPM = normal speed)
+            wpm = rate_value
+            if wpm < 150:
+                self.rate = f"-{int((180-wpm)/180*100)}%"
+            elif wpm > 210:
+                self.rate = f"+{int((wpm-180)/180*100)}%"
+            else:
+                self.rate = "+0%"
+        else:
+            self.rate = str(rate_value) if rate_value else '+0%'
+        
+        # Handle volume parameter - convert float to percentage string
+        volume_value = config['tts'].get('volume', 0.9)
+        if isinstance(volume_value, (int, float)):
+            # Convert 0.0-1.0 to percentage (-50% to +50%)
+            vol = float(volume_value)
+            if vol < 0.5:
+                self.volume = f"-{int((0.5-vol)*100)}%"
+            elif vol > 0.5:
+                self.volume = f"+{int((vol-0.5)*100)}%"
+            else:
+                self.volume = "+0%"
+        else:
+            self.volume = str(volume_value) if volume_value else '+0%'
+        
         self.pitch = config['tts'].get('pitch', '+0Hz')
-        logger.info(f"Edge TTS initialized with voice: {self.voice}")
+        logger.info(f"Edge TTS initialized with voice: {self.voice}, rate: {self.rate}, volume: {self.volume}")
     
     def speak(self, text: str):
         """Speak text using edge-tts"""

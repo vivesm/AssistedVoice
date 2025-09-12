@@ -110,14 +110,33 @@ class OllamaLLM:
             
             logger.info(f"Connected to Ollama. Available models: {available_models}")
             
-            # Check if desired model is available
-            if self.model not in available_models:
+            # Check if desired model is available (with flexible matching)
+            model_found = False
+            for available in available_models:
+                # Check exact match or partial match (for version tags)
+                if self.model == available or self.model.split(':')[0] == available.split(':')[0]:
+                    self.model = available  # Use the exact available model name
+                    model_found = True
+                    break
+            
+            if not model_found:
                 logger.warning(f"Model '{self.model}' not found. Available: {available_models}")
-                if self.fallback_model and self.fallback_model in available_models:
-                    logger.info(f"Using fallback model: {self.fallback_model}")
-                    self.model = self.fallback_model
-                else:
-                    raise ValueError(f"Model '{self.model}' not available. Please pull it first.")
+                if self.fallback_model:
+                    # Try fallback with flexible matching too
+                    for available in available_models:
+                        if self.fallback_model == available or self.fallback_model.split(':')[0] == available.split(':')[0]:
+                            logger.info(f"Using fallback model: {available}")
+                            self.model = available
+                            model_found = True
+                            break
+                
+                if not model_found:
+                    # Use first available model as last resort
+                    if available_models:
+                        self.model = available_models[0]
+                        logger.warning(f"Using first available model: {self.model}")
+                    else:
+                        raise ValueError(f"No models available. Please pull a model first.")
         
         except Exception as e:
             logger.error(f"Failed to connect to Ollama: {e}")

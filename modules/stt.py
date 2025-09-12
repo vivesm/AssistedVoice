@@ -30,8 +30,7 @@ class WhisperSTT:
         """Initialize Whisper model and VAD"""
         # Load Whisper model
         model_name = self.config['whisper']['model']
-        if model_name == 'turbo':
-            model_name = 'large-v3'  # Use large-v3 as turbo equivalent
+        # Note: 'turbo' is a valid model name for faster-whisper
         
         device = self.config['whisper'].get('device', 'auto')
         

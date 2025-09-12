@@ -73,7 +73,6 @@ function initializeWebSocket() {
     
     socket.on('tts_changed', (data) => {
         updateStatus('Voice settings updated', 'ready');
-        loadTTSEngines();
     });
 }
 
@@ -85,8 +84,6 @@ function setupEventListeners() {
     const textInput = document.getElementById('textInput');
     const sendButton = document.getElementById('sendButton');
     const clearButton = document.getElementById('clearButton');
-    const controlsToggle = document.getElementById('controlsToggle');
-    const controlsPanel = document.getElementById('controlsPanel');
     
     // Push-to-talk button - click to start, click to stop
     recordBtn.addEventListener('click', () => {
@@ -111,22 +108,6 @@ function setupEventListeners() {
         socket.emit('clear_conversation');
     });
     
-    // Controls panel toggle
-    if (controlsToggle) {
-        controlsToggle.addEventListener('click', () => {
-            const toggleIcon = document.getElementById('toggleIcon');
-            if (controlsPanel.classList.contains('collapsed')) {
-                controlsPanel.classList.remove('collapsed');
-                controlsPanel.classList.add('expanded');
-                toggleIcon.textContent = '▼';
-            } else {
-                controlsPanel.classList.remove('expanded');
-                controlsPanel.classList.add('collapsed');
-                toggleIcon.textContent = '▶';
-            }
-        });
-    }
-    
     // TTS toggle
     const ttsToggle = document.getElementById('ttsToggle');
     ttsToggle.addEventListener('change', (e) => {
@@ -145,25 +126,13 @@ function setupEventListeners() {
         }
     });
     
-    // TTS Engine selector
-    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
-    ttsEngineSelect.addEventListener('change', (e) => {
-        const engine = e.target.value;
-        if (engine) {
-            socket.emit('change_tts', { engine: engine });
-            localStorage.setItem('selectedTTSEngine', engine);
-            loadVoices(engine);
-        }
-    });
-    
     // Voice selector
     const voiceSelect = document.getElementById('voiceSelect');
     voiceSelect.addEventListener('change', (e) => {
         const voice = e.target.value;
-        const engine = document.getElementById('ttsEngineSelect').value;
-        if (voice && engine) {
-            socket.emit('change_tts', { engine: engine, voice: voice });
-            localStorage.setItem(`selectedVoice_${engine}`, voice);
+        if (voice) {
+            socket.emit('change_tts', { engine: 'edge-tts', voice: voice });
+            localStorage.setItem('selectedVoice', voice);
         }
     });
 }
@@ -412,9 +381,9 @@ async function fetchConfig() {
         const modelInfo = document.getElementById('model-info');
         modelInfo.textContent = `Model: ${config.model} | Whisper: ${config.whisper_model}`;
         
-        // Load available models and TTS options
+        // Load available models
         loadModels();
-        loadTTSEngines();
+        loadSimpleVoices();
     } catch (err) {
         console.error('Failed to fetch config:', err);
     }
@@ -447,78 +416,17 @@ async function loadModels() {
 }
 
 /**
- * Load TTS engines
+ * Load simple voice options
  */
-async function loadTTSEngines() {
-    try {
-        const response = await fetch('/api/tts-engines');
-        const data = await response.json();
-        
-        const ttsEngineSelect = document.getElementById('ttsEngineSelect');
-        const savedEngine = localStorage.getItem('selectedTTSEngine');
-        
-        ttsEngineSelect.innerHTML = '';
-        data.engines.forEach(engine => {
-            const option = document.createElement('option');
-            option.value = engine.value;
-            option.textContent = engine.label;
-            if (engine.value === data.current || engine.value === savedEngine) {
-                option.selected = true;
-            }
-            ttsEngineSelect.appendChild(option);
-        });
-        
-        // Load voices for the current engine
-        const currentEngine = ttsEngineSelect.value || data.current;
-        if (currentEngine && currentEngine !== 'none') {
-            loadVoices(currentEngine);
-        }
-    } catch (err) {
-        console.error('Failed to load TTS engines:', err);
+function loadSimpleVoices() {
+    const voiceSelect = document.getElementById('voiceSelect');
+    const savedVoice = localStorage.getItem('selectedVoice');
+    
+    if (savedVoice) {
+        voiceSelect.value = savedVoice;
     }
 }
 
-/**
- * Load voices for specific engine
- */
-async function loadVoices(engine) {
-    const voiceSelect = document.getElementById('voiceSelect');
-    
-    if (engine === 'none') {
-        voiceSelect.innerHTML = '<option value="">No voices available</option>';
-        voiceSelect.disabled = true;
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/voices/${engine}`);
-        const data = await response.json();
-        
-        const savedVoice = localStorage.getItem(`selectedVoice_${engine}`);
-        
-        voiceSelect.innerHTML = '';
-        voiceSelect.disabled = false;
-        
-        if (data.voices && data.voices.length > 0) {
-            data.voices.forEach(voice => {
-                const option = document.createElement('option');
-                option.value = voice.value;
-                option.textContent = voice.label;
-                if (voice.value === data.current || voice.value === savedVoice) {
-                    option.selected = true;
-                }
-                voiceSelect.appendChild(option);
-            });
-        } else {
-            voiceSelect.innerHTML = '<option value="">No voices available</option>';
-            voiceSelect.disabled = true;
-        }
-    } catch (err) {
-        console.error('Failed to load voices:', err);
-        voiceSelect.innerHTML = '<option value="">Error loading voices</option>';
-        voiceSelect.disabled = true;
-    }
-}
 
 /**
  * Load saved settings

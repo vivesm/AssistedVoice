@@ -276,68 +276,41 @@ header h1 {
     transform: translateY(-2px);
 }
 
-/* Controls */
+/* Controls Toolbar */
 .controls {
-    position: absolute;
-    bottom: 70px;
-    right: 15px;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-    padding: 0;
-    max-width: 350px;
-    z-index: 100;
-    transition: all 0.3s ease;
-}
-
-.controls.collapsed {
-    padding: 0;
-}
-
-.controls-toggle {
-    padding: 8px 12px;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 12px 12px 0 0;
-    cursor: pointer;
-    width: 100%;
-    text-align: left;
-    font-size: 0.85rem;
-    font-weight: 500;
+    padding: 8px 15px;
+    background: #f8f9fa;
+    border-top: 1px solid var(--border-color);
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 15px;
+    flex-shrink: 0;
 }
 
-.controls-toggle:hover {
-    background: var(--primary-hover);
-}
-
-.controls-content {
-    padding: 12px;
-    display: none;
-}
-
-.controls.expanded .controls-content {
-    display: block;
-}
-
-.controls-grid {
-    display: grid;
+.controls-left {
+    display: flex;
+    align-items: center;
     gap: 10px;
+}
+
+.controls-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .control-button {
     background: white;
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    padding: 6px 12px;
-    border-radius: 8px;
+    padding: 5px 10px;
+    border-radius: 6px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
 }
 
 .control-button:hover {
@@ -348,14 +321,15 @@ header h1 {
 
 /* Selectors */
 .control-select {
-    padding: 5px 8px;
+    padding: 4px 8px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: white;
     font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.3s ease;
-    width: 100%;
+    min-width: 100px;
+    max-width: 150px;
 }
 
 .control-select:hover {
@@ -371,47 +345,46 @@ header h1 {
 .model-selector,
 .tts-engine-selector,
 .voice-selector {
-    display: grid;
-    grid-template-columns: 80px 1fr;
+    display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
 }
 
 .model-selector label,
 .tts-engine-selector label,
 .voice-selector label {
     font-weight: 500;
-    color: var(--text-primary);
-    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
     white-space: nowrap;
 }
 
 /* TTS Controls Group */
 .tts-controls {
-    display: grid;
-    gap: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 /* TTS Toggle */
 .tts-toggle {
     display: flex;
     align-items: center;
-    padding: 5px 0;
 }
 
 .tts-toggle label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
     cursor: pointer;
     font-weight: 500;
     color: var(--text-primary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .tts-toggle input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     cursor: pointer;
 }
 

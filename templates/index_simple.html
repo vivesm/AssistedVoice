@@ -53,46 +53,36 @@
             </div>
         </div>
 
-        <!-- Collapsible Controls -->
-        <div class="controls collapsed" id="controlsPanel">
-            <button class="controls-toggle" id="controlsToggle">
-                <span>⚙️ Settings</span>
-                <span id="toggleIcon">▶</span>
-            </button>
-            <div class="controls-content">
-                <div class="controls-grid">
-                    <button id="clearButton" class="control-button">🗑️ Clear Chat</button>
-                    
-                    <!-- Model Selector -->
-                    <div class="model-selector">
-                        <label for="modelSelect">AI Model:</label>
-                        <select id="modelSelect" class="control-select">
-                            <option value="">Loading...</option>
-                        </select>
+        <!-- Controls Toolbar -->
+        <div class="controls" id="controlsPanel">
+            <div class="controls-left">
+                <button id="clearButton" class="control-button">Clear</button>
+                
+                <div class="model-selector">
+                    <label for="modelSelect">Model:</label>
+                    <select id="modelSelect" class="control-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="controls-right">
+                <div class="tts-controls">
+                    <div class="tts-toggle">
+                        <label>
+                            <input type="checkbox" id="ttsToggle" checked>
+                            <span>Voice</span>
+                        </label>
                     </div>
                     
-                    <!-- TTS Controls -->
-                    <div class="tts-controls">
-                        <div class="tts-toggle">
-                            <label>
-                                <input type="checkbox" id="ttsToggle" checked>
-                                <span>Enable Voice</span>
-                            </label>
-                        </div>
-                        
-                        <div class="tts-engine-selector">
-                            <label for="ttsEngineSelect">Voice Type:</label>
-                            <select id="ttsEngineSelect" class="control-select">
-                                <option value="">Loading...</option>
-                            </select>
-                        </div>
-                        
-                        <div class="voice-selector">
-                            <label for="voiceSelect">Voice:</label>
-                            <select id="voiceSelect" class="control-select">
-                                <option value="">Select engine first</option>
-                            </select>
-                        </div>
+                    <div class="voice-selector">
+                        <select id="voiceSelect" class="control-select">
+                            <option value="en-US-JennyNeural">Jenny (Female)</option>
+                            <option value="en-US-GuyNeural">Guy (Male)</option>
+                            <option value="en-US-AriaNeural">Aria (Female)</option>
+                            <option value="en-GB-SoniaNeural">Sonia (British)</option>
+                            <option value="en-GB-RyanNeural">Ryan (British)</option>
+                        </select>
                     </div>
                 </div>
             </div>

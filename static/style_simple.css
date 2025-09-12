@@ -160,7 +160,7 @@ header h1 {
 
 /* Input Section */
 .input-section {
-    padding: 10px 15px;
+    padding: 12px 15px 20px 15px;
     background: white;
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
@@ -169,7 +169,7 @@ header h1 {
 .action-container {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 10px;
     position: relative;
 }
 
@@ -178,8 +178,8 @@ header h1 {
     color: white;
     border: none;
     border-radius: 50%;
-    width: 45px;
-    height: 45px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -187,6 +187,7 @@ header h1 {
     transition: all 0.3s ease;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
     flex-shrink: 0;
+    order: -1;
 }
 
 .record-button:hover {
@@ -246,11 +247,12 @@ header h1 {
 
 .text-input {
     flex: 1;
-    padding: 8px 14px;
+    padding: 10px 14px;
     border: 2px solid var(--border-color);
     border-radius: 20px;
     font-size: 0.95rem;
     transition: all 0.3s ease;
+    height: 40px;
 }
 
 .text-input:focus {
@@ -263,12 +265,13 @@ header h1 {
     background: var(--primary-color);
     color: white;
     border: none;
-    padding: 8px 20px;
+    padding: 10px 20px;
     border-radius: 20px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
     font-size: 0.9rem;
+    height: 40px;
 }
 
 .send-button:hover {
@@ -278,13 +281,14 @@ header h1 {
 
 /* Controls Toolbar */
 .controls {
-    padding: 8px 15px;
+    padding: 0 15px 8px 15px;
     background: #f8f9fa;
-    border-top: 1px solid var(--border-color);
+    border-top: none;
     display: flex;
     align-items: center;
     gap: 15px;
     flex-shrink: 0;
+    min-height: 40px;
 }
 
 .controls-left {

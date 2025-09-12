@@ -44,7 +44,7 @@ vad:
   
 # Text-to-Speech
 tts:
-  engine: "none"              # Options: macos, pyttsx3, edge-tts, none (text-only mode)
+  engine: "edge-tts"          # Options: macos, pyttsx3, edge-tts, none (text-only mode)
   
   # macOS voices
   voice: "Samantha"           # macOS voice name

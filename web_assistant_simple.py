@@ -130,11 +130,13 @@ def handle_audio(data):
         emit('response_complete', {'text': response_text})
         
         # Generate TTS if enabled by user
-        if enable_tts and config['tts']['engine'] == 'macos':
+        if enable_tts and config['tts']['engine'] != 'none':
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
-            import subprocess
-            voice = config['tts'].get('voice', 'Samantha')
-            subprocess.run(['say', '-v', voice, response_text])
+            # Use the TTS engine we initialized
+            if hasattr(tts, 'speak_async'):
+                tts.speak_async(response_text)
+            else:
+                tts.speak(response_text)
             emit('tts_complete', {})
         
         emit('status', {'message': 'Ready', 'type': 'ready'})
@@ -168,11 +170,13 @@ def handle_text(data):
         emit('response_complete', {'text': response_text})
         
         # Generate TTS if enabled by user
-        if enable_tts and config['tts']['engine'] == 'macos':
+        if enable_tts and config['tts']['engine'] != 'none':
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
-            import subprocess
-            voice = config['tts'].get('voice', 'Samantha')
-            subprocess.run(['say', '-v', voice, response_text])
+            # Use the TTS engine we initialized
+            if hasattr(tts, 'speak_async'):
+                tts.speak_async(response_text)
+            else:
+                tts.speak(response_text)
             emit('tts_complete', {})
         
         emit('status', {'message': 'Ready', 'type': 'ready'})

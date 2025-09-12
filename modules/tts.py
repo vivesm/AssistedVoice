@@ -368,7 +368,7 @@ def create_tts_engine(config: dict) -> TTSEngine:
     """Factory function to create TTS engine"""
     engine_type = config['tts'].get('engine', 'macos')
     
-    if engine_type == 'none' or config['ui'].get('mode') == 'text':
+    if engine_type == 'none':
         return SilentTTS(config)
     elif engine_type == 'edge-tts' or engine_type == 'edge':
         return EdgeTTS(config)

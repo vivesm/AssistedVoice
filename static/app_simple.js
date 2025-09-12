@@ -65,6 +65,16 @@ function initializeWebSocket() {
     socket.on('conversation_cleared', () => {
         clearChatDisplay();
     });
+    
+    socket.on('model_changed', (data) => {
+        updateStatus(`Model changed to ${data.model}`, 'ready');
+        loadModels();
+    });
+    
+    socket.on('tts_changed', (data) => {
+        updateStatus('Voice settings updated', 'ready');
+        loadTTSEngines();
+    });
 }
 
 /**
@@ -105,6 +115,38 @@ function setupEventListeners() {
         ttsEnabled = e.target.checked;
         localStorage.setItem('ttsEnabled', ttsEnabled);
         updateStatus(ttsEnabled ? 'Voice enabled' : 'Text-only mode', 'ready');
+    });
+    
+    // Model selector
+    const modelSelect = document.getElementById('modelSelect');
+    modelSelect.addEventListener('change', (e) => {
+        const model = e.target.value;
+        if (model) {
+            socket.emit('change_model', { model: model });
+            localStorage.setItem('selectedModel', model);
+        }
+    });
+    
+    // TTS Engine selector
+    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
+    ttsEngineSelect.addEventListener('change', (e) => {
+        const engine = e.target.value;
+        if (engine) {
+            socket.emit('change_tts', { engine: engine });
+            localStorage.setItem('selectedTTSEngine', engine);
+            loadVoices(engine);
+        }
+    });
+    
+    // Voice selector
+    const voiceSelect = document.getElementById('voiceSelect');
+    voiceSelect.addEventListener('change', (e) => {
+        const voice = e.target.value;
+        const engine = document.getElementById('ttsEngineSelect').value;
+        if (voice && engine) {
+            socket.emit('change_tts', { engine: engine, voice: voice });
+            localStorage.setItem(`selectedVoice_${engine}`, voice);
+        }
     });
 }
 
@@ -351,8 +393,112 @@ async function fetchConfig() {
         
         const modelInfo = document.getElementById('model-info');
         modelInfo.textContent = `Model: ${config.model} | Whisper: ${config.whisper_model}`;
+        
+        // Load available models and TTS options
+        loadModels();
+        loadTTSEngines();
     } catch (err) {
         console.error('Failed to fetch config:', err);
+    }
+}
+
+/**
+ * Load available models
+ */
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        
+        const modelSelect = document.getElementById('modelSelect');
+        const savedModel = localStorage.getItem('selectedModel');
+        
+        modelSelect.innerHTML = '';
+        data.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            if (model === data.current || model === savedModel) {
+                option.selected = true;
+            }
+            modelSelect.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load models:', err);
+    }
+}
+
+/**
+ * Load TTS engines
+ */
+async function loadTTSEngines() {
+    try {
+        const response = await fetch('/api/tts-engines');
+        const data = await response.json();
+        
+        const ttsEngineSelect = document.getElementById('ttsEngineSelect');
+        const savedEngine = localStorage.getItem('selectedTTSEngine');
+        
+        ttsEngineSelect.innerHTML = '';
+        data.engines.forEach(engine => {
+            const option = document.createElement('option');
+            option.value = engine.value;
+            option.textContent = engine.label;
+            if (engine.value === data.current || engine.value === savedEngine) {
+                option.selected = true;
+            }
+            ttsEngineSelect.appendChild(option);
+        });
+        
+        // Load voices for the current engine
+        const currentEngine = ttsEngineSelect.value || data.current;
+        if (currentEngine && currentEngine !== 'none') {
+            loadVoices(currentEngine);
+        }
+    } catch (err) {
+        console.error('Failed to load TTS engines:', err);
+    }
+}
+
+/**
+ * Load voices for specific engine
+ */
+async function loadVoices(engine) {
+    const voiceSelect = document.getElementById('voiceSelect');
+    
+    if (engine === 'none') {
+        voiceSelect.innerHTML = '<option value="">No voices available</option>';
+        voiceSelect.disabled = true;
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/voices/${engine}`);
+        const data = await response.json();
+        
+        const savedVoice = localStorage.getItem(`selectedVoice_${engine}`);
+        
+        voiceSelect.innerHTML = '';
+        voiceSelect.disabled = false;
+        
+        if (data.voices && data.voices.length > 0) {
+            data.voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.value;
+                option.textContent = voice.label;
+                if (voice.value === data.current || voice.value === savedVoice) {
+                    option.selected = true;
+                }
+                voiceSelect.appendChild(option);
+            });
+        } else {
+            voiceSelect.innerHTML = '<option value="">No voices available</option>';
+            voiceSelect.disabled = true;
+        }
+    } catch (err) {
+        console.error('Failed to load voices:', err);
+        voiceSelect.innerHTML = '<option value="">Error loading voices</option>';
+        voiceSelect.disabled = true;
     }
 }
 
@@ -364,6 +510,9 @@ function loadSettings() {
     const savedTTS = localStorage.getItem('ttsEnabled');
     if (savedTTS !== null) {
         ttsEnabled = savedTTS === 'true';
+    } else {
+        ttsEnabled = true; // Default to enabled
+        localStorage.setItem('ttsEnabled', 'true');
     }
     
     // Update UI

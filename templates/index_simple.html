@@ -58,11 +58,37 @@
         <!-- Controls -->
         <div class="controls">
             <button id="clearButton" class="control-button">Clear Chat</button>
-            <div class="tts-toggle">
-                <label>
-                    <input type="checkbox" id="ttsToggle">
-                    <span>Enable Voice Response</span>
-                </label>
+            
+            <!-- Model Selector -->
+            <div class="model-selector">
+                <label for="modelSelect">AI Model:</label>
+                <select id="modelSelect" class="control-select">
+                    <option value="">Loading models...</option>
+                </select>
+            </div>
+            
+            <!-- TTS Controls -->
+            <div class="tts-controls">
+                <div class="tts-toggle">
+                    <label>
+                        <input type="checkbox" id="ttsToggle" checked>
+                        <span>Voice Response</span>
+                    </label>
+                </div>
+                
+                <div class="tts-engine-selector">
+                    <label for="ttsEngineSelect">Voice Type:</label>
+                    <select id="ttsEngineSelect" class="control-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                
+                <div class="voice-selector">
+                    <label for="voiceSelect">Voice:</label>
+                    <select id="voiceSelect" class="control-select">
+                        <option value="">Select engine first</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>

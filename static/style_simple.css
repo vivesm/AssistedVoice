@@ -270,9 +270,11 @@ header h1 {
     background: #f9f9f9;
     border-top: 1px solid var(--border-color);
     display: flex;
-    justify-content: space-between;
+    gap: 20px;
     align-items: center;
+    justify-content: space-between;
     border-radius: 0 0 20px 20px;
+    flex-wrap: wrap;
 }
 
 .control-button {
@@ -292,10 +294,58 @@ header h1 {
     transform: translateY(-2px);
 }
 
+/* Selectors */
+.control-select {
+    padding: 8px 12px;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    background: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 120px;
+}
+
+.control-select:hover {
+    border-color: var(--primary-color);
+}
+
+.control-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+.model-selector,
+.tts-engine-selector,
+.voice-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.model-selector label,
+.tts-engine-selector label,
+.voice-selector label {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+/* TTS Controls Group */
+.tts-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
 /* TTS Toggle */
 .tts-toggle {
     display: flex;
     align-items: center;
+    margin-right: 10px;
 }
 
 .tts-toggle label {
@@ -347,5 +397,27 @@ header h1 {
     .record-button {
         width: 80px;
         height: 80px;
+    }
+    
+    .controls {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .tts-controls {
+        flex-direction: column;
+        width: 100%;
+        gap: 10px;
+    }
+    
+    .model-selector,
+    .tts-engine-selector,
+    .voice-selector {
+        width: 100%;
+    }
+    
+    .control-select {
+        width: 100%;
     }
 }

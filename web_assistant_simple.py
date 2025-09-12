@@ -76,6 +76,67 @@ def get_config():
         'tts_voice': config['tts'].get('voice', 'default')
     })
 
+@app.route('/api/models')
+def get_models():
+    """Get available Ollama models"""
+    try:
+        models = llm.client.list()
+        return jsonify({
+            'models': [model.model for model in models['models']],
+            'current': config['ollama']['model']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/tts-engines')
+def get_tts_engines():
+    """Get available TTS engines"""
+    engines = [
+        {'value': 'edge-tts', 'label': 'Neural (Realistic)'},
+        {'value': 'macos', 'label': 'Classic (System)'},
+        {'value': 'none', 'label': 'Disabled'}
+    ]
+    return jsonify({
+        'engines': engines,
+        'current': config['tts']['engine']
+    })
+
+@app.route('/api/voices/<engine>')
+def get_voices(engine):
+    """Get voices for specific TTS engine"""
+    try:
+        if engine == 'edge-tts':
+            from modules.tts import EdgeTTS
+            voices = EdgeTTS.list_voices()
+            # Filter for English voices and format
+            english_voices = []
+            for voice in voices:
+                if voice['Locale'].startswith('en-'):
+                    english_voices.append({
+                        'value': voice['ShortName'],
+                        'label': f"{voice['ShortName']} ({voice['Gender']})"
+                    })
+            return jsonify({
+                'voices': english_voices[:20],  # Limit to top 20
+                'current': config['tts'].get('edge_voice', 'en-US-JennyNeural')
+            })
+        elif engine == 'macos':
+            from modules.tts import MacOSTTS
+            import platform
+            if platform.system() == 'Darwin':
+                voices = MacOSTTS.list_voices()
+                voice_list = [{'value': v, 'label': v} for v in voices]
+                return jsonify({
+                    'voices': voice_list,
+                    'current': config['tts'].get('voice', 'Samantha')
+                })
+            else:
+                return jsonify({'voices': [], 'current': None})
+        else:
+            return jsonify({'voices': [], 'current': None})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
@@ -190,6 +251,53 @@ def handle_clear(data=None):
     """Clear conversation history"""
     llm.clear_conversation()
     emit('conversation_cleared', {})
+
+@socketio.on('change_model')
+def handle_change_model(data):
+    """Change the LLM model"""
+    global llm, config
+    try:
+        new_model = data.get('model')
+        if new_model:
+            # Update config
+            config['ollama']['model'] = new_model
+            # Reinitialize LLM with new model
+            llm = OllamaLLM(config)
+            emit('model_changed', {'model': new_model})
+            logger.info(f"Changed model to: {new_model}")
+    except Exception as e:
+        logger.error(f"Error changing model: {e}")
+        emit('error', {'message': str(e)})
+
+@socketio.on('change_tts')
+def handle_change_tts(data):
+    """Change TTS engine or voice"""
+    global tts, config
+    try:
+        engine = data.get('engine')
+        voice = data.get('voice')
+        
+        if engine:
+            config['tts']['engine'] = engine
+            
+        if voice:
+            if engine == 'edge-tts':
+                config['tts']['edge_voice'] = voice
+            elif engine == 'macos':
+                config['tts']['voice'] = voice
+        
+        # Reinitialize TTS with new settings
+        tts = create_tts_engine(config)
+        
+        # Update voice on existing engine if possible
+        if hasattr(tts, 'set_voice') and voice:
+            tts.set_voice(voice)
+            
+        emit('tts_changed', {'engine': engine, 'voice': voice})
+        logger.info(f"Changed TTS to engine: {engine}, voice: {voice}")
+    except Exception as e:
+        logger.error(f"Error changing TTS: {e}")
+        emit('error', {'message': str(e)})
 
 if __name__ == '__main__':
     # Initialize components

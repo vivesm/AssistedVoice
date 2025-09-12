@@ -13,8 +13,14 @@ webrtcvad                      # Voice activity detection
 pyyaml                         # Config file parsing
 python-dotenv                  # Environment variables
 
-# Optional TTS
+# Text-to-Speech
 pyttsx3                        # Fallback TTS engine
+edge-tts                       # Microsoft Edge TTS (realistic voices)
+
+# Web interface
+flask                          # Web framework
+flask-socketio                 # WebSocket support
+python-socketio                # Socket.IO client
 
 # Utilities
 keyboard                       # Keyboard input detection

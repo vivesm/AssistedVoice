@@ -9,6 +9,8 @@ from typing import Optional
 import pyttsx3
 from threading import Thread
 import queue
+import asyncio
+import edge_tts
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +187,117 @@ class SilentTTS(TTSEngine):
         pass
 
 
+class EdgeTTS(TTSEngine):
+    """Microsoft Edge TTS using edge-tts library"""
+    
+    def __init__(self, config: dict):
+        self.config = config
+        self.voice = config['tts'].get('edge_voice', 'en-US-JennyNeural')
+        self.rate = config['tts'].get('rate', '+0%')
+        self.volume = config['tts'].get('volume', '+0%')
+        self.pitch = config['tts'].get('pitch', '+0Hz')
+        logger.info(f"Edge TTS initialized with voice: {self.voice}")
+    
+    def speak(self, text: str):
+        """Speak text using edge-tts"""
+        try:
+            # Clean text for speech
+            text = self._clean_text(text)
+            
+            # Create temporary audio file
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Generate speech using edge-tts
+            asyncio.run(self._generate_speech(text, tmp_path))
+            
+            # Play the audio file
+            self._play_audio(tmp_path)
+            
+            # Clean up
+            os.unlink(tmp_path)
+            
+        except Exception as e:
+            logger.error(f"Edge TTS error: {e}")
+    
+    async def _generate_speech(self, text: str, output_path: str):
+        """Generate speech using edge-tts async API"""
+        communicate = edge_tts.Communicate(
+            text, 
+            self.voice,
+            rate=self.rate,
+            volume=self.volume,
+            pitch=self.pitch
+        )
+        await communicate.save(output_path)
+    
+    def _play_audio(self, audio_path: str):
+        """Play audio file using system command"""
+        import platform
+        system = platform.system()
+        
+        if system == 'Darwin':  # macOS
+            subprocess.run(['afplay', audio_path], capture_output=True)
+        elif system == 'Linux':
+            # Try different Linux audio players
+            for player in ['aplay', 'paplay', 'ffplay']:
+                if subprocess.run(['which', player], capture_output=True).returncode == 0:
+                    subprocess.run([player, audio_path], capture_output=True)
+                    break
+        elif system == 'Windows':
+            # Windows Media Player
+            subprocess.run(['start', '', audio_path], shell=True, capture_output=True)
+    
+    def speak_async(self, text: str):
+        """Speak text asynchronously"""
+        thread = Thread(target=self.speak, args=(text,))
+        thread.daemon = True
+        thread.start()
+    
+    def _clean_text(self, text: str) -> str:
+        """Clean text for speech output"""
+        # Remove markdown formatting
+        text = text.replace('**', '').replace('*', '')
+        text = text.replace('```', '').replace('`', '')
+        text = text.replace('#', '')
+        
+        # Remove URLs
+        import re
+        text = re.sub(r'http[s]?://\S+', 'link', text)
+        
+        # Remove excessive whitespace
+        text = ' '.join(text.split())
+        
+        return text
+    
+    def set_voice(self, voice: str):
+        """Set voice"""
+        self.voice = voice
+    
+    def set_rate(self, rate: str):
+        """Set speech rate (e.g., '+50%', '-25%')"""
+        self.rate = rate
+    
+    def set_volume(self, volume: str):
+        """Set volume (e.g., '+50%', '-25%')"""
+        self.volume = volume
+    
+    def set_pitch(self, pitch: str):
+        """Set pitch (e.g., '+50Hz', '-25Hz')"""
+        self.pitch = pitch
+    
+    @staticmethod
+    async def list_voices_async():
+        """List available Edge TTS voices asynchronously"""
+        voices = await edge_tts.list_voices()
+        return voices
+    
+    @staticmethod
+    def list_voices():
+        """List available Edge TTS voices"""
+        return asyncio.run(EdgeTTS.list_voices_async())
+
+
 class StreamingTTS:
     """TTS with streaming support for real-time synthesis"""
     
@@ -257,6 +370,8 @@ def create_tts_engine(config: dict) -> TTSEngine:
     
     if engine_type == 'none' or config['ui'].get('mode') == 'text':
         return SilentTTS(config)
+    elif engine_type == 'edge-tts' or engine_type == 'edge':
+        return EdgeTTS(config)
     elif engine_type == 'macos':
         # Check if on macOS
         import platform

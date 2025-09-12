@@ -45,9 +45,22 @@ vad:
 # Text-to-Speech
 tts:
   engine: "none"              # Options: macos, pyttsx3, edge-tts, none (text-only mode)
+  
+  # macOS voices
   voice: "Samantha"           # macOS voice name
-  rate: 180                   # Speech rate (words per minute)
-  volume: 0.9                 # Volume (0.0-1.0)
+  
+  # Edge TTS voices (examples of popular English voices)
+  edge_voice: "en-US-JennyNeural"  # Options: en-US-JennyNeural (female), en-US-GuyNeural (male), 
+                                    # en-US-AriaNeural (female), en-US-ChristopherNeural (male)
+                                    # en-GB-SoniaNeural (British female), en-GB-RyanNeural (British male)
+                                    # See full list: edge-tts --list-voices
+  
+  # Speech parameters  
+  rate: 180                   # Speech rate (words per minute for macOS/pyttsx3)
+                             # For edge-tts use: "+0%" (normal), "+50%" (faster), "-25%" (slower)
+  volume: 0.9                 # Volume (0.0-1.0 for macOS/pyttsx3)
+                             # For edge-tts use: "+0%" (normal), "+50%" (louder), "-25%" (quieter)
+  pitch: "+0Hz"              # Pitch adjustment for edge-tts (e.g., "+50Hz" higher, "-25Hz" lower)
   
 # Hotkeys
 hotkeys:

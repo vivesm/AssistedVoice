@@ -11,6 +11,7 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Text Input**: Type messages when you prefer not to speak
 - **Model Selection**: Switch between Ollama models on the fly
 - **Real-time Processing**: Fast responses with streaming support
+- **Realistic Voices**: Microsoft Edge neural voices for natural-sounding speech
 
 ### 🚀 Optimized for Apple Silicon
 - Metal Performance Shaders acceleration
@@ -106,7 +107,18 @@ whisper:
 ### Text-to-Speech
 ```yaml
 tts:
-  engine: "macos"             # Options: macos, pyttsx3, none
+  engine: "edge-tts"          # Options: edge-tts, macos, pyttsx3, none
+  
+  # Edge TTS voices (realistic neural voices)
+  edge_voice: "en-US-JennyNeural"  # Female US voice
+  # Other options:
+  # - en-US-GuyNeural (Male US)
+  # - en-US-AriaNeural (Female US, younger)
+  # - en-GB-SoniaNeural (Female British)
+  # - en-GB-RyanNeural (Male British)
+  # Run: edge-tts --list-voices for full list
+  
+  # macOS voices
   voice: "Samantha"           # macOS voice name
   rate: 180                   # Words per minute
 ```

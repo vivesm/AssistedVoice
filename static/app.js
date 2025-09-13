@@ -12,6 +12,12 @@ let ttsEnabled = true; // Default to enabled
 let currentTTSEngine = 'edge-tts'; // Track current TTS engine
 let currentModel = null; // Track current model for responses
 
+// WebSocket reconnection settings
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 10;
+const baseReconnectDelay = 1000; // Start with 1 second
+let reconnectTimeout = null;
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
     initializeWebSocket();
@@ -23,16 +29,41 @@ document.addEventListener('DOMContentLoaded', () => {
  * Initialize WebSocket connection
  */
 function initializeWebSocket() {
-    socket = io();
+    // Clear any existing reconnect timeout
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+    }
+    
+    socket = io({
+        reconnection: true,
+        reconnectionAttempts: maxReconnectAttempts,
+        reconnectionDelay: baseReconnectDelay,
+        reconnectionDelayMax: 30000,
+        timeout: 20000
+    });
     
     socket.on('connect', () => {
+        reconnectAttempts = 0; // Reset counter on successful connection
         updateStatus('Connected', 'ready');
         console.log('Connected to server');
     });
     
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
         updateStatus('Disconnected', 'error');
         stopRecording();
+        console.log('Disconnected:', reason);
+        
+        // Handle reconnection with exponential backoff
+        if (reason === 'io server disconnect') {
+            // Server disconnected us, try to reconnect
+            attemptReconnection();
+        }
+    });
+    
+    socket.on('connect_error', (error) => {
+        console.error('Connection error:', error.message);
+        attemptReconnection();
     });
     
     socket.on('connected', (data) => {
@@ -74,7 +105,8 @@ function initializeWebSocket() {
     });
     
     socket.on('error', (data) => {
-        hideLoadingOverlay(); // Hide loading on any error
+        hideModelLoadingSpinner(); // Hide loading spinner on error
+        hideWhisperLoadingSpinner();
         showError(data.message);
     });
     
@@ -84,6 +116,7 @@ function initializeWebSocket() {
     
     socket.on('model_changed', (data) => {
         currentModel = data.model;  // Update current model
+        hideModelLoadingSpinner();  // Hide loading spinner when model changes
         updateStatus(`Model changed to ${data.model}`, 'ready');
         loadModels();
     });
@@ -93,13 +126,11 @@ function initializeWebSocket() {
     });
     
     socket.on('whisper_model_changed', (data) => {
-        hideLoadingOverlay();
+        hideWhisperLoadingSpinner();
         updateStatus(`Whisper model changed to ${data.model}`, 'ready');
     });
     
-    socket.on('loading_progress', (data) => {
-        updateLoadingProgress(data.message, data.progress);
-    });
+    // Loading progress removed - using simple inline spinners instead
 }
 
 /**
@@ -164,8 +195,8 @@ function setupEventListeners() {
     modelSelect.addEventListener('change', (e) => {
         const model = e.target.value;
         if (model) {
-            // Show loading overlay when switching models
-            showLoadingOverlay(model, `Loading ${model} model...`);
+            // Show loading spinner when switching models
+            showModelLoadingSpinner();
             socket.emit('change_model', { model: model });
             currentModel = model;
             localStorage.setItem('selectedModel', model);
@@ -178,7 +209,7 @@ function setupEventListeners() {
         whisperSelect.addEventListener('change', (e) => {
             const model = e.target.value;
             if (model) {
-                showLoadingOverlay(model, `Switching to ${model} model for speech recognition`);
+                showWhisperLoadingSpinner();
                 socket.emit('change_whisper_model', { model: model });
                 localStorage.setItem('selectedWhisperModel', model);
             }
@@ -367,6 +398,9 @@ function addMessage(role, text) {
     chatContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     
+    // Update container state to hide model selection
+    updateChatContainerState();
+    
     // Save conversation after adding message
     setTimeout(saveConversation, 100);
 }
@@ -551,6 +585,25 @@ function updateStatus(message, type) {
 }
 
 /**
+ * Attempt to reconnect with exponential backoff
+ */
+function attemptReconnection() {
+    if (reconnectAttempts >= maxReconnectAttempts) {
+        updateStatus('Connection failed. Please refresh the page.', 'error');
+        return;
+    }
+    
+    reconnectAttempts++;
+    const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts - 1), 30000);
+    
+    updateStatus(`Reconnecting... (Attempt ${reconnectAttempts}/${maxReconnectAttempts})`, 'warning');
+    
+    reconnectTimeout = setTimeout(() => {
+        socket.connect();
+    }, delay);
+}
+
+/**
  * Show error message
  */
 function showError(message) {
@@ -570,12 +623,38 @@ function showError(message) {
  */
 function clearChatDisplay() {
     const chatContainer = document.getElementById('chatContainer');
-    chatContainer.innerHTML = `
-        <div class="welcome-message">
-            <p>Conversation cleared!</p>
-            <p>Click the microphone to start recording, or type your message below.</p>
+    
+    // Re-add the model quick select UI
+    const modelSelectHTML = `
+        <div class="model-quick-select" id="modelQuickSelect">
+            <h2>Select a Model to Start</h2>
+            <div class="model-cards">
+                <button class="model-card" data-model="llama3.2:3b">
+                    <div class="model-name">Llama 3.2 (3B)</div>
+                    <div class="model-desc">Fast & Lightweight</div>
+                    <div class="model-speed">⚡ ~1s response</div>
+                </button>
+                <button class="model-card" data-model="mistral:latest">
+                    <div class="model-name">Mistral Latest</div>
+                    <div class="model-desc">Balanced Performance</div>
+                    <div class="model-speed">⚡⚡ Best overall</div>
+                </button>
+                <button class="model-card" data-model="qwen3:14b">
+                    <div class="model-name">Qwen3 (14B)</div>
+                    <div class="model-desc">High Quality</div>
+                    <div class="model-speed">🎯 Accurate responses</div>
+                </button>
+            </div>
         </div>
     `;
+    chatContainer.innerHTML = modelSelectHTML;
+    
+    // Re-setup event listeners for the new cards
+    setupModelQuickSelect();
+    
+    // Update container state
+    updateChatContainerState();
+    
     // Clear saved conversation
     localStorage.removeItem('assistedVoiceConversation');
 }
@@ -685,6 +764,12 @@ async function fetchConfig() {
         
         // Load saved conversation
         loadConversation();
+        
+        // Setup model quick select after loading config
+        setupModelQuickSelect();
+        
+        // Update container state
+        updateChatContainerState();
     } catch (err) {
         console.error('Failed to fetch config:', err);
     }
@@ -803,79 +888,80 @@ const modelLoadingTimes = {
     'turbo': 5
 };
 
-function showLoadingOverlay(modelName, message) {
-    const overlay = document.getElementById('loadingOverlay');
-    const title = document.getElementById('loadingTitle');
-    const messageEl = document.getElementById('loadingMessage');
-    const timeEl = document.getElementById('loadingTime');
-    const progressFill = document.getElementById('progressFill');
-    
-    const estimatedTime = modelLoadingTimes[modelName] || 5;
-    
-    title.textContent = `Loading ${modelName} model...`;
-    messageEl.textContent = message || 'Please wait while the model loads';
-    timeEl.textContent = `Estimated time: ~${estimatedTime} seconds`;
-    
-    // Reset progress
-    progressFill.style.width = '0%';
-    
-    overlay.classList.add('show');
-    
-    // Simulate progress (since we don't have real progress from the backend yet)
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += (100 / (estimatedTime * 10)); // Update every 100ms
-        if (progress > 90) progress = 90; // Don't go to 100% until we get confirmation
-        progressFill.style.width = `${progress}%`;
-        
-        if (progress >= 90) {
-            clearInterval(interval);
+/**
+ * Show model loading spinner
+ */
+let modelSpinnerTimeout = null;
+function showModelLoadingSpinner() {
+    const spinner = document.getElementById('modelLoadingSpinner');
+    const modelSelect = document.getElementById('modelSelect');
+    if (spinner) {
+        spinner.style.display = 'inline-block';
+        // Clear any existing timeout
+        if (modelSpinnerTimeout) {
+            clearTimeout(modelSpinnerTimeout);
+            modelSpinnerTimeout = null;
         }
-    }, 100);
-    
-    // Store interval ID for cleanup
-    overlay.progressInterval = interval;
-    
-    // Disable controls during loading
-    disableControls(true);
+    }
+    if (modelSelect) {
+        modelSelect.disabled = true;
+        modelSelect.parentElement.classList.add('loading');
+    }
 }
 
-function hideLoadingOverlay() {
-    const overlay = document.getElementById('loadingOverlay');
-    const progressFill = document.getElementById('progressFill');
+/**
+ * Hide model loading spinner
+ */
+function hideModelLoadingSpinner() {
+    // Ensure spinner shows for at least 500ms for visibility
+    const minDisplayTime = 500;
     
-    // Complete the progress bar
-    progressFill.style.width = '100%';
-    
-    // Clear any running progress interval
-    if (overlay.progressInterval) {
-        clearInterval(overlay.progressInterval);
-        overlay.progressInterval = null;
+    if (modelSpinnerTimeout) {
+        // Spinner is already scheduled to hide
+        return;
     }
     
-    // Hide after a brief delay to show completion
-    setTimeout(() => {
-        overlay.classList.remove('show');
-        // Re-enable controls
-        disableControls(false);
-    }, 500);
+    modelSpinnerTimeout = setTimeout(() => {
+        const spinner = document.getElementById('modelLoadingSpinner');
+        const modelSelect = document.getElementById('modelSelect');
+        if (spinner) {
+            spinner.style.display = 'none';
+        }
+        if (modelSelect) {
+            modelSelect.disabled = false;
+            modelSelect.parentElement.classList.remove('loading');
+        }
+        modelSpinnerTimeout = null;
+    }, minDisplayTime);
 }
 
-function updateLoadingProgress(message, progress) {
-    const messageEl = document.getElementById('loadingMessage');
-    const progressFill = document.getElementById('progressFill');
-    const overlay = document.getElementById('loadingOverlay');
-    
-    if (messageEl && overlay.classList.contains('show')) {
-        messageEl.textContent = message;
-        if (progressFill && progress !== undefined) {
-            // Clear any existing interval since we're getting real progress
-            if (overlay.progressInterval) {
-                clearInterval(overlay.progressInterval);
-                overlay.progressInterval = null;
-            }
-            progressFill.style.width = `${progress}%`;
-        }
+/**
+ * Show Whisper loading spinner
+ */
+function showWhisperLoadingSpinner() {
+    const spinner = document.getElementById('whisperLoadingSpinner');
+    const whisperSelect = document.getElementById('whisperSelect');
+    if (spinner) {
+        spinner.style.display = 'inline-block';
+    }
+    if (whisperSelect) {
+        whisperSelect.disabled = true;
+        whisperSelect.parentElement.classList.add('loading');
+    }
+}
+
+/**
+ * Hide Whisper loading spinner
+ */
+function hideWhisperLoadingSpinner() {
+    const spinner = document.getElementById('whisperLoadingSpinner');
+    const whisperSelect = document.getElementById('whisperSelect');
+    if (spinner) {
+        spinner.style.display = 'none';
+    }
+    if (whisperSelect) {
+        whisperSelect.disabled = false;
+        whisperSelect.parentElement.classList.remove('loading');
     }
 }
 
@@ -912,4 +998,87 @@ function loadSettings() {
     
     // Update voice selector based on engine
     updateVoiceSelector(currentTTSEngine);
+}
+
+/**
+ * Setup model quick select cards
+ */
+function setupModelQuickSelect() {
+    try {
+        const modelCards = document.querySelectorAll('.model-card');
+        
+        modelCards.forEach(card => {
+            card.addEventListener('click', (e) => {
+                try {
+                    const model = card.dataset.model;
+                    if (!model) {
+                        console.error('No model specified for card');
+                        showError('Unable to select model. Please try again.');
+                        return;
+                    }
+                    
+                    // Check if socket is connected
+                    if (!socket || !socket.connected) {
+                        showError('Not connected to server. Please wait...');
+                        attemptReconnection();
+                        return;
+                    }
+                    
+                    // Show loading spinner
+                    showModelLoadingSpinner();
+                    
+                    // Change the model with timeout
+                    const modelChangeTimeout = setTimeout(() => {
+                        hideModelLoadingSpinner();
+                        showError('Model change timed out. Please try again.');
+                    }, 30000);
+                    
+                    // Listen for successful model change
+                    socket.once('model_changed', () => {
+                        clearTimeout(modelChangeTimeout);
+                        hideModelLoadingSpinner();
+                    });
+                    
+                    socket.once('error', () => {
+                        clearTimeout(modelChangeTimeout);
+                        hideModelLoadingSpinner();
+                    });
+                    
+                    // Change the model
+                    socket.emit('change_model', { model: model });
+                    currentModel = model;
+                    localStorage.setItem('selectedModel', model);
+                    
+                    // Update the model selector dropdown
+                    const modelSelect = document.getElementById('modelSelect');
+                    if (modelSelect) {
+                        modelSelect.value = model;
+                    }
+                } catch (error) {
+                    console.error('Error in model card click:', error);
+                    hideModelLoadingSpinner();
+                    showError('Failed to change model. Please try again.');
+                }
+                
+                // Hide the quick select UI
+                updateChatContainerState();
+            });
+        });
+    } catch (error) {
+        console.error('Error setting up model quick select:', error);
+    }
+}
+
+/**
+ * Update chat container state (show/hide model selection)
+ */
+function updateChatContainerState() {
+    const chatContainer = document.getElementById('chatContainer');
+    const messages = chatContainer.querySelectorAll('.message');
+    
+    if (messages.length > 0) {
+        chatContainer.classList.add('has-messages');
+    } else {
+        chatContainer.classList.remove('has-messages');
+    }
 }

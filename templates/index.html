@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AssistedVoice - Push to Talk</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎤</text></svg>">
+    <link rel="stylesheet" href="/static/style.css?v=4">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
@@ -19,11 +20,28 @@
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
-            <div class="welcome-message">
-                <p>Welcome to AssistedVoice!</p>
-                <p>Click and hold the microphone button to record your message.</p>
-                <p>Or type your message in the text box below.</p>
+            <!-- Quick Model Selection -->
+            <div class="model-quick-select" id="modelQuickSelect">
+                <h2>Select a Model to Start</h2>
+                <div class="model-cards">
+                    <button class="model-card" data-model="llama3.2:3b">
+                        <div class="model-name">Llama 3.2 (3B)</div>
+                        <div class="model-desc">Fast & Lightweight</div>
+                        <div class="model-speed">⚡ ~1s response</div>
+                    </button>
+                    <button class="model-card" data-model="mistral:latest">
+                        <div class="model-name">Mistral Latest</div>
+                        <div class="model-desc">Balanced Performance</div>
+                        <div class="model-speed">⚡⚡ Best overall</div>
+                    </button>
+                    <button class="model-card" data-model="qwen3:14b">
+                        <div class="model-name">Qwen3 (14B)</div>
+                        <div class="model-desc">High Quality</div>
+                        <div class="model-speed">🎯 Accurate responses</div>
+                    </button>
+                </div>
             </div>
+            <!-- Messages will appear here -->
         </div>
 
         <!-- Input Section -->
@@ -61,6 +79,7 @@
                     <select id="modelSelect" class="control-select">
                         <option value="">Loading...</option>
                     </select>
+                    <div id="modelLoadingSpinner" class="inline-spinner" style="display: none;"></div>
                 </div>
                 
                 <div class="model-selector">
@@ -73,6 +92,7 @@
                         <option value="large">Large</option>
                         <option value="turbo" selected>Turbo (Optimized)</option>
                     </select>
+                    <div id="whisperLoadingSpinner" class="inline-spinner" style="display: none;"></div>
                 </div>
             </div>
             
@@ -97,22 +117,9 @@
         </div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <h3 id="loadingTitle">Loading...</h3>
-            <p id="loadingMessage">Please wait while the model loads</p>
-            <div class="loading-progress">
-                <div class="progress-bar">
-                    <div id="progressFill" class="progress-fill"></div>
-                </div>
-                <p id="loadingTime">Estimated time: ~5 seconds</p>
-            </div>
-        </div>
-    </div>
+    <!-- Loading overlay removed - using inline spinners instead -->
 
     <!-- Simple JavaScript -->
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

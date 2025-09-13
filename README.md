@@ -13,6 +13,7 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Improved Button Layout**: Voice button repositioned for better ergonomics
 - **Flask Template Auto-reload**: Development mode with automatic template updates
 - **Fixed TTS for Voice Input**: Proper TTS response for both voice and text messages
+- **Code Cleanup**: Removed dead code, commented debug logs for production readiness
 
 ### December 2024
 - **Performance Metrics**: Real-time display of response time, first token latency, and tokens/second

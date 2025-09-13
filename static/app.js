@@ -722,7 +722,7 @@ function appendToCurrentResponse(text) {
         // Add timestamp (will be updated when complete)
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-time';
-        timestampDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        timestampDiv.innerHTML = `${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'Assistant'}`;
         
         // Assemble message structure
         contentWrapper.appendChild(contentDiv);
@@ -760,11 +760,28 @@ function completeResponse(fullText) {
             playSound('receive');
         }
         
-        // Update timestamp with simple time
+        // Update timestamp with metrics
         const timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
-        if (timestampDiv) {
+        if (timestampDiv && messageStartTime) {
             const now = new Date();
-            timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const totalTime = Date.now() - messageStartTime;
+            const firstTokenDelay = firstTokenTime ? firstTokenTime - messageStartTime : 0;
+            const tokensPerSecond = tokenCount > 0 && totalTime > 0 ? 
+                (tokenCount / (totalTime / 1000)).toFixed(1) : 0;
+            
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const totalSec = (totalTime / 1000).toFixed(1);
+            const firstSec = (firstTokenDelay / 1000).toFixed(2);
+            
+            timestampDiv.innerHTML = `
+                ${timeStr} • ${currentModel || 'llama3.2:3b'}<br>
+                <span style="font-size: 11px; opacity: 0.7;">${totalSec}s total • ${firstSec}s first • ${tokensPerSecond} tokens/s</span>
+            `;
+        } else if (timestampDiv) {
+            const now = new Date();
+            timestampDiv.innerHTML = `
+                ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'llama3.2:3b'}
+            `;
         }
     }
     
@@ -881,14 +898,14 @@ function clearChatDisplay() {
  */
 function saveConversation() {
     const messages = [];
-    const messageElements = document.querySelectorAll('.message');
+    const messageElements = document.querySelectorAll('#messages .message');
     
     messageElements.forEach(elem => {
-        const label = elem.querySelector('.message-label')?.textContent;
+        const isUser = elem.classList.contains('user');
         const content = elem.querySelector('.message-content')?.textContent;
-        if (label && content) {
+        if (content) {
             messages.push({
-                role: label === 'You' ? 'user' : 'assistant',
+                role: isUser ? 'user' : 'assistant',
                 content: content
             });
         }
@@ -896,7 +913,7 @@ function saveConversation() {
     
     if (messages.length > 0) {
         localStorage.setItem('assistedVoiceConversation', JSON.stringify({
-            version: 1,
+            version: 2,
             timestamp: Date.now(),
             messages: messages
         }));
@@ -912,55 +929,58 @@ function loadConversation() {
         if (!saved) return;
         
         const data = JSON.parse(saved);
-        if (data.version !== 1) return; // Skip if version mismatch
+        if (data.version !== 2 && data.version !== 1) return; // Accept both versions
         
-        const chatContainer = document.getElementById('chatContainer');
+        // Hide welcome and show messages
+        const welcome = document.getElementById('welcome');
+        const messages = document.getElementById('messages');
         
-        // Remove welcome message if it exists
-        const welcomeMsg = chatContainer.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
+        if (!messages) return;
+        
+        if (welcome) {
+            welcome.style.display = 'none';
         }
+        
+        messages.classList.add('active');
         
         // Restore messages
         data.messages.forEach(msg => {
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${msg.role}-message`;
+            messageDiv.className = `message ${msg.role === 'user' ? 'user' : 'assistant'}`;
             
-            const labelDiv = document.createElement('div');
-            labelDiv.className = 'message-label';
-            labelDiv.textContent = msg.role === 'user' ? 'You' : 'Assistant';
+            // Add avatar
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            avatarDiv.textContent = msg.role === 'user' ? '👤' : '🤖';
             
-            // Add speaker button for assistant messages
-            if (msg.role === 'assistant') {
-                const speakerButton = document.createElement('button');
-                speakerButton.className = 'speaker-button';
-                speakerButton.innerHTML = '🔊';
-                speakerButton.title = 'Speak this message';
-                speakerButton.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    speakText(msg.content);
-                });
-                labelDiv.appendChild(speakerButton);
-            }
+            // Add content wrapper
+            const contentWrapper = document.createElement('div');
             
+            // Add message content
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             contentDiv.textContent = msg.content;
             
+            // Add timestamp
             const timestampDiv = document.createElement('div');
-            timestampDiv.className = 'message-timestamp';
+            timestampDiv.className = 'message-time';
             timestampDiv.textContent = 'Restored';
             
-            messageDiv.appendChild(labelDiv);
-            messageDiv.appendChild(contentDiv);
-            messageDiv.appendChild(timestampDiv);
+            // Assemble message structure
+            contentWrapper.appendChild(contentDiv);
+            contentWrapper.appendChild(timestampDiv);
             
-            chatContainer.appendChild(messageDiv);
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentWrapper);
+            
+            messages.appendChild(messageDiv);
         });
         
         // Scroll to bottom
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+        const chatContainer = document.getElementById('chatContainer');
+        if (chatContainer) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
         
     } catch (err) {
         console.error('Failed to load conversation:', err);

@@ -155,7 +155,10 @@ function setupEventListeners() {
     modelSelect.addEventListener('change', (e) => {
         const model = e.target.value;
         if (model) {
+            // Show loading overlay when switching models
+            showLoadingOverlay(model, `Loading ${model} model...`);
             socket.emit('change_model', { model: model });
+            currentModel = model;
             localStorage.setItem('selectedModel', model);
         }
     });
@@ -285,6 +288,12 @@ function sendTextMessage() {
     // Clear input
     textInput.value = '';
     
+    // Show typing indicator immediately
+    showTypingIndicator();
+    
+    // Update status subtly
+    updateStatus('Thinking...', 'processing');
+    
     // Send to server
     socket.emit('process_text', { 
         text: text,
@@ -347,10 +356,48 @@ let currentResponse = '';
 let currentResponseDiv = null;
 
 /**
+ * Show typing indicator with animated dots
+ */
+function showTypingIndicator() {
+    const chatContainer = document.getElementById('chatContainer');
+    
+    // Remove any existing typing indicator
+    const existing = document.querySelector('.typing-indicator');
+    if (existing) existing.remove();
+    
+    // Remove welcome message if it exists
+    const welcomeMsg = chatContainer.querySelector('.welcome-message');
+    if (welcomeMsg) {
+        welcomeMsg.style.display = 'none';
+    }
+    
+    // Create typing indicator
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message assistant-message typing-indicator';
+    typingDiv.innerHTML = `
+        <div class="message-label">Assistant • ${currentModel || 'llama3.2:3b'}</div>
+        <div class="message-content">
+            <span class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </span>
+        </div>
+    `;
+    
+    chatContainer.appendChild(typingDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+/**
  * Start or append to streaming response
  */
 function appendToCurrentResponse(text) {
     if (!currentResponseDiv) {
+        // Remove typing indicator if it exists
+        const typingIndicator = document.querySelector('.typing-indicator');
+        if (typingIndicator) typingIndicator.remove();
+        
         // Create new message div for streaming
         const chatContainer = document.getElementById('chatContainer');
         

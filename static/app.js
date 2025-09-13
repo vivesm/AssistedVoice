@@ -20,9 +20,36 @@ let reconnectTimeout = null;
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    // Check for saved conversation before showing welcome
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
+    
+    const savedConversation = localStorage.getItem('assistedVoiceConversation');
+    let hasMessages = false;
+    
+    if (savedConversation) {
+        try {
+            const data = JSON.parse(savedConversation);
+            hasMessages = data.messages && data.messages.length > 0;
+        } catch (e) {
+            // console.error('Error checking saved conversation:', e);
+        }
+    }
+    
+    // Show appropriate view immediately
+    if (hasMessages) {
+        // Hide welcome, show messages container
+        if (welcome) welcome.style.display = 'none';
+        if (messages) messages.classList.add('active');
+    } else {
+        // Ensure welcome is visible if no messages
+        if (welcome) welcome.style.display = 'flex';
+    }
+    
     initializeWebSocket();
     setupEventListeners();
     loadSettings();
+    loadConversation(); // This will populate the messages if they exist
 });
 
 /**
@@ -46,13 +73,13 @@ function initializeWebSocket() {
     socket.on('connect', () => {
         reconnectAttempts = 0; // Reset counter on successful connection
         updateStatus('Connected', 'ready');
-        console.log('Connected to server');
+        // console.log('Connected to server');
     });
     
     socket.on('disconnect', (reason) => {
         updateStatus('Disconnected', 'error');
         stopRecording();
-        console.log('Disconnected:', reason);
+        // console.log('Disconnected:', reason);
         
         // Handle reconnection with exponential backoff
         if (reason === 'io server disconnect') {
@@ -62,12 +89,12 @@ function initializeWebSocket() {
     });
     
     socket.on('connect_error', (error) => {
-        console.error('Connection error:', error.message);
+        // console.error('Connection error:', error.message);
         attemptReconnection();
     });
     
     socket.on('connected', (data) => {
-        console.log(data.status);
+        // console.log(data.status);
         fetchConfig();
     });
     
@@ -105,8 +132,7 @@ function initializeWebSocket() {
     });
     
     socket.on('error', (data) => {
-        hideModelLoadingSpinner(); // Hide loading spinner on error
-        hideWhisperLoadingSpinner();
+        // Loading spinners removed - not in simplified UI
         showError(data.message);
     });
     
@@ -115,9 +141,20 @@ function initializeWebSocket() {
     });
     
     socket.on('model_changed', (data) => {
+        // console.log('Model changed event received:', data.model);
         currentModel = data.model;  // Update current model
-        hideModelLoadingSpinner();  // Hide loading spinner when model changes
+        // Loading spinner removed - not in simplified UI
         updateStatus(`Model changed to ${data.model}`, 'ready');
+        
+        // Directly update model indicator to ensure it's visible
+        const modelIndicator = document.getElementById('modelIndicator');
+        if (modelIndicator) {
+            modelIndicator.textContent = data.model;
+            // console.log('Model indicator updated via socket to:', data.model);
+        } else {
+            // console.error('Model indicator element not found!');
+        }
+        
         loadModels();
     });
     
@@ -126,7 +163,7 @@ function initializeWebSocket() {
     });
     
     socket.on('whisper_model_changed', (data) => {
-        hideWhisperLoadingSpinner();
+        // Loading spinner removed
         updateStatus(`Whisper model changed to ${data.model}`, 'ready');
     });
     
@@ -234,43 +271,30 @@ function setupEventListeners() {
     // Settings Panel Event Listeners
     setupSettingsListeners();
     
-    // TTS engine selector
-    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
-    ttsEngineSelect.addEventListener('change', (e) => {
-        const engine = e.target.value;
-        currentTTSEngine = engine;
-        localStorage.setItem('ttsEngine', engine);
-        
-        // Update voice selector visibility and options
-        updateVoiceSelector(engine);
-        
-        // Update ttsEnabled based on engine
-        ttsEnabled = (engine !== 'none');
-        
-        // Notify server of engine change
-        if (engine !== 'none') {
-            const voiceSelect = document.getElementById('voiceSelect');
-            const voice = voiceSelect.value;
-            if (voice) {
-                socket.emit('change_tts', { engine: engine, voice: voice });
-            }
-        }
-        
-        updateStatus(engine === 'none' ? 'Text-only mode' : `Voice: ${engine}`, 'ready');
-    });
+    // TTS engine selector (if it exists - not in simplified UI)
+    // TTS engine selector removed - not in simplified UI
     
     // Model selector
     const modelSelect = document.getElementById('modelSelect');
-    modelSelect.addEventListener('change', (e) => {
-        const model = e.target.value;
-        if (model) {
-            // Show loading spinner when switching models
-            showModelLoadingSpinner();
-            socket.emit('change_model', { model: model });
-            currentModel = model;
-            localStorage.setItem('selectedModel', model);
-        }
-    });
+    if (modelSelect) {
+        modelSelect.addEventListener('change', (e) => {
+            const model = e.target.value;
+            if (model) {
+                // Show loading spinner when switching models
+                // Loading spinner removed - not in simplified UI
+                socket.emit('change_model', { model: model });
+                currentModel = model;
+                localStorage.setItem('selectedModel', model);
+                
+                // Immediately update model indicator
+                const modelIndicator = document.getElementById('modelIndicator');
+                if (modelIndicator) {
+                    modelIndicator.textContent = model;
+                    // console.log('Model indicator updated to:', model);
+                }
+            }
+        });
+    }
     
     // Whisper model selector
     const whisperSelect = document.getElementById('whisperSelect');
@@ -291,15 +315,36 @@ function setupEventListeners() {
         }
     }
     
-    // Voice selector
+    // Voice/TTS engine selector in menu
     const voiceSelect = document.getElementById('voiceSelect');
-    voiceSelect.addEventListener('change', (e) => {
-        const voice = e.target.value;
-        if (voice && currentTTSEngine !== 'none') {
-            socket.emit('change_tts', { engine: currentTTSEngine, voice: voice });
-            localStorage.setItem(`selectedVoice_${currentTTSEngine}`, voice);
+    if (voiceSelect) {
+        voiceSelect.addEventListener('change', (e) => {
+            const engine = e.target.value;
+            
+            // Update TTS settings based on selection
+            if (engine === 'none') {
+                ttsEnabled = false;
+                currentTTSEngine = 'none';
+            } else if (engine === 'edge-tts') {
+                ttsEnabled = true;
+                currentTTSEngine = 'edge-tts';
+                socket.emit('change_tts', { engine: 'edge-tts' });
+            } else if (engine === 'macos') {
+                ttsEnabled = true;
+                currentTTSEngine = 'macos';
+                socket.emit('change_tts', { engine: 'macos' });
+            }
+            
+            // Save preference
+            localStorage.setItem('ttsEngine', engine);
+        });
+        
+        // Load saved preference
+        const savedEngine = localStorage.getItem('ttsEngine');
+        if (savedEngine) {
+            voiceSelect.value = savedEngine;
         }
-    });
+    }
 }
 
 /**
@@ -410,32 +455,33 @@ function loadSavedSettings() {
     }
 }
 
-/**
- * Play a sound effect if enabled
- */
-function playSound(type) {
-    const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-    if (!soundEnabled) return;
-    
-    // Create audio element
-    const audio = new Audio();
-    
-    // Use different sounds for different events
-    switch(type) {
-        case 'send':
-            // Use a simple beep for send (data URI for a short beep sound)
-            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBBxypOXyvmMfBjiS2Oy9diMFl2z2wliWPTJW9XvuNxMEA';
-            break;
-        case 'receive':
-            // Use a different beep for receive
-            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCZypOXyvmMfBjiS2Oy9diMGlmz2wVmVPzNX9HvtOBQFBg';
-            audio.volume = 0.3;
-            break;
-    }
-    
-    // Play the sound
-    audio.play().catch(e => console.log('Could not play sound:', e));
-}
+// REMOVED: Unused sound effects functionality
+// /**
+//  * Play a sound effect if enabled
+//  */
+// function playSound(type) {
+//     const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+//     if (!soundEnabled) return;
+//     
+//     // Create audio element
+//     const audio = new Audio();
+//     
+//     // Use different sounds for different events
+//     switch(type) {
+//         case 'send':
+//             // Use a simple beep for send (data URI for a short beep sound)
+//             audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBBxypOXyvmMfBjiS2Oy9diMFl2z2wliWPTJW9XvuNxMEA';
+//             break;
+//         case 'receive':
+//             // Use a different beep for receive
+//             audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCZypOXyvmMfBjiS2Oy9diMGlmz2wVmVPzNX9HvtOBQFBg';
+//             audio.volume = 0.3;
+//             break;
+//     }
+//     
+//     // Play the sound
+//     audio.play().catch(e => {}); // Silently fail if sound cannot play
+// }
 
 /**
  * Start recording audio
@@ -497,6 +543,7 @@ async function startRecording() {
         
         if (voiceBtn) {
             voiceBtn.classList.add('recording');
+            document.body.classList.add('recording'); // Add visual feedback to body
         }
         if (recordingIndicator) {
             recordingIndicator.style.display = 'flex';
@@ -507,7 +554,7 @@ async function startRecording() {
         updateStatus('Recording... Click again to stop', 'recording');
         
     } catch (err) {
-        console.error('Error starting recording:', err);
+        // console.error('Error starting recording:', err);
         showError('Failed to start recording: ' + err.message);
     }
 }
@@ -534,6 +581,7 @@ function stopRecording() {
     
     if (voiceBtn) {
         voiceBtn.classList.remove('recording');
+        document.body.classList.remove('recording'); // Remove visual feedback from body
     }
     if (recordingIndicator) {
         recordingIndicator.style.display = 'none';
@@ -542,6 +590,15 @@ function stopRecording() {
         micIcon.style.display = 'block';
     }
     updateStatus('Processing...', 'processing');
+}
+
+/**
+ * Replay a message using TTS
+ */
+function replayMessage(text) {
+    if (ttsEnabled && text) {
+        socket.emit('replay_text', { text: text, enable_tts: true });
+    }
 }
 
 /**
@@ -597,10 +654,22 @@ function addMessage(role, text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
     
-    // Add avatar
+    // Add avatar with SVG icon
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'message-avatar';
-    avatarDiv.textContent = role === 'user' ? '👤' : '🤖';
+    if (role === 'user') {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+        `;
+    } else {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
+    }
     
     // Add content wrapper
     const contentWrapper = document.createElement('div');
@@ -616,6 +685,20 @@ function addMessage(role, text) {
     const now = new Date();
     timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
+    // Add speaker button for assistant messages
+    if (role === 'assistant' && ttsEnabled) {
+        const speakerBtn = document.createElement('button');
+        speakerBtn.className = 'message-speaker-btn';
+        speakerBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+        `;
+        speakerBtn.onclick = () => replayMessage(text);
+        timestampDiv.appendChild(speakerBtn);
+    }
+    
     // Assemble message structure
     contentWrapper.appendChild(contentDiv);
     contentWrapper.appendChild(timestampDiv);
@@ -628,10 +711,11 @@ function addMessage(role, text) {
         messages.appendChild(messageDiv);
         
         // Play sound effect if enabled
-        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-        if (soundEnabled) {
-            playSound(role === 'user' ? 'send' : 'receive');
-        }
+        // Commented out: Sound effects not implemented, playSound function doesn't exist
+        // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        // if (soundEnabled) {
+        //     playSound(role === 'user' ? 'send' : 'receive');
+        // }
         
         // Scroll to bottom
         const chatContainer = document.getElementById('chatContainer');
@@ -707,10 +791,14 @@ function appendToCurrentResponse(text) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
         
-        // Add avatar
+        // Add avatar with SVG icon
         const avatarDiv = document.createElement('div');
         avatarDiv.className = 'message-avatar';
-        avatarDiv.textContent = '🤖';
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
         
         // Add content wrapper
         const contentWrapper = document.createElement('div');
@@ -755,10 +843,11 @@ function appendToCurrentResponse(text) {
 function completeResponse(fullText) {
     if (currentResponseDiv) {
         // Play sound effect if enabled
-        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-        if (soundEnabled) {
-            playSound('receive');
-        }
+        // Commented out: Sound effects not implemented, playSound function doesn't exist
+        // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        // if (soundEnabled) {
+        //     playSound('receive');
+        // }
         
         // Update timestamp with metrics
         const timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
@@ -792,26 +881,7 @@ function completeResponse(fullText) {
     tokenCount = 0;
 }
 
-/**
- * Speak text using server-side TTS (reuse existing TTS pathway)
- */
-function speakText(text) {
-    if (!text || text.trim() === '') {
-        return;
-    }
-    
-    // Check socket connection
-    if (!socket || !socket.connected) {
-        console.error('WebSocket not connected');
-        return;
-    }
-    
-    // Send to server for TTS processing using the same pathway as responses
-    socket.emit('replay_text', { 
-        text: text.trim(),
-        enable_tts: true 
-    });
-}
+// speakText function removed - not used in simplified UI
 
 /**
  * Update status display
@@ -903,17 +973,20 @@ function saveConversation() {
     messageElements.forEach(elem => {
         const isUser = elem.classList.contains('user');
         const content = elem.querySelector('.message-content')?.textContent;
+        const metadata = elem.querySelector('.message-time')?.innerHTML; // Get full HTML including metrics
+        
         if (content) {
             messages.push({
                 role: isUser ? 'user' : 'assistant',
-                content: content
+                content: content,
+                metadata: metadata || null // Store metadata if available
             });
         }
     });
     
     if (messages.length > 0) {
         localStorage.setItem('assistedVoiceConversation', JSON.stringify({
-            version: 2,
+            version: 3, // Increment version for new format
             timestamp: Date.now(),
             messages: messages
         }));
@@ -929,7 +1002,7 @@ function loadConversation() {
         if (!saved) return;
         
         const data = JSON.parse(saved);
-        if (data.version !== 2 && data.version !== 1) return; // Accept both versions
+        if (data.version !== 3 && data.version !== 2 && data.version !== 1) return; // Accept all versions
         
         // Hide welcome and show messages
         const welcome = document.getElementById('welcome');
@@ -948,10 +1021,22 @@ function loadConversation() {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${msg.role === 'user' ? 'user' : 'assistant'}`;
             
-            // Add avatar
+            // Add avatar with SVG icon
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
-            avatarDiv.textContent = msg.role === 'user' ? '👤' : '🤖';
+            if (msg.role === 'user') {
+                avatarDiv.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                `;
+            } else {
+                avatarDiv.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+                    </svg>
+                `;
+            }
             
             // Add content wrapper
             const contentWrapper = document.createElement('div');
@@ -961,10 +1046,30 @@ function loadConversation() {
             contentDiv.className = 'message-content';
             contentDiv.textContent = msg.content;
             
-            // Add timestamp
+            // Add timestamp/metadata
             const timestampDiv = document.createElement('div');
             timestampDiv.className = 'message-time';
-            timestampDiv.textContent = 'Restored';
+            
+            // Use saved metadata if available (v3), otherwise show "Restored" (v1, v2)
+            if (msg.metadata) {
+                timestampDiv.innerHTML = msg.metadata; // Restore full HTML with metrics
+            } else {
+                timestampDiv.textContent = 'Restored'; // Fallback for old format
+            }
+            
+            // Add speaker button for assistant messages
+            if (msg.role === 'assistant' && ttsEnabled) {
+                const speakerBtn = document.createElement('button');
+                speakerBtn.className = 'message-speaker-btn';
+                speakerBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                `;
+                speakerBtn.onclick = () => replayMessage(msg.content);
+                timestampDiv.appendChild(speakerBtn);
+            }
             
             // Assemble message structure
             contentWrapper.appendChild(contentDiv);
@@ -983,7 +1088,7 @@ function loadConversation() {
         }
         
     } catch (err) {
-        console.error('Failed to load conversation:', err);
+        // console.error('Failed to load conversation:', err);
     }
 }
 
@@ -1008,7 +1113,7 @@ async function fetchConfig() {
         // Update container state
         updateChatContainerState();
     } catch (err) {
-        console.error('Failed to fetch config:', err);
+        // console.error('Failed to fetch config:', err);
     }
 }
 
@@ -1031,11 +1136,20 @@ async function loadModels() {
             if (model === data.current || model === savedModel) {
                 option.selected = true;
                 currentModel = model;  // Set current model
+                
+                // Update model indicator when loading
+                const modelIndicator = document.getElementById('modelIndicator');
+                if (modelIndicator) {
+                    modelIndicator.textContent = model;
+                    // console.log('Model indicator updated in loadModels to:', model);
+                } else {
+                    // console.error('Model indicator element not found in loadModels!');
+                }
             }
             modelSelect.appendChild(option);
         });
     } catch (err) {
-        console.error('Failed to load models:', err);
+        // console.error('Failed to load models:', err);
     }
 }
 
@@ -1043,18 +1157,20 @@ async function loadModels() {
  * Update voice selector based on TTS engine
  */
 function updateVoiceSelector(engine) {
-    const voiceSelector = document.getElementById('voiceSelector');
     const voiceSelect = document.getElementById('voiceSelect');
+    if (!voiceSelect) return;
+    
+    // Clear current options
+    voiceSelect.innerHTML = '';
     
     if (engine === 'none') {
-        // Hide voice selector for text-only mode
-        voiceSelector.style.display = 'none';
+        // Disable voice selector for text-only mode
+        voiceSelect.disabled = true;
+        const option = document.createElement('option');
+        option.textContent = 'Voice disabled';
+        voiceSelect.appendChild(option);
     } else {
-        // Show voice selector
-        voiceSelector.style.display = 'flex';
-        
-        // Clear current options
-        voiceSelect.innerHTML = '';
+        voiceSelect.disabled = false;
         
         if (engine === 'edge-tts') {
             // Neural voices
@@ -1104,103 +1220,12 @@ function updateVoiceSelector(engine) {
     }
 }
 
-/**
- * Load voice options (deprecated, kept for compatibility)
- */
-function loadSimpleVoices() {
-    // This function is now handled by updateVoiceSelector
-    const savedEngine = localStorage.getItem('ttsEngine') || 'edge-tts';
-    updateVoiceSelector(savedEngine);
-}
+// Removed loadSimpleVoices() - deprecated function
+// Voice loading is now handled directly by updateVoiceSelector()
 
-/**
- * Loading overlay functions
- */
-const modelLoadingTimes = {
-    'tiny': 2,
-    'base': 3,
-    'small': 5,
-    'medium': 10,
-    'large': 15,
-    'turbo': 5
-};
+// Removed modelLoadingTimes object - not used anywhere in the code
 
-/**
- * Show model loading spinner
- */
-let modelSpinnerTimeout = null;
-function showModelLoadingSpinner() {
-    const spinner = document.getElementById('modelLoadingSpinner');
-    const modelSelect = document.getElementById('modelSelect');
-    if (spinner) {
-        spinner.style.display = 'inline-block';
-        // Clear any existing timeout
-        if (modelSpinnerTimeout) {
-            clearTimeout(modelSpinnerTimeout);
-            modelSpinnerTimeout = null;
-        }
-    }
-    if (modelSelect) {
-        modelSelect.disabled = true;
-        modelSelect.parentElement.classList.add('loading');
-    }
-}
-
-/**
- * Hide model loading spinner
- */
-function hideModelLoadingSpinner() {
-    // Ensure spinner shows for at least 500ms for visibility
-    const minDisplayTime = 500;
-    
-    if (modelSpinnerTimeout) {
-        // Spinner is already scheduled to hide
-        return;
-    }
-    
-    modelSpinnerTimeout = setTimeout(() => {
-        const spinner = document.getElementById('modelLoadingSpinner');
-        const modelSelect = document.getElementById('modelSelect');
-        if (spinner) {
-            spinner.style.display = 'none';
-        }
-        if (modelSelect) {
-            modelSelect.disabled = false;
-            modelSelect.parentElement.classList.remove('loading');
-        }
-        modelSpinnerTimeout = null;
-    }, minDisplayTime);
-}
-
-/**
- * Show Whisper loading spinner
- */
-function showWhisperLoadingSpinner() {
-    const spinner = document.getElementById('whisperLoadingSpinner');
-    const whisperSelect = document.getElementById('whisperSelect');
-    if (spinner) {
-        spinner.style.display = 'inline-block';
-    }
-    if (whisperSelect) {
-        whisperSelect.disabled = true;
-        whisperSelect.parentElement.classList.add('loading');
-    }
-}
-
-/**
- * Hide Whisper loading spinner
- */
-function hideWhisperLoadingSpinner() {
-    const spinner = document.getElementById('whisperLoadingSpinner');
-    const whisperSelect = document.getElementById('whisperSelect');
-    if (spinner) {
-        spinner.style.display = 'none';
-    }
-    if (whisperSelect) {
-        whisperSelect.disabled = false;
-        whisperSelect.parentElement.classList.remove('loading');
-    }
-}
+// Loading spinner functions removed - not needed in simplified UI
 
 function disableControls(disabled) {
     const whisperSelect = document.getElementById('whisperSelect');
@@ -1225,7 +1250,7 @@ function loadSettings() {
     const savedEngine = localStorage.getItem('ttsEngine');
     if (savedEngine) {
         currentTTSEngine = savedEngine;
-        document.getElementById('ttsEngineSelect').value = savedEngine;
+        // ttsEngineSelect removed - not in simplified UI
         ttsEnabled = (savedEngine !== 'none');
     } else {
         currentTTSEngine = 'edge-tts';
@@ -1253,7 +1278,7 @@ function setupModelQuickSelect() {
                 try {
                     const model = btn.dataset.model;
                     if (!model) {
-                        console.error('No model specified for button');
+                        // console.error('No model specified for button');
                         showError('Unable to select model. Please try again.');
                         return;
                     }
@@ -1276,12 +1301,12 @@ function setupModelQuickSelect() {
                     // Listen for successful model change
                     socket.once('model_changed', () => {
                         clearTimeout(modelChangeTimeout);
-                        hideModelLoadingSpinner();
+                        // Loading spinner removed
                     });
                     
                     socket.once('error', () => {
                         clearTimeout(modelChangeTimeout);
-                        hideModelLoadingSpinner();
+                        // Loading spinner removed
                     });
                     
                     // Change the model
@@ -1295,8 +1320,8 @@ function setupModelQuickSelect() {
                         modelSelect.value = model;
                     }
                 } catch (error) {
-                    console.error('Error in model card click:', error);
-                    hideModelLoadingSpinner();
+                    // console.error('Error in model card click:', error);
+                    // Loading spinner removed
                     showError('Failed to change model. Please try again.');
                 }
                 
@@ -1305,7 +1330,7 @@ function setupModelQuickSelect() {
             });
         });
     } catch (error) {
-        console.error('Error setting up model quick select:', error);
+        // console.error('Error setting up model quick select:', error);
     }
 }
 

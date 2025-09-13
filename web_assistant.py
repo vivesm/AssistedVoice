@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
+
+# IMPORTANT: Template caching behavior
+# In development (debug=True): Templates auto-reload when changed
+# In production (debug=False): Templates are cached - restart server after changes
+# To force template reload without restart, set TEMPLATES_AUTO_RELOAD=True
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # Always reload templates when changed
+
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -417,7 +424,10 @@ if __name__ == '__main__':
         print("="*60 + "\n")
         
         # Run server
-        socketio.run(app, debug=False, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
+        # Set debug=True for development (auto-reloads templates and code)
+        # Set debug=False for production (better performance, caches templates)
+        debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+        socketio.run(app, debug=debug_mode, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
     else:
         print("Failed to initialize components")
         sys.exit(1)

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AssistedVoice</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
-    <link rel="stylesheet" href="/static/style-simple.css?v=3">
+    <link rel="stylesheet" href="/static/style-simple.css?v=13">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
@@ -39,27 +39,47 @@
         <main class="chat-container" id="chatContainer">
             <!-- Welcome State -->
             <div class="welcome" id="welcome">
-                <div class="welcome-emoji">💬</div>
+                <div class="welcome-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
+                        <circle cx="12" cy="12" r="1" fill="currentColor" opacity="0.3"/>
+                        <circle cx="8" cy="12" r="1" fill="currentColor" opacity="0.3"/>
+                        <circle cx="16" cy="12" r="1" fill="currentColor" opacity="0.3"/>
+                    </svg>
+                </div>
                 <h2>Start a conversation</h2>
-                <p>Choose a model or just start typing</p>
+                <p>Select a model to begin</p>
                 
                 <div class="model-grid">
                     <button class="model-btn" data-model="llama3.2:3b">
-                        <span class="model-emoji">⚡</span>
+                        <div class="model-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                        </div>
                         <span class="model-name">Llama 3.2</span>
-                        <span class="model-desc">Fast</span>
+                        <span class="model-desc">Fast & Efficient</span>
                     </button>
                     
                     <button class="model-btn" data-model="mistral:latest">
-                        <span class="model-emoji">⚖️</span>
+                        <div class="model-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>
+                            </svg>
+                        </div>
                         <span class="model-name">Mistral</span>
                         <span class="model-desc">Balanced</span>
                     </button>
                     
                     <button class="model-btn" data-model="qwen3:14b">
-                        <span class="model-emoji">🎯</span>
+                        <div class="model-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
                         <span class="model-name">Qwen3</span>
-                        <span class="model-desc">Accurate</span>
+                        <span class="model-desc">Advanced</span>
                     </button>
                 </div>
             </div>
@@ -71,6 +91,14 @@
         <!-- Input Bar -->
         <footer class="input-bar">
             <div class="input-wrapper">
+                <input 
+                    type="text" 
+                    class="text-input" 
+                    id="textInput" 
+                    placeholder="Type a message..."
+                    autocomplete="off"
+                />
+                
                 <button class="voice-btn" id="voiceBtn">
                     <svg class="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -82,14 +110,6 @@
                         <span></span><span></span><span></span>
                     </div>
                 </button>
-                
-                <input 
-                    type="text" 
-                    class="text-input" 
-                    id="textInput" 
-                    placeholder="Type a message..."
-                    autocomplete="off"
-                />
                 
                 <button class="send-btn" id="sendBtn">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -123,9 +143,9 @@
         <div class="menu-section">
             <h4>Voice</h4>
             <select class="voice-select" id="voiceSelect">
-                <option value="edge-tts">Neural Voice</option>
-                <option value="macos">System Voice</option>
-                <option value="none">No Voice</option>
+                <option value="edge-tts">Edge TTS (Neural)</option>
+                <option value="macos">macOS System Voice</option>
+                <option value="none">Text Only (No Voice)</option>
             </select>
         </div>
         
@@ -183,6 +203,6 @@
     <!-- Overlay -->
     <div class="overlay" id="overlay"></div>
 
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/app.js?v=17"></script>
 </body>
 </html>

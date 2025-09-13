@@ -50,6 +50,14 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     loadSettings();
     loadConversation(); // This will populate the messages if they exist
+    
+    // Ensure speaker buttons are updated after DOM is ready
+    setTimeout(() => {
+        console.log('Updating speaker buttons, ttsEnabled:', ttsEnabled, 'currentTTSEngine:', currentTTSEngine);
+        updateSpeakerButtons();
+    }, 100);
+    
+    loadChatHistory(); // Load chat history for the hamburger menu
 });
 
 /**
@@ -129,6 +137,13 @@ function initializeWebSocket() {
     
     socket.on('tts_complete', () => {
         updateStatus('Ready', 'ready');
+    });
+    
+    socket.on('audio_data', (data) => {
+        console.log('Received audio_data event:', data.audio ? 'Audio data present' : 'No audio data');
+        if (data.audio) {
+            playAudioData(data.audio);
+        }
     });
     
     socket.on('error', (data) => {
@@ -257,6 +272,19 @@ function setupEventListeners() {
         });
     }
     
+    // New Chat button
+    const newChatBtn = document.getElementById('newChatBtn');
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            startNewChat();
+            // Close the menu after starting new chat
+            const sideMenu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('overlay');
+            sideMenu.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
+    
     // Overlay click to close panels
     if (overlay) {
         overlay.addEventListener('click', () => {
@@ -337,6 +365,9 @@ function setupEventListeners() {
             
             // Save preference
             localStorage.setItem('ttsEngine', engine);
+            
+            // Update speaker buttons on existing messages
+            updateSpeakerButtons();
         });
         
         // Load saved preference
@@ -602,6 +633,54 @@ function replayMessage(text) {
 }
 
 /**
+ * Play audio data received from server
+ */
+function playAudioData(audioDataUrl) {
+    try {
+        console.log('Playing audio, data URL length:', audioDataUrl.length);
+        const audio = new Audio(audioDataUrl);
+        audio.volume = 1.0;
+        audio.play().then(() => {
+            console.log('Audio playback started successfully');
+        }).catch(err => {
+            console.error('Error playing audio:', err);
+        });
+    } catch (err) {
+        console.error('Error creating audio:', err);
+    }
+}
+
+/**
+ * Update speaker buttons on existing messages based on current TTS state
+ */
+function updateSpeakerButtons() {
+    const messages = document.querySelectorAll('.message.assistant .message-time');
+    
+    messages.forEach(timestampDiv => {
+        const existingBtn = timestampDiv.querySelector('.message-speaker-btn');
+        const messageContent = timestampDiv.parentElement.querySelector('.message-content');
+        const text = messageContent ? messageContent.textContent : '';
+        
+        if (ttsEnabled && !existingBtn && text) {
+            // Add speaker button
+            const speakerBtn = document.createElement('button');
+            speakerBtn.className = 'message-speaker-btn';
+            speakerBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+            `;
+            speakerBtn.onclick = () => replayMessage(text);
+            timestampDiv.appendChild(speakerBtn);
+        } else if (!ttsEnabled && existingBtn) {
+            // Remove speaker button
+            existingBtn.remove();
+        }
+    });
+}
+
+/**
  * Send text message
  */
 function sendTextMessage() {
@@ -774,6 +853,11 @@ function showTypingIndicator() {
  * Start or append to streaming response
  */
 function appendToCurrentResponse(text) {
+    // Only create message div if we have actual text to display
+    if (!text || text.trim() === '') {
+        return;
+    }
+    
     if (!currentResponseDiv) {
         // Hide welcome screen and show messages
         const welcome = document.getElementById('welcome');
@@ -841,6 +925,13 @@ function appendToCurrentResponse(text) {
  * Complete the streaming response
  */
 function completeResponse(fullText) {
+    // Don't complete if we have no text
+    if (!fullText || fullText.trim() === '') {
+        currentResponse = '';
+        currentResponseDiv = null;
+        return;
+    }
+    
     if (currentResponseDiv) {
         // Play sound effect if enabled
         // Commented out: Sound effects not implemented, playSound function doesn't exist
@@ -850,7 +941,7 @@ function completeResponse(fullText) {
         // }
         
         // Update timestamp with metrics
-        const timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
+        let timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
         if (timestampDiv && messageStartTime) {
             const now = new Date();
             const totalTime = Date.now() - messageStartTime;
@@ -871,6 +962,39 @@ function completeResponse(fullText) {
             timestampDiv.innerHTML = `
                 ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'llama3.2:3b'}
             `;
+        }
+        
+        // Re-query timestampDiv after innerHTML update and add speaker button
+        timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
+        console.log('Speaker button debug:', {
+            timestampDiv: !!timestampDiv,
+            ttsEnabled,
+            currentTTSEngine,
+            fullText: fullText?.substring(0, 50)
+        });
+        
+        // Always add speaker button for testing (removed TTS conditions temporarily)
+        if (timestampDiv) {
+            const speakerBtn = document.createElement('button');
+            speakerBtn.className = 'message-speaker-btn';
+            speakerBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+            `;
+            speakerBtn.onclick = () => {
+                console.log('Speaker button clicked, text:', fullText);
+                if (ttsEnabled && currentTTSEngine !== 'none') {
+                    replayMessage(fullText);
+                } else {
+                    console.log('TTS not enabled or engine is none');
+                }
+            };
+            timestampDiv.appendChild(speakerBtn);
+            console.log('Speaker button added successfully');
+        } else {
+            console.log('Could not find timestampDiv to add speaker button');
         }
     }
     
@@ -1246,20 +1370,37 @@ function disableControls(disabled) {
  * Load saved settings
  */
 function loadSettings() {
-    // Load TTS engine preference
+    // Load TTS engine preference with validation
     const savedEngine = localStorage.getItem('ttsEngine');
-    if (savedEngine) {
+    const validEngines = ['edge-tts', 'macos', 'none'];
+    
+    if (savedEngine && validEngines.includes(savedEngine)) {
         currentTTSEngine = savedEngine;
-        // ttsEngineSelect removed - not in simplified UI
         ttsEnabled = (savedEngine !== 'none');
+        
+        // Update voice selector to match saved setting
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = savedEngine;
+        }
     } else {
+        // Clear invalid or missing setting and set defaults
         currentTTSEngine = 'edge-tts';
         ttsEnabled = true;
         localStorage.setItem('ttsEngine', 'edge-tts');
+        
+        // Update voice selector to match default
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = 'edge-tts';
+        }
     }
     
-    // Update voice selector based on engine
+    // Update voice selector options based on engine
     updateVoiceSelector(currentTTSEngine);
+    
+    // Update speaker buttons on existing messages to match TTS state
+    updateSpeakerButtons();
     
     // Load theme and other settings
     loadSavedSettings();
@@ -1332,6 +1473,230 @@ function setupModelQuickSelect() {
     } catch (error) {
         // console.error('Error setting up model quick select:', error);
     }
+}
+
+/**
+ * Chat History Management Functions
+ */
+
+// Global variable to track current chat ID
+let currentChatId = 'current';
+
+/**
+ * Start a new chat
+ */
+function startNewChat() {
+    // Save current conversation if it has messages
+    const currentConversation = localStorage.getItem('assistedVoiceConversation');
+    if (currentConversation) {
+        const data = JSON.parse(currentConversation);
+        if (data.messages && data.messages.length > 0) {
+            saveChatToHistory(data.messages);
+        }
+    }
+    
+    // Clear current conversation
+    clearChatDisplay();
+    localStorage.removeItem('assistedVoiceConversation');
+    currentChatId = 'current';
+    
+    // Update UI to show welcome screen
+    showWelcomeScreen();
+    
+    // Refresh chat history display
+    loadChatHistory();
+}
+
+/**
+ * Save current chat to history
+ */
+function saveChatToHistory(messages) {
+    if (!messages || messages.length === 0) return;
+    
+    const chatId = Date.now().toString();
+    const firstMessage = messages.find(msg => msg.role === 'user');
+    const preview = firstMessage ? firstMessage.content.substring(0, 60) : 'New chat';
+    
+    const chatData = {
+        id: chatId,
+        timestamp: new Date().toISOString(),
+        preview: preview,
+        messageCount: messages.length,
+        messages: messages
+    };
+    
+    // Get existing chat history
+    const history = getChatHistory();
+    history.unshift(chatData); // Add to beginning
+    
+    // Keep only last 20 chats
+    if (history.length > 20) {
+        history.splice(20);
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(history));
+}
+
+/**
+ * Get chat history from localStorage
+ */
+function getChatHistory() {
+    try {
+        const history = localStorage.getItem('assistedVoiceChatHistory');
+        return history ? JSON.parse(history) : [];
+    } catch (error) {
+        console.error('Error loading chat history:', error);
+        return [];
+    }
+}
+
+/**
+ * Load and display chat history in the menu
+ */
+function loadChatHistory() {
+    const chatHistoryList = document.getElementById('chatHistoryList');
+    if (!chatHistoryList) return;
+    
+    const history = getChatHistory();
+    
+    if (history.length === 0) {
+        chatHistoryList.innerHTML = `
+            <div class="history-empty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                </svg>
+                <p>No previous chats</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Build history HTML
+    let historyHTML = '';
+    history.forEach(chat => {
+        const date = new Date(chat.timestamp);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const isActive = currentChatId === chat.id;
+        
+        historyHTML += `
+            <div class="history-item ${isActive ? 'active' : ''}" data-chat-id="${chat.id}">
+                <button class="history-item-delete" data-chat-id="${chat.id}">✕</button>
+                <div class="history-item-date">${dateStr}</div>
+                <div class="history-item-preview">${chat.preview}</div>
+                <div class="history-item-count">${chat.messageCount} messages</div>
+            </div>
+        `;
+    });
+    
+    chatHistoryList.innerHTML = historyHTML;
+    
+    // Add click handlers for history items
+    chatHistoryList.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            // Don't load chat if delete button was clicked
+            if (e.target.classList.contains('history-item-delete')) return;
+            
+            const chatId = item.dataset.chatId;
+            loadChatFromHistory(chatId);
+        });
+    });
+    
+    // Add click handlers for delete buttons
+    chatHistoryList.querySelectorAll('.history-item-delete').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const chatId = button.dataset.chatId;
+            deleteChatFromHistory(chatId);
+        });
+    });
+}
+
+/**
+ * Load a specific chat from history
+ */
+function loadChatFromHistory(chatId) {
+    const history = getChatHistory();
+    const chat = history.find(c => c.id === chatId);
+    
+    if (!chat) return;
+    
+    // Save current conversation first if needed
+    const currentConversation = localStorage.getItem('assistedVoiceConversation');
+    if (currentConversation && currentChatId === 'current') {
+        const data = JSON.parse(currentConversation);
+        if (data.messages && data.messages.length > 0) {
+            saveChatToHistory(data.messages);
+        }
+    }
+    
+    // Load the selected chat
+    currentChatId = chatId;
+    
+    // Clear current display and load chat messages
+    clearChatDisplay();
+    
+    // Load messages into display
+    chat.messages.forEach(message => {
+        addMessage(message.role, message.content, false); // false = don't save to localStorage
+    });
+    
+    // Update localStorage with current conversation
+    localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+        messages: chat.messages,
+        timestamp: chat.timestamp
+    }));
+    
+    // Hide welcome screen and show messages
+    hideWelcomeScreen();
+    
+    // Close the history menu
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.getElementById('overlay');
+    sideMenu.classList.remove('open');
+    overlay.classList.remove('active');
+    
+    // Refresh history display to show active state
+    loadChatHistory();
+}
+
+/**
+ * Delete a chat from history
+ */
+function deleteChatFromHistory(chatId) {
+    const history = getChatHistory();
+    const updatedHistory = history.filter(c => c.id !== chatId);
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(updatedHistory));
+    
+    // If we deleted the currently active chat, start a new one
+    if (currentChatId === chatId) {
+        startNewChat();
+    } else {
+        // Just refresh the history display
+        loadChatHistory();
+    }
+}
+
+/**
+ * Show welcome screen
+ */
+function showWelcomeScreen() {
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
+    
+    if (welcome) welcome.style.display = 'flex';
+    if (messages) messages.classList.remove('active');
+}
+
+/**
+ * Hide welcome screen
+ */
+function hideWelcomeScreen() {
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
+    
+    if (welcome) welcome.style.display = 'none';
+    if (messages) messages.classList.add('active');
 }
 
 /**

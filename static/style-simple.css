@@ -175,6 +175,7 @@ body {
 
 .message.user {
     flex-direction: row-reverse;
+    justify-content: flex-start; /* With row-reverse, flex-start = right side */
 }
 
 .message-avatar {
@@ -488,22 +489,26 @@ input[type="checkbox"] {
 /* Responsive */
 @media (min-width: 768px) {
     .chat-container {
-        padding: 40px;
-        max-width: 900px;
-        margin: 0 auto;
+        padding: 30px; /* Reduced padding for more content space */
+        /* Removed max-width - use full available width */
     }
     
     .messages {
-        max-width: 800px;
-        margin: 0 auto;
+        /* Removed max-width - use full container width */
+        width: 100%;
     }
     
+    /* Remove centering - keep messages edge-aligned like modern chat apps */
     .message {
-        justify-content: center;
+        justify-content: flex-start;
+    }
+    
+    .message.user {
+        justify-content: flex-start; /* With row-reverse, flex-start = right side */
     }
     
     .message-content {
-        max-width: 500px;
+        max-width: 65%; /* Slightly reduced to look better on wide screens */
     }
     
     .model-grid {
@@ -513,8 +518,12 @@ input[type="checkbox"] {
 
 @media (min-width: 1024px) {
     .app {
-        max-width: 1024px;
-        margin: 0 auto;
+        /* Removed max-width constraint - use full screen width */
+        width: 100%;
         box-shadow: var(--shadow);
+    }
+    
+    .message-content {
+        max-width: 600px; /* Set absolute max-width on very wide screens for readability */
     }
 }

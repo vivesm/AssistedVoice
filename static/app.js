@@ -20,9 +20,36 @@ let reconnectTimeout = null;
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    // Check for saved conversation before showing welcome
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
+    
+    const savedConversation = localStorage.getItem('assistedVoiceConversation');
+    let hasMessages = false;
+    
+    if (savedConversation) {
+        try {
+            const data = JSON.parse(savedConversation);
+            hasMessages = data.messages && data.messages.length > 0;
+        } catch (e) {
+            console.error('Error checking saved conversation:', e);
+        }
+    }
+    
+    // Show appropriate view immediately
+    if (hasMessages) {
+        // Hide welcome, show messages container
+        if (welcome) welcome.style.display = 'none';
+        if (messages) messages.classList.add('active');
+    } else {
+        // Ensure welcome is visible if no messages
+        if (welcome) welcome.style.display = 'flex';
+    }
+    
     initializeWebSocket();
     setupEventListeners();
     loadSettings();
+    loadConversation(); // This will populate the messages if they exist
 });
 
 /**
@@ -115,9 +142,20 @@ function initializeWebSocket() {
     });
     
     socket.on('model_changed', (data) => {
+        console.log('Model changed event received:', data.model);
         currentModel = data.model;  // Update current model
         hideModelLoadingSpinner();  // Hide loading spinner when model changes
         updateStatus(`Model changed to ${data.model}`, 'ready');
+        
+        // Directly update model indicator to ensure it's visible
+        const modelIndicator = document.getElementById('modelIndicator');
+        if (modelIndicator) {
+            modelIndicator.textContent = data.model;
+            console.log('Model indicator updated via socket to:', data.model);
+        } else {
+            console.error('Model indicator element not found!');
+        }
+        
         loadModels();
     });
     
@@ -234,43 +272,54 @@ function setupEventListeners() {
     // Settings Panel Event Listeners
     setupSettingsListeners();
     
-    // TTS engine selector
+    // TTS engine selector (if it exists - not in simplified UI)
     const ttsEngineSelect = document.getElementById('ttsEngineSelect');
-    ttsEngineSelect.addEventListener('change', (e) => {
-        const engine = e.target.value;
-        currentTTSEngine = engine;
-        localStorage.setItem('ttsEngine', engine);
-        
-        // Update voice selector visibility and options
-        updateVoiceSelector(engine);
-        
-        // Update ttsEnabled based on engine
-        ttsEnabled = (engine !== 'none');
-        
-        // Notify server of engine change
-        if (engine !== 'none') {
-            const voiceSelect = document.getElementById('voiceSelect');
-            const voice = voiceSelect.value;
-            if (voice) {
-                socket.emit('change_tts', { engine: engine, voice: voice });
+    if (ttsEngineSelect) {
+        ttsEngineSelect.addEventListener('change', (e) => {
+            const engine = e.target.value;
+            currentTTSEngine = engine;
+            localStorage.setItem('ttsEngine', engine);
+            
+            // Update voice selector visibility and options
+            updateVoiceSelector(engine);
+            
+            // Update ttsEnabled based on engine
+            ttsEnabled = (engine !== 'none');
+            
+            // Notify server of engine change
+            if (engine !== 'none') {
+                const voiceSelect = document.getElementById('voiceSelect');
+                const voice = voiceSelect.value;
+                if (voice) {
+                    socket.emit('change_tts', { engine: engine, voice: voice });
+                }
             }
-        }
-        
-        updateStatus(engine === 'none' ? 'Text-only mode' : `Voice: ${engine}`, 'ready');
-    });
+            
+            updateStatus(engine === 'none' ? 'Text-only mode' : `Voice: ${engine}`, 'ready');
+        });
+    }
     
     // Model selector
     const modelSelect = document.getElementById('modelSelect');
-    modelSelect.addEventListener('change', (e) => {
-        const model = e.target.value;
-        if (model) {
-            // Show loading spinner when switching models
-            showModelLoadingSpinner();
-            socket.emit('change_model', { model: model });
-            currentModel = model;
-            localStorage.setItem('selectedModel', model);
-        }
-    });
+    if (modelSelect) {
+        modelSelect.addEventListener('change', (e) => {
+            const model = e.target.value;
+            if (model) {
+                // Show loading spinner when switching models
+                showModelLoadingSpinner();
+                socket.emit('change_model', { model: model });
+                currentModel = model;
+                localStorage.setItem('selectedModel', model);
+                
+                // Immediately update model indicator
+                const modelIndicator = document.getElementById('modelIndicator');
+                if (modelIndicator) {
+                    modelIndicator.textContent = model;
+                    console.log('Model indicator updated to:', model);
+                }
+            }
+        });
+    }
     
     // Whisper model selector
     const whisperSelect = document.getElementById('whisperSelect');
@@ -903,17 +952,20 @@ function saveConversation() {
     messageElements.forEach(elem => {
         const isUser = elem.classList.contains('user');
         const content = elem.querySelector('.message-content')?.textContent;
+        const metadata = elem.querySelector('.message-time')?.innerHTML; // Get full HTML including metrics
+        
         if (content) {
             messages.push({
                 role: isUser ? 'user' : 'assistant',
-                content: content
+                content: content,
+                metadata: metadata || null // Store metadata if available
             });
         }
     });
     
     if (messages.length > 0) {
         localStorage.setItem('assistedVoiceConversation', JSON.stringify({
-            version: 2,
+            version: 3, // Increment version for new format
             timestamp: Date.now(),
             messages: messages
         }));
@@ -929,7 +981,7 @@ function loadConversation() {
         if (!saved) return;
         
         const data = JSON.parse(saved);
-        if (data.version !== 2 && data.version !== 1) return; // Accept both versions
+        if (data.version !== 3 && data.version !== 2 && data.version !== 1) return; // Accept all versions
         
         // Hide welcome and show messages
         const welcome = document.getElementById('welcome');
@@ -961,10 +1013,16 @@ function loadConversation() {
             contentDiv.className = 'message-content';
             contentDiv.textContent = msg.content;
             
-            // Add timestamp
+            // Add timestamp/metadata
             const timestampDiv = document.createElement('div');
             timestampDiv.className = 'message-time';
-            timestampDiv.textContent = 'Restored';
+            
+            // Use saved metadata if available (v3), otherwise show "Restored" (v1, v2)
+            if (msg.metadata) {
+                timestampDiv.innerHTML = msg.metadata; // Restore full HTML with metrics
+            } else {
+                timestampDiv.textContent = 'Restored'; // Fallback for old format
+            }
             
             // Assemble message structure
             contentWrapper.appendChild(contentDiv);
@@ -1031,6 +1089,15 @@ async function loadModels() {
             if (model === data.current || model === savedModel) {
                 option.selected = true;
                 currentModel = model;  // Set current model
+                
+                // Update model indicator when loading
+                const modelIndicator = document.getElementById('modelIndicator');
+                if (modelIndicator) {
+                    modelIndicator.textContent = model;
+                    console.log('Model indicator updated in loadModels to:', model);
+                } else {
+                    console.error('Model indicator element not found in loadModels!');
+                }
             }
             modelSelect.appendChild(option);
         });

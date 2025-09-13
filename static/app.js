@@ -596,7 +596,7 @@ function stopRecording() {
  */
 function replayMessage(text) {
     if (ttsEnabled && text) {
-        socket.emit('speak_text', { text: text });
+        socket.emit('replay_text', { text: text, enable_tts: true });
     }
 }
 
@@ -653,10 +653,22 @@ function addMessage(role, text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
     
-    // Add avatar
+    // Add avatar with SVG icon
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'message-avatar';
-    avatarDiv.textContent = role === 'user' ? '👤' : '🤖';
+    if (role === 'user') {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+        `;
+    } else {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
+    }
     
     // Add content wrapper
     const contentWrapper = document.createElement('div');
@@ -777,10 +789,14 @@ function appendToCurrentResponse(text) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
         
-        // Add avatar
+        // Add avatar with SVG icon
         const avatarDiv = document.createElement('div');
         avatarDiv.className = 'message-avatar';
-        avatarDiv.textContent = '🤖';
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
         
         // Add content wrapper
         const contentWrapper = document.createElement('div');
@@ -1002,10 +1018,22 @@ function loadConversation() {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${msg.role === 'user' ? 'user' : 'assistant'}`;
             
-            // Add avatar
+            // Add avatar with SVG icon
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
-            avatarDiv.textContent = msg.role === 'user' ? '👤' : '🤖';
+            if (msg.role === 'user') {
+                avatarDiv.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                `;
+            } else {
+                avatarDiv.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+                    </svg>
+                `;
+            }
             
             // Add content wrapper
             const contentWrapper = document.createElement('div');
@@ -1024,6 +1052,20 @@ function loadConversation() {
                 timestampDiv.innerHTML = msg.metadata; // Restore full HTML with metrics
             } else {
                 timestampDiv.textContent = 'Restored'; // Fallback for old format
+            }
+            
+            // Add speaker button for assistant messages
+            if (msg.role === 'assistant' && ttsEnabled) {
+                const speakerBtn = document.createElement('button');
+                speakerBtn.className = 'message-speaker-btn';
+                speakerBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                `;
+                speakerBtn.onclick = () => replayMessage(msg.content);
+                timestampDiv.appendChild(speakerBtn);
             }
             
             // Assemble message structure

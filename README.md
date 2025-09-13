@@ -4,10 +4,19 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 
 ## 🆕 Recent Updates
 
+### January 2025
+- **Modern UI Redesign**: Clean, minimalist interface with glassmorphism effects
+- **SVG Icons**: Replaced emojis with professional SVG icons throughout
+- **Enhanced TTS Controls**: Voice engine selector (Edge TTS, macOS, or Text-only mode)
+- **Message Replay**: Speaker button on assistant messages for instant TTS replay
+- **Recording Visual Feedback**: Animated recording indicator with border glow
+- **Improved Button Layout**: Voice button repositioned for better ergonomics
+- **Flask Template Auto-reload**: Development mode with automatic template updates
+- **Fixed TTS for Voice Input**: Proper TTS response for both voice and text messages
+
 ### December 2024
 - **Performance Metrics**: Real-time display of response time, first token latency, and tokens/second
 - **Enhanced Visual Feedback**: Typing dots animation, blinking cursor during streaming
-- **TTS Replay**: Speaker button on each message for instant text-to-speech replay
 - **Improved Project Structure**: Organized test suite and cleaner file naming
 - **Better Loading States**: Progress bars and overlays for model switching
 
@@ -15,17 +24,20 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 
 ### 🎯 Core Capabilities
 - **100% Local & Private**: All processing happens on your device
-- **Web Interface**: Modern, responsive UI accessible from any browser
-- **Push-to-Talk**: Click and hold the microphone button to record
+- **Modern Web Interface**: Clean, responsive UI with glassmorphism design
+- **Push-to-Talk**: Click the microphone button to record with visual feedback
 - **Text Input**: Type messages when you prefer not to speak
 - **Performance Metrics**: Real-time display of response time, first token time, and tokens/second
 - **Model Selection**: Switch between Ollama models on the fly with automatic fallback
 - **Whisper Model Selection**: Choose from tiny, base, small, medium, large, or turbo models
 - **Real-time Processing**: Fast responses with streaming support
-- **Realistic Voices**: Microsoft Edge neural voices for natural-sounding speech
-- **TTS Replay**: Speaker button on each message for instant text-to-speech replay
-- **Visual Feedback**: Typing dots animation, blinking cursor, and loading overlays
-- **Conversation Persistence**: Chat history survives browser refreshes
+- **Multiple TTS Options**: 
+  - Edge TTS: Microsoft neural voices for natural speech
+  - macOS: System voices for offline TTS
+  - Text-only: Disable voice output entirely
+- **TTS Replay**: Speaker button on each assistant message for instant replay
+- **Visual Feedback**: Recording animations, typing indicators, and loading states
+- **Conversation Persistence**: Chat history with metadata survives browser refreshes
 - **Model Identification**: Each response shows which model generated it
 
 ### 🚀 Optimized for Apple Silicon

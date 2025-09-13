@@ -229,8 +229,8 @@ body {
 
 .voice-btn,
 .send-btn {
-    background: var(--surface-light);
-    border: none;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -240,22 +240,46 @@ body {
     cursor: pointer;
     transition: all 0.2s;
     flex-shrink: 0;
+    color: var(--text);
+}
+
+.voice-btn:hover,
+.send-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .voice-btn:active,
 .send-btn:active {
     transform: scale(0.95);
     background: var(--accent);
+    border-color: var(--accent);
 }
 
 .voice-btn.recording {
     background: #ff3b30;
+    border-color: #ff3b30;
     animation: pulse 1.5s infinite;
 }
 
 @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.5); }
     50% { box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+}
+
+/* Recording state visual feedback */
+body.recording .input-bar {
+    border-top: 2px solid #ff3b30;
+    animation: recordingGlow 2s ease-in-out infinite;
+}
+
+@keyframes recordingGlow {
+    0%, 100% { 
+        box-shadow: 0 -4px 20px rgba(255, 59, 48, 0.2);
+    }
+    50% { 
+        box-shadow: 0 -4px 30px rgba(255, 59, 48, 0.4);
+    }
 }
 
 .recording-indicator {

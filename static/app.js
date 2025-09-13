@@ -132,8 +132,7 @@ function initializeWebSocket() {
     });
     
     socket.on('error', (data) => {
-        hideModelLoadingSpinner(); // Hide loading spinner on error
-        hideWhisperLoadingSpinner();
+        // Loading spinners removed - not in simplified UI
         showError(data.message);
     });
     
@@ -144,7 +143,7 @@ function initializeWebSocket() {
     socket.on('model_changed', (data) => {
         console.log('Model changed event received:', data.model);
         currentModel = data.model;  // Update current model
-        hideModelLoadingSpinner();  // Hide loading spinner when model changes
+        // Loading spinner removed - not in simplified UI
         updateStatus(`Model changed to ${data.model}`, 'ready');
         
         // Directly update model indicator to ensure it's visible
@@ -164,7 +163,7 @@ function initializeWebSocket() {
     });
     
     socket.on('whisper_model_changed', (data) => {
-        hideWhisperLoadingSpinner();
+        // Loading spinner removed
         updateStatus(`Whisper model changed to ${data.model}`, 'ready');
     });
     
@@ -273,31 +272,7 @@ function setupEventListeners() {
     setupSettingsListeners();
     
     // TTS engine selector (if it exists - not in simplified UI)
-    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
-    if (ttsEngineSelect) {
-        ttsEngineSelect.addEventListener('change', (e) => {
-            const engine = e.target.value;
-            currentTTSEngine = engine;
-            localStorage.setItem('ttsEngine', engine);
-            
-            // Update voice selector visibility and options
-            updateVoiceSelector(engine);
-            
-            // Update ttsEnabled based on engine
-            ttsEnabled = (engine !== 'none');
-            
-            // Notify server of engine change
-            if (engine !== 'none') {
-                const voiceSelect = document.getElementById('voiceSelect');
-                const voice = voiceSelect.value;
-                if (voice) {
-                    socket.emit('change_tts', { engine: engine, voice: voice });
-                }
-            }
-            
-            updateStatus(engine === 'none' ? 'Text-only mode' : `Voice: ${engine}`, 'ready');
-        });
-    }
+    // TTS engine selector removed - not in simplified UI
     
     // Model selector
     const modelSelect = document.getElementById('modelSelect');
@@ -306,7 +281,7 @@ function setupEventListeners() {
             const model = e.target.value;
             if (model) {
                 // Show loading spinner when switching models
-                showModelLoadingSpinner();
+                // Loading spinner removed - not in simplified UI
                 socket.emit('change_model', { model: model });
                 currentModel = model;
                 localStorage.setItem('selectedModel', model);
@@ -546,6 +521,7 @@ async function startRecording() {
         
         if (voiceBtn) {
             voiceBtn.classList.add('recording');
+            document.body.classList.add('recording'); // Add visual feedback to body
         }
         if (recordingIndicator) {
             recordingIndicator.style.display = 'flex';
@@ -583,6 +559,7 @@ function stopRecording() {
     
     if (voiceBtn) {
         voiceBtn.classList.remove('recording');
+        document.body.classList.remove('recording'); // Remove visual feedback from body
     }
     if (recordingIndicator) {
         recordingIndicator.style.display = 'none';
@@ -841,26 +818,7 @@ function completeResponse(fullText) {
     tokenCount = 0;
 }
 
-/**
- * Speak text using server-side TTS (reuse existing TTS pathway)
- */
-function speakText(text) {
-    if (!text || text.trim() === '') {
-        return;
-    }
-    
-    // Check socket connection
-    if (!socket || !socket.connected) {
-        console.error('WebSocket not connected');
-        return;
-    }
-    
-    // Send to server for TTS processing using the same pathway as responses
-    socket.emit('replay_text', { 
-        text: text.trim(),
-        enable_tts: true 
-    });
-}
+// speakText function removed - not used in simplified UI
 
 /**
  * Update status display
@@ -1192,82 +1150,7 @@ const modelLoadingTimes = {
     'turbo': 5
 };
 
-/**
- * Show model loading spinner
- */
-let modelSpinnerTimeout = null;
-function showModelLoadingSpinner() {
-    const spinner = document.getElementById('modelLoadingSpinner');
-    const modelSelect = document.getElementById('modelSelect');
-    if (spinner) {
-        spinner.style.display = 'inline-block';
-        // Clear any existing timeout
-        if (modelSpinnerTimeout) {
-            clearTimeout(modelSpinnerTimeout);
-            modelSpinnerTimeout = null;
-        }
-    }
-    if (modelSelect) {
-        modelSelect.disabled = true;
-        modelSelect.parentElement.classList.add('loading');
-    }
-}
-
-/**
- * Hide model loading spinner
- */
-function hideModelLoadingSpinner() {
-    // Ensure spinner shows for at least 500ms for visibility
-    const minDisplayTime = 500;
-    
-    if (modelSpinnerTimeout) {
-        // Spinner is already scheduled to hide
-        return;
-    }
-    
-    modelSpinnerTimeout = setTimeout(() => {
-        const spinner = document.getElementById('modelLoadingSpinner');
-        const modelSelect = document.getElementById('modelSelect');
-        if (spinner) {
-            spinner.style.display = 'none';
-        }
-        if (modelSelect) {
-            modelSelect.disabled = false;
-            modelSelect.parentElement.classList.remove('loading');
-        }
-        modelSpinnerTimeout = null;
-    }, minDisplayTime);
-}
-
-/**
- * Show Whisper loading spinner
- */
-function showWhisperLoadingSpinner() {
-    const spinner = document.getElementById('whisperLoadingSpinner');
-    const whisperSelect = document.getElementById('whisperSelect');
-    if (spinner) {
-        spinner.style.display = 'inline-block';
-    }
-    if (whisperSelect) {
-        whisperSelect.disabled = true;
-        whisperSelect.parentElement.classList.add('loading');
-    }
-}
-
-/**
- * Hide Whisper loading spinner
- */
-function hideWhisperLoadingSpinner() {
-    const spinner = document.getElementById('whisperLoadingSpinner');
-    const whisperSelect = document.getElementById('whisperSelect');
-    if (spinner) {
-        spinner.style.display = 'none';
-    }
-    if (whisperSelect) {
-        whisperSelect.disabled = false;
-        whisperSelect.parentElement.classList.remove('loading');
-    }
-}
+// Loading spinner functions removed - not needed in simplified UI
 
 function disableControls(disabled) {
     const whisperSelect = document.getElementById('whisperSelect');
@@ -1292,7 +1175,7 @@ function loadSettings() {
     const savedEngine = localStorage.getItem('ttsEngine');
     if (savedEngine) {
         currentTTSEngine = savedEngine;
-        document.getElementById('ttsEngineSelect').value = savedEngine;
+        // ttsEngineSelect removed - not in simplified UI
         ttsEnabled = (savedEngine !== 'none');
     } else {
         currentTTSEngine = 'edge-tts';
@@ -1343,12 +1226,12 @@ function setupModelQuickSelect() {
                     // Listen for successful model change
                     socket.once('model_changed', () => {
                         clearTimeout(modelChangeTimeout);
-                        hideModelLoadingSpinner();
+                        // Loading spinner removed
                     });
                     
                     socket.once('error', () => {
                         clearTimeout(modelChangeTimeout);
-                        hideModelLoadingSpinner();
+                        // Loading spinner removed
                     });
                     
                     // Change the model
@@ -1363,7 +1246,7 @@ function setupModelQuickSelect() {
                     }
                 } catch (error) {
                     console.error('Error in model card click:', error);
-                    hideModelLoadingSpinner();
+                    // Loading spinner removed
                     showError('Failed to change model. Please try again.');
                 }
                 

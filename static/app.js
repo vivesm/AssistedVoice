@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = JSON.parse(savedConversation);
             hasMessages = data.messages && data.messages.length > 0;
         } catch (e) {
-            console.error('Error checking saved conversation:', e);
+            // console.error('Error checking saved conversation:', e);
         }
     }
     
@@ -73,13 +73,13 @@ function initializeWebSocket() {
     socket.on('connect', () => {
         reconnectAttempts = 0; // Reset counter on successful connection
         updateStatus('Connected', 'ready');
-        console.log('Connected to server');
+        // console.log('Connected to server');
     });
     
     socket.on('disconnect', (reason) => {
         updateStatus('Disconnected', 'error');
         stopRecording();
-        console.log('Disconnected:', reason);
+        // console.log('Disconnected:', reason);
         
         // Handle reconnection with exponential backoff
         if (reason === 'io server disconnect') {
@@ -89,12 +89,12 @@ function initializeWebSocket() {
     });
     
     socket.on('connect_error', (error) => {
-        console.error('Connection error:', error.message);
+        // console.error('Connection error:', error.message);
         attemptReconnection();
     });
     
     socket.on('connected', (data) => {
-        console.log(data.status);
+        // console.log(data.status);
         fetchConfig();
     });
     
@@ -141,7 +141,7 @@ function initializeWebSocket() {
     });
     
     socket.on('model_changed', (data) => {
-        console.log('Model changed event received:', data.model);
+        // console.log('Model changed event received:', data.model);
         currentModel = data.model;  // Update current model
         // Loading spinner removed - not in simplified UI
         updateStatus(`Model changed to ${data.model}`, 'ready');
@@ -150,9 +150,9 @@ function initializeWebSocket() {
         const modelIndicator = document.getElementById('modelIndicator');
         if (modelIndicator) {
             modelIndicator.textContent = data.model;
-            console.log('Model indicator updated via socket to:', data.model);
+            // console.log('Model indicator updated via socket to:', data.model);
         } else {
-            console.error('Model indicator element not found!');
+            // console.error('Model indicator element not found!');
         }
         
         loadModels();
@@ -290,7 +290,7 @@ function setupEventListeners() {
                 const modelIndicator = document.getElementById('modelIndicator');
                 if (modelIndicator) {
                     modelIndicator.textContent = model;
-                    console.log('Model indicator updated to:', model);
+                    // console.log('Model indicator updated to:', model);
                 }
             }
         });
@@ -455,32 +455,33 @@ function loadSavedSettings() {
     }
 }
 
-/**
- * Play a sound effect if enabled
- */
-function playSound(type) {
-    const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-    if (!soundEnabled) return;
-    
-    // Create audio element
-    const audio = new Audio();
-    
-    // Use different sounds for different events
-    switch(type) {
-        case 'send':
-            // Use a simple beep for send (data URI for a short beep sound)
-            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBBxypOXyvmMfBjiS2Oy9diMFl2z2wliWPTJW9XvuNxMEA';
-            break;
-        case 'receive':
-            // Use a different beep for receive
-            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCZypOXyvmMfBjiS2Oy9diMGlmz2wVmVPzNX9HvtOBQFBg';
-            audio.volume = 0.3;
-            break;
-    }
-    
-    // Play the sound
-    audio.play().catch(e => console.log('Could not play sound:', e));
-}
+// REMOVED: Unused sound effects functionality
+// /**
+//  * Play a sound effect if enabled
+//  */
+// function playSound(type) {
+//     const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+//     if (!soundEnabled) return;
+//     
+//     // Create audio element
+//     const audio = new Audio();
+//     
+//     // Use different sounds for different events
+//     switch(type) {
+//         case 'send':
+//             // Use a simple beep for send (data URI for a short beep sound)
+//             audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBBxypOXyvmMfBjiS2Oy9diMFl2z2wliWPTJW9XvuNxMEA';
+//             break;
+//         case 'receive':
+//             // Use a different beep for receive
+//             audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCZypOXyvmMfBjiS2Oy9diMGlmz2wVmVPzNX9HvtOBQFBg';
+//             audio.volume = 0.3;
+//             break;
+//     }
+//     
+//     // Play the sound
+//     audio.play().catch(e => {}); // Silently fail if sound cannot play
+// }
 
 /**
  * Start recording audio
@@ -553,7 +554,7 @@ async function startRecording() {
         updateStatus('Recording... Click again to stop', 'recording');
         
     } catch (err) {
-        console.error('Error starting recording:', err);
+        // console.error('Error starting recording:', err);
         showError('Failed to start recording: ' + err.message);
     }
 }
@@ -710,10 +711,11 @@ function addMessage(role, text) {
         messages.appendChild(messageDiv);
         
         // Play sound effect if enabled
-        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-        if (soundEnabled) {
-            playSound(role === 'user' ? 'send' : 'receive');
-        }
+        // Commented out: Sound effects not implemented, playSound function doesn't exist
+        // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        // if (soundEnabled) {
+        //     playSound(role === 'user' ? 'send' : 'receive');
+        // }
         
         // Scroll to bottom
         const chatContainer = document.getElementById('chatContainer');
@@ -841,10 +843,11 @@ function appendToCurrentResponse(text) {
 function completeResponse(fullText) {
     if (currentResponseDiv) {
         // Play sound effect if enabled
-        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
-        if (soundEnabled) {
-            playSound('receive');
-        }
+        // Commented out: Sound effects not implemented, playSound function doesn't exist
+        // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        // if (soundEnabled) {
+        //     playSound('receive');
+        // }
         
         // Update timestamp with metrics
         const timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
@@ -1085,7 +1088,7 @@ function loadConversation() {
         }
         
     } catch (err) {
-        console.error('Failed to load conversation:', err);
+        // console.error('Failed to load conversation:', err);
     }
 }
 
@@ -1110,7 +1113,7 @@ async function fetchConfig() {
         // Update container state
         updateChatContainerState();
     } catch (err) {
-        console.error('Failed to fetch config:', err);
+        // console.error('Failed to fetch config:', err);
     }
 }
 
@@ -1138,15 +1141,15 @@ async function loadModels() {
                 const modelIndicator = document.getElementById('modelIndicator');
                 if (modelIndicator) {
                     modelIndicator.textContent = model;
-                    console.log('Model indicator updated in loadModels to:', model);
+                    // console.log('Model indicator updated in loadModels to:', model);
                 } else {
-                    console.error('Model indicator element not found in loadModels!');
+                    // console.error('Model indicator element not found in loadModels!');
                 }
             }
             modelSelect.appendChild(option);
         });
     } catch (err) {
-        console.error('Failed to load models:', err);
+        // console.error('Failed to load models:', err);
     }
 }
 
@@ -1154,18 +1157,20 @@ async function loadModels() {
  * Update voice selector based on TTS engine
  */
 function updateVoiceSelector(engine) {
-    const voiceSelector = document.getElementById('voiceSelector');
     const voiceSelect = document.getElementById('voiceSelect');
+    if (!voiceSelect) return;
+    
+    // Clear current options
+    voiceSelect.innerHTML = '';
     
     if (engine === 'none') {
-        // Hide voice selector for text-only mode
-        voiceSelector.style.display = 'none';
+        // Disable voice selector for text-only mode
+        voiceSelect.disabled = true;
+        const option = document.createElement('option');
+        option.textContent = 'Voice disabled';
+        voiceSelect.appendChild(option);
     } else {
-        // Show voice selector
-        voiceSelector.style.display = 'flex';
-        
-        // Clear current options
-        voiceSelect.innerHTML = '';
+        voiceSelect.disabled = false;
         
         if (engine === 'edge-tts') {
             // Neural voices
@@ -1215,26 +1220,10 @@ function updateVoiceSelector(engine) {
     }
 }
 
-/**
- * Load voice options (deprecated, kept for compatibility)
- */
-function loadSimpleVoices() {
-    // This function is now handled by updateVoiceSelector
-    const savedEngine = localStorage.getItem('ttsEngine') || 'edge-tts';
-    updateVoiceSelector(savedEngine);
-}
+// Removed loadSimpleVoices() - deprecated function
+// Voice loading is now handled directly by updateVoiceSelector()
 
-/**
- * Loading overlay functions
- */
-const modelLoadingTimes = {
-    'tiny': 2,
-    'base': 3,
-    'small': 5,
-    'medium': 10,
-    'large': 15,
-    'turbo': 5
-};
+// Removed modelLoadingTimes object - not used anywhere in the code
 
 // Loading spinner functions removed - not needed in simplified UI
 
@@ -1289,7 +1278,7 @@ function setupModelQuickSelect() {
                 try {
                     const model = btn.dataset.model;
                     if (!model) {
-                        console.error('No model specified for button');
+                        // console.error('No model specified for button');
                         showError('Unable to select model. Please try again.');
                         return;
                     }
@@ -1331,7 +1320,7 @@ function setupModelQuickSelect() {
                         modelSelect.value = model;
                     }
                 } catch (error) {
-                    console.error('Error in model card click:', error);
+                    // console.error('Error in model card click:', error);
                     // Loading spinner removed
                     showError('Failed to change model. Please try again.');
                 }
@@ -1341,7 +1330,7 @@ function setupModelQuickSelect() {
             });
         });
     } catch (error) {
-        console.error('Error setting up model quick select:', error);
+        // console.error('Error setting up model quick select:', error);
     }
 }
 

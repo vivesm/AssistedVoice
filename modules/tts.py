@@ -11,6 +11,7 @@ from threading import Thread
 import queue
 import asyncio
 import edge_tts
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +247,33 @@ class EdgeTTS(TTSEngine):
             
         except Exception as e:
             logger.error(f"Edge TTS error: {e}")
+    
+    def generate_audio_base64(self, text: str) -> Optional[str]:
+        """Generate speech and return as base64-encoded audio data"""
+        try:
+            # Clean text for speech
+            text = self._clean_text(text)
+            
+            # Create temporary audio file
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+            
+            # Generate speech using edge-tts
+            asyncio.run(self._generate_speech(text, tmp_path))
+            
+            # Read audio file and encode to base64
+            with open(tmp_path, 'rb') as audio_file:
+                audio_data = audio_file.read()
+                base64_audio = base64.b64encode(audio_data).decode('utf-8')
+            
+            # Clean up
+            os.unlink(tmp_path)
+            
+            return f"data:audio/mp3;base64,{base64_audio}"
+            
+        except Exception as e:
+            logger.error(f"Edge TTS base64 generation error: {e}")
+            return None
     
     async def _generate_speech(self, text: str, output_path: str):
         """Generate speech using edge-tts async API"""

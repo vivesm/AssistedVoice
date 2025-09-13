@@ -223,11 +223,28 @@ def handle_audio(data):
         # Generate TTS if enabled by user
         if enable_tts and config['tts']['engine'] != 'none':
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
-            # Use the TTS engine we initialized
-            if hasattr(tts, 'speak_async'):
-                tts.speak_async(response_text)
+            
+            # Try to generate audio as base64 for browser playback
+            if hasattr(tts, 'generate_audio_base64'):
+                logger.info("Generating audio as base64...")
+                audio_data = tts.generate_audio_base64(response_text)
+                if audio_data:
+                    logger.info(f"Audio data generated, length: {len(audio_data)}")
+                    emit('audio_data', {'audio': audio_data})
+                else:
+                    logger.warning("Failed to generate audio data")
+                    # Fallback to server-side playback
+                    if hasattr(tts, 'speak_async'):
+                        tts.speak_async(response_text)
+                    else:
+                        tts.speak(response_text)
             else:
-                tts.speak(response_text)
+                # Use server-side playback for engines without base64 support
+                if hasattr(tts, 'speak_async'):
+                    tts.speak_async(response_text)
+                else:
+                    tts.speak(response_text)
+            
             emit('tts_complete', {})
         
         emit('status', {'message': 'Ready', 'type': 'ready'})
@@ -263,11 +280,28 @@ def handle_text(data):
         # Generate TTS if enabled by user
         if enable_tts and config['tts']['engine'] != 'none':
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
-            # Use the TTS engine we initialized
-            if hasattr(tts, 'speak_async'):
-                tts.speak_async(response_text)
+            
+            # Try to generate audio as base64 for browser playback
+            if hasattr(tts, 'generate_audio_base64'):
+                logger.info("Generating audio as base64...")
+                audio_data = tts.generate_audio_base64(response_text)
+                if audio_data:
+                    logger.info(f"Audio data generated, length: {len(audio_data)}")
+                    emit('audio_data', {'audio': audio_data})
+                else:
+                    logger.warning("Failed to generate audio data")
+                    # Fallback to server-side playback
+                    if hasattr(tts, 'speak_async'):
+                        tts.speak_async(response_text)
+                    else:
+                        tts.speak(response_text)
             else:
-                tts.speak(response_text)
+                # Use server-side playback for engines without base64 support
+                if hasattr(tts, 'speak_async'):
+                    tts.speak_async(response_text)
+                else:
+                    tts.speak(response_text)
+            
             emit('tts_complete', {})
         
         emit('status', {'message': 'Ready', 'type': 'ready'})
@@ -394,11 +428,25 @@ def handle_replay_text(data):
         # Generate TTS if enabled by user (same logic as process_text)
         if enable_tts and config['tts']['engine'] != 'none':
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
-            # Use the TTS engine we initialized (exact same code as process_text)
-            if hasattr(tts, 'speak_async'):
-                tts.speak_async(text)
+            
+            # Try to generate audio as base64 for browser playback
+            if hasattr(tts, 'generate_audio_base64'):
+                audio_data = tts.generate_audio_base64(text)
+                if audio_data:
+                    emit('audio_data', {'audio': audio_data})
+                else:
+                    # Fallback to server-side playback
+                    if hasattr(tts, 'speak_async'):
+                        tts.speak_async(text)
+                    else:
+                        tts.speak(text)
             else:
-                tts.speak(text)
+                # Use server-side playback for engines without base64 support
+                if hasattr(tts, 'speak_async'):
+                    tts.speak_async(text)
+                else:
+                    tts.speak(text)
+            
             emit('tts_complete', {})
         
         emit('status', {'message': 'Ready', 'type': 'ready'})

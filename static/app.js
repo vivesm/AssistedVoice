@@ -163,7 +163,11 @@ function setupEventListeners() {
     if (textInput) {
         textInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                sendTextMessage();
+                // Check if send on enter is enabled
+                const sendOnEnter = localStorage.getItem('sendOnEnter') !== 'false';
+                if (sendOnEnter) {
+                    sendTextMessage();
+                }
             }
         });
     }
@@ -226,6 +230,9 @@ function setupEventListeners() {
             overlay.classList.remove('active');
         });
     }
+    
+    // Settings Panel Event Listeners
+    setupSettingsListeners();
     
     // TTS engine selector
     const ttsEngineSelect = document.getElementById('ttsEngineSelect');
@@ -293,6 +300,141 @@ function setupEventListeners() {
             localStorage.setItem(`selectedVoice_${currentTTSEngine}`, voice);
         }
     });
+}
+
+/**
+ * Setup settings panel event listeners
+ */
+function setupSettingsListeners() {
+    // Theme buttons
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    themeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active from all buttons
+            themeButtons.forEach(b => b.classList.remove('active'));
+            // Add active to clicked button
+            btn.classList.add('active');
+            
+            // Apply theme
+            const theme = btn.dataset.theme;
+            applyTheme(theme);
+            localStorage.setItem('theme', theme);
+        });
+    });
+    
+    // Font size slider
+    const fontSlider = document.getElementById('fontSlider');
+    if (fontSlider) {
+        fontSlider.addEventListener('input', (e) => {
+            const size = e.target.value;
+            document.documentElement.style.fontSize = `${size}px`;
+            localStorage.setItem('fontSize', size);
+        });
+    }
+    
+    // Send on Enter checkbox
+    const sendOnEnter = document.getElementById('sendOnEnter');
+    if (sendOnEnter) {
+        sendOnEnter.addEventListener('change', (e) => {
+            localStorage.setItem('sendOnEnter', e.target.checked);
+        });
+    }
+    
+    // Sound effects checkbox
+    const soundEffects = document.getElementById('soundEffects');
+    if (soundEffects) {
+        soundEffects.addEventListener('change', (e) => {
+            localStorage.setItem('soundEffects', e.target.checked);
+        });
+    }
+}
+
+/**
+ * Apply theme to the app
+ */
+function applyTheme(theme) {
+    const body = document.body;
+    
+    if (theme === 'light') {
+        body.classList.add('light-theme');
+    } else if (theme === 'dark') {
+        body.classList.remove('light-theme');
+    } else if (theme === 'auto') {
+        // Check system preference
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+            body.classList.remove('light-theme');
+        } else {
+            body.classList.add('light-theme');
+        }
+    }
+}
+
+/**
+ * Load and apply saved settings
+ */
+function loadSavedSettings() {
+    // Load theme
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    applyTheme(savedTheme);
+    
+    // Update theme button state
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    themeButtons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.theme === savedTheme) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Load font size
+    const savedFontSize = localStorage.getItem('fontSize') || '16';
+    document.documentElement.style.fontSize = `${savedFontSize}px`;
+    const fontSlider = document.getElementById('fontSlider');
+    if (fontSlider) {
+        fontSlider.value = savedFontSize;
+    }
+    
+    // Load send on enter
+    const savedSendOnEnter = localStorage.getItem('sendOnEnter') !== 'false';
+    const sendOnEnterCheckbox = document.getElementById('sendOnEnter');
+    if (sendOnEnterCheckbox) {
+        sendOnEnterCheckbox.checked = savedSendOnEnter;
+    }
+    
+    // Load sound effects
+    const savedSoundEffects = localStorage.getItem('soundEffects') === 'true';
+    const soundEffectsCheckbox = document.getElementById('soundEffects');
+    if (soundEffectsCheckbox) {
+        soundEffectsCheckbox.checked = savedSoundEffects;
+    }
+}
+
+/**
+ * Play a sound effect if enabled
+ */
+function playSound(type) {
+    const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+    if (!soundEnabled) return;
+    
+    // Create audio element
+    const audio = new Audio();
+    
+    // Use different sounds for different events
+    switch(type) {
+        case 'send':
+            // Use a simple beep for send (data URI for a short beep sound)
+            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBBxypOXyvmMfBjiS2Oy9diMFl2z2wliWPTJW9XvuNxMEA';
+            break;
+        case 'receive':
+            // Use a different beep for receive
+            audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCZypOXyvmMfBjiS2Oy9diMGlmz2wVmVPzNX9HvtOBQFBg';
+            audio.volume = 0.3;
+            break;
+    }
+    
+    // Play the sound
+    audio.play().catch(e => console.log('Could not play sound:', e));
 }
 
 /**
@@ -484,6 +626,13 @@ function addMessage(role, text) {
     // Append to messages container
     if (messages) {
         messages.appendChild(messageDiv);
+        
+        // Play sound effect if enabled
+        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        if (soundEnabled) {
+            playSound(role === 'user' ? 'send' : 'receive');
+        }
+        
         // Scroll to bottom
         const chatContainer = document.getElementById('chatContainer');
         if (chatContainer) {
@@ -1084,6 +1233,9 @@ function loadSettings() {
     
     // Update voice selector based on engine
     updateVoiceSelector(currentTTSEngine);
+    
+    // Load theme and other settings
+    loadSavedSettings();
 }
 
 /**

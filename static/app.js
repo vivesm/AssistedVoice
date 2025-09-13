@@ -691,46 +691,51 @@ function showTypingIndicator() {
  */
 function appendToCurrentResponse(text) {
     if (!currentResponseDiv) {
-        // Remove typing indicator if it exists
-        const typingIndicator = document.querySelector('.typing-indicator');
-        if (typingIndicator) typingIndicator.remove();
+        // Hide welcome screen and show messages
+        const welcome = document.getElementById('welcome');
+        const messages = document.getElementById('messages');
         
-        // Create new message div for streaming
-        const chatContainer = document.getElementById('chatContainer');
-        
-        // Remove welcome message if it exists
-        const welcomeMsg = chatContainer.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
+        if (welcome) {
+            welcome.style.display = 'none';
         }
         
+        if (messages) {
+            messages.classList.add('active');
+        }
+        
+        // Create new message element for simplified UI
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant-message streaming';
+        messageDiv.className = 'message assistant';
         
-        const labelDiv = document.createElement('div');
-        labelDiv.className = 'message-label';
-        labelDiv.textContent = currentModel ? `Assistant • ${currentModel}` : 'Assistant';
+        // Add avatar
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'message-avatar';
+        avatarDiv.textContent = '🤖';
         
-        // Add speaker button for assistant messages
-        const speakerButton = document.createElement('button');
-        speakerButton.className = 'speaker-button';
-        speakerButton.innerHTML = '🔊';
-        speakerButton.title = 'Speak this message';
-        speakerButton.style.display = 'none'; // Hide until response is complete
-        labelDiv.appendChild(speakerButton);
+        // Add content wrapper
+        const contentWrapper = document.createElement('div');
         
+        // Add message content
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         
+        // Add timestamp (will be updated when complete)
         const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = new Date().toLocaleTimeString();
+        timestampDiv.className = 'message-time';
+        timestampDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        messageDiv.appendChild(labelDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
+        // Assemble message structure
+        contentWrapper.appendChild(contentDiv);
+        contentWrapper.appendChild(timestampDiv);
         
-        chatContainer.appendChild(messageDiv);
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentWrapper);
+        
+        // Append to messages container
+        if (messages) {
+            messages.appendChild(messageDiv);
+        }
+        
         currentResponseDiv = contentDiv;
     }
     
@@ -739,7 +744,9 @@ function appendToCurrentResponse(text) {
     
     // Scroll to bottom
     const chatContainer = document.getElementById('chatContainer');
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
 }
 
 /**
@@ -747,42 +754,17 @@ function appendToCurrentResponse(text) {
  */
 function completeResponse(fullText) {
     if (currentResponseDiv) {
-        currentResponseDiv.parentElement.classList.remove('streaming');
-        
-        // Show and activate speaker button
-        const labelDiv = currentResponseDiv.parentElement.querySelector('.message-label');
-        const speakerButton = labelDiv.querySelector('.speaker-button');
-        if (speakerButton) {
-            speakerButton.style.display = 'inline-block';
-            speakerButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                speakText(fullText);
-            });
+        // Play sound effect if enabled
+        const soundEnabled = localStorage.getItem('soundEffects') === 'true';
+        if (soundEnabled) {
+            playSound('receive');
         }
         
-        // Calculate and display metrics
-        if (messageStartTime) {
-            const totalTime = Date.now() - messageStartTime;
-            const firstTokenDelay = firstTokenTime ? firstTokenTime - messageStartTime : 0;
-            const tokensPerSecond = tokenCount > 0 && totalTime > 0 ? 
-                (tokenCount / (totalTime / 1000)).toFixed(1) : 0;
-            
-            // Update timestamp with metrics
-            const timestampDiv = currentResponseDiv.parentElement.querySelector('.message-timestamp');
-            if (timestampDiv) {
-                const timeStr = new Date().toLocaleTimeString();
-                const totalSec = (totalTime / 1000).toFixed(2);
-                const firstSec = (firstTokenDelay / 1000).toFixed(2);
-                timestampDiv.innerHTML = `
-                    <span class="timestamp-time">${timeStr}</span>
-                    <span class="metrics-separator">•</span>
-                    <span class="metric-item" title="Total response time">${totalSec}s total</span>
-                    <span class="metrics-separator">•</span>
-                    <span class="metric-item" title="Time to first token">${firstSec}s first</span>
-                    <span class="metrics-separator">•</span>
-                    <span class="metric-item" title="Tokens per second">${tokensPerSecond} tokens/s</span>
-                `;
-            }
+        // Update timestamp with simple time
+        const timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
+        if (timestampDiv) {
+            const now = new Date();
+            timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
     }
     

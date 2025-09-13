@@ -2,6 +2,15 @@
 
 A powerful local AI voice assistant that runs entirely on your Mac, combining Whisper speech recognition with Ollama language models for completely private, offline AI conversations. Features a modern web interface with push-to-talk functionality.
 
+## 🆕 Recent Updates
+
+### December 2024
+- **Performance Metrics**: Real-time display of response time, first token latency, and tokens/second
+- **Enhanced Visual Feedback**: Typing dots animation, blinking cursor during streaming
+- **TTS Replay**: Speaker button on each message for instant text-to-speech replay
+- **Improved Project Structure**: Organized test suite and cleaner file naming
+- **Better Loading States**: Progress bars and overlays for model switching
+
 ## Features
 
 ### 🎯 Core Capabilities
@@ -9,11 +18,13 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Web Interface**: Modern, responsive UI accessible from any browser
 - **Push-to-Talk**: Click and hold the microphone button to record
 - **Text Input**: Type messages when you prefer not to speak
+- **Performance Metrics**: Real-time display of response time, first token time, and tokens/second
 - **Model Selection**: Switch between Ollama models on the fly with automatic fallback
 - **Whisper Model Selection**: Choose from tiny, base, small, medium, large, or turbo models
 - **Real-time Processing**: Fast responses with streaming support
 - **Realistic Voices**: Microsoft Edge neural voices for natural-sounding speech
-- **Visual Loading Indicators**: Progress bars and overlays for model loading operations
+- **TTS Replay**: Speaker button on each message for instant text-to-speech replay
+- **Visual Feedback**: Typing dots animation, blinking cursor, and loading overlays
 - **Conversation Persistence**: Chat history survives browser refreshes
 - **Model Identification**: Each response shows which model generated it
 
@@ -86,7 +97,8 @@ http://localhost:5001
 | **Microphone Button** | Click and hold to record voice |
 | **Text Input** | Type messages directly |
 | **Send Button** | Send typed message |
-| **Clear Chat** | Clear conversation history |
+| **Clear Button** | Clear conversation history |
+| **Speaker Button (🔊)** | Replay any assistant message with TTS |
 | **Model Selector** | Switch between Ollama models with automatic fallback |
 | **Whisper Selector** | Choose speech recognition model (tiny to turbo) |
 | **Voice Engine** | Select TTS engine: Neural (Edge), Classic (macOS), or Text Only |
@@ -162,20 +174,24 @@ tts:
 
 ```
 AssistedVoice/
-├── web_assistant_simple.py  # Main Flask application
-├── config.yaml             # Configuration
+├── web_assistant.py       # Main Flask application
+├── config.yaml           # Configuration
 ├── modules/
-│   ├── stt.py             # Speech recognition (Whisper)
-│   ├── llm.py             # Language model (Ollama)
-│   ├── tts.py             # Text-to-speech engines
-│   └── ui.py              # Terminal UI (legacy)
-├── static/                # Frontend assets
-│   ├── app_simple.js      # JavaScript
-│   └── style_simple.css   # Styling
-├── templates/             # HTML templates
-│   └── index_simple.html  # Main web UI
-├── models/                # Downloaded Whisper models
-└── logs/                  # Conversation logs
+│   ├── stt.py           # Speech recognition (Whisper)
+│   ├── llm.py           # Language model (Ollama)
+│   ├── tts.py           # Text-to-speech engines
+│   └── ui.py            # Terminal UI (legacy)
+├── static/              # Frontend assets
+│   ├── app.js          # JavaScript with performance tracking
+│   └── style.css       # Enhanced styling with metrics
+├── templates/          # HTML templates
+│   └── index.html      # Main web UI
+├── tests/              # Test suite
+│   ├── unit/          # Unit tests
+│   └── integration/   # Integration tests
+├── archive/           # Legacy versions
+├── models/            # Downloaded Whisper models
+└── logs/              # Conversation logs
 ```
 
 ## Performance Optimization
@@ -230,17 +246,28 @@ System Preferences → Security & Privacy → Microphone → Terminal
 
 ## Enhanced User Experience
 
+### Performance Metrics
+Each assistant response displays real-time performance metrics:
+- **Total Response Time**: Complete time from question to answer (e.g., "2.14s total")
+- **First Token Time**: Latency to first response chunk (e.g., "0.31s first")
+- **Tokens Per Second**: Generation speed (e.g., "18.5 tokens/s")
+
+Metrics appear as subtle blue badges below each message, helping you understand model performance and identify any latency issues.
+
 ### Visual Feedback
+- **Typing Dots Animation**: Animated dots appear while the assistant is generating a response
+- **Blinking Cursor**: Visual indicator during streaming responses
 - **Loading Overlays**: Full-screen loading indicators with progress bars for model operations
 - **Status Indicators**: Real-time status updates (Ready, Recording, Processing, Speaking)
 - **Model Identification**: Each assistant response shows which model generated it
+- **Speaker Buttons**: Click the 🔊 button on any assistant message to replay it with TTS
 - **Conversation Persistence**: Chat history automatically saves and restores on page refresh
 
 ### Performance Optimizations
 - **Model Fallback**: Automatic fallback to working models when problematic models are selected
 - **Fast Model Switching**: Instant switching between available Ollama models
 - **Optimized Whisper**: Direct turbo model support for fastest speech recognition
-- **Streaming Responses**: Real-time response generation with typing indicators
+- **Streaming Responses**: Real-time response generation with visual indicators
 
 ## Advanced Features
 
@@ -274,12 +301,12 @@ performance:
 source venv/bin/activate
 
 # Run the web server
-python web_assistant_simple.py
+python web_assistant.py
 ```
 
 ### Using Different Ports
 ```bash
-# Edit web_assistant_simple.py and change:
+# Edit web_assistant.py and change:
 app.run(host='0.0.0.0', port=5001)  # Change 5001 to your preferred port
 ```
 

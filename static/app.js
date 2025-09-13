@@ -315,15 +315,36 @@ function setupEventListeners() {
         }
     }
     
-    // Voice selector
+    // Voice/TTS engine selector in menu
     const voiceSelect = document.getElementById('voiceSelect');
-    voiceSelect.addEventListener('change', (e) => {
-        const voice = e.target.value;
-        if (voice && currentTTSEngine !== 'none') {
-            socket.emit('change_tts', { engine: currentTTSEngine, voice: voice });
-            localStorage.setItem(`selectedVoice_${currentTTSEngine}`, voice);
+    if (voiceSelect) {
+        voiceSelect.addEventListener('change', (e) => {
+            const engine = e.target.value;
+            
+            // Update TTS settings based on selection
+            if (engine === 'none') {
+                ttsEnabled = false;
+                currentTTSEngine = 'none';
+            } else if (engine === 'edge-tts') {
+                ttsEnabled = true;
+                currentTTSEngine = 'edge-tts';
+                socket.emit('change_tts', { engine: 'edge-tts' });
+            } else if (engine === 'macos') {
+                ttsEnabled = true;
+                currentTTSEngine = 'macos';
+                socket.emit('change_tts', { engine: 'macos' });
+            }
+            
+            // Save preference
+            localStorage.setItem('ttsEngine', engine);
+        });
+        
+        // Load saved preference
+        const savedEngine = localStorage.getItem('ttsEngine');
+        if (savedEngine) {
+            voiceSelect.value = savedEngine;
         }
-    });
+    }
 }
 
 /**
@@ -571,6 +592,15 @@ function stopRecording() {
 }
 
 /**
+ * Replay a message using TTS
+ */
+function replayMessage(text) {
+    if (ttsEnabled && text) {
+        socket.emit('speak_text', { text: text });
+    }
+}
+
+/**
  * Send text message
  */
 function sendTextMessage() {
@@ -641,6 +671,20 @@ function addMessage(role, text) {
     timestampDiv.className = 'message-time';
     const now = new Date();
     timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Add speaker button for assistant messages
+    if (role === 'assistant' && ttsEnabled) {
+        const speakerBtn = document.createElement('button');
+        speakerBtn.className = 'message-speaker-btn';
+        speakerBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+        `;
+        speakerBtn.onclick = () => replayMessage(text);
+        timestampDiv.appendChild(speakerBtn);
+    }
     
     // Assemble message structure
     contentWrapper.appendChild(contentDiv);

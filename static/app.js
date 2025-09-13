@@ -137,33 +137,95 @@ function initializeWebSocket() {
  * Set up event listeners
  */
 function setupEventListeners() {
-    const recordBtn = document.getElementById('recordBtn');
+    // Main UI elements - using new simplified UI IDs
+    const voiceBtn = document.getElementById('voiceBtn');
     const textInput = document.getElementById('textInput');
-    const sendButton = document.getElementById('sendButton');
-    const clearButton = document.getElementById('clearButton');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const menuBtn = document.getElementById('menuBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const closeMenu = document.getElementById('closeMenu');
+    const closeSettings = document.getElementById('closeSettings');
+    const overlay = document.getElementById('overlay');
     
-    // Push-to-talk button - click to start, click to stop
-    recordBtn.addEventListener('click', () => {
-        if (isRecording) {
-            stopRecording();
-        } else {
-            startRecording();
-        }
-    });
+    // Voice recording button - click to start, click to stop
+    if (voiceBtn) {
+        voiceBtn.addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+    }
     
     // Text input events
-    textInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendTextMessage();
-        }
-    });
+    if (textInput) {
+        textInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendTextMessage();
+            }
+        });
+    }
     
-    sendButton.addEventListener('click', sendTextMessage);
+    // Send button
+    if (sendBtn) {
+        sendBtn.addEventListener('click', sendTextMessage);
+    }
     
     // Clear button
-    clearButton.addEventListener('click', () => {
-        socket.emit('clear_conversation');
-    });
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            socket.emit('clear_conversation');
+        });
+    }
+    
+    // Menu button
+    if (menuBtn) {
+        menuBtn.addEventListener('click', () => {
+            const sideMenu = document.getElementById('sideMenu');
+            sideMenu.classList.add('open');
+            overlay.classList.add('active');
+        });
+    }
+    
+    // Settings button
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            const settingsPanel = document.getElementById('settingsPanel');
+            settingsPanel.classList.add('open');
+            overlay.classList.add('active');
+        });
+    }
+    
+    // Close menu
+    if (closeMenu) {
+        closeMenu.addEventListener('click', () => {
+            const sideMenu = document.getElementById('sideMenu');
+            sideMenu.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
+    
+    // Close settings
+    if (closeSettings) {
+        closeSettings.addEventListener('click', () => {
+            const settingsPanel = document.getElementById('settingsPanel');
+            settingsPanel.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
+    
+    // Overlay click to close panels
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            const sideMenu = document.getElementById('sideMenu');
+            const settingsPanel = document.getElementById('settingsPanel');
+            sideMenu.classList.remove('open');
+            settingsPanel.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
     
     // TTS engine selector
     const ttsEngineSelect = document.getElementById('ttsEngineSelect');
@@ -286,9 +348,20 @@ async function startRecording() {
         mediaRecorder.start();
         isRecording = true;
         
-        // Update UI
-        document.getElementById('recordBtn').classList.add('active');
-        document.getElementById('recordingIndicator').style.display = 'flex';
+        // Update UI for new simplified interface
+        const voiceBtn = document.getElementById('voiceBtn');
+        const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
+        const micIcon = voiceBtn?.querySelector('.mic-icon');
+        
+        if (voiceBtn) {
+            voiceBtn.classList.add('recording');
+        }
+        if (recordingIndicator) {
+            recordingIndicator.style.display = 'flex';
+        }
+        if (micIcon) {
+            micIcon.style.display = 'none';
+        }
         updateStatus('Recording... Click again to stop', 'recording');
         
     } catch (err) {
@@ -312,9 +385,20 @@ function stopRecording() {
     
     isRecording = false;
     
-    // Update UI
-    document.getElementById('recordBtn').classList.remove('active');
-    document.getElementById('recordingIndicator').style.display = 'none';
+    // Update UI for new simplified interface
+    const voiceBtn = document.getElementById('voiceBtn');
+    const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
+    const micIcon = voiceBtn?.querySelector('.mic-icon');
+    
+    if (voiceBtn) {
+        voiceBtn.classList.remove('recording');
+    }
+    if (recordingIndicator) {
+        recordingIndicator.style.display = 'none';
+    }
+    if (micIcon) {
+        micIcon.style.display = 'block';
+    }
     updateStatus('Processing...', 'processing');
 }
 
@@ -355,51 +439,57 @@ function sendTextMessage() {
  * Add message to chat display
  */
 function addMessage(role, text) {
-    const chatContainer = document.getElementById('chatContainer');
+    // Hide welcome screen and show messages
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
     
-    // Remove welcome message if it exists
-    const welcomeMsg = chatContainer.querySelector('.welcome-message');
-    if (welcomeMsg) {
-        welcomeMsg.remove();
+    if (welcome) {
+        welcome.style.display = 'none';
     }
     
+    if (messages) {
+        messages.classList.add('active');
+    }
+    
+    // Create message element for new UI
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${role}-message`;
+    messageDiv.className = `message ${role}`;
     
-    const labelDiv = document.createElement('div');
-    labelDiv.className = 'message-label';
-    labelDiv.textContent = role === 'user' ? 'You' : 'Assistant';
+    // Add avatar
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'message-avatar';
+    avatarDiv.textContent = role === 'user' ? '👤' : '🤖';
     
-    // Add speaker button for assistant messages
-    if (role === 'assistant') {
-        const speakerButton = document.createElement('button');
-        speakerButton.className = 'speaker-button';
-        speakerButton.innerHTML = '🔊';
-        speakerButton.title = 'Speak this message';
-        speakerButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            speakText(text);
-        });
-        labelDiv.appendChild(speakerButton);
-    }
+    // Add content wrapper
+    const contentWrapper = document.createElement('div');
     
+    // Add message content
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.textContent = text;
     
+    // Add timestamp
     const timestampDiv = document.createElement('div');
-    timestampDiv.className = 'message-timestamp';
-    timestampDiv.textContent = new Date().toLocaleTimeString();
+    timestampDiv.className = 'message-time';
+    const now = new Date();
+    timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
-    messageDiv.appendChild(labelDiv);
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(timestampDiv);
+    // Assemble message structure
+    contentWrapper.appendChild(contentDiv);
+    contentWrapper.appendChild(timestampDiv);
     
-    chatContainer.appendChild(messageDiv);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentWrapper);
     
-    // Update container state to hide model selection
-    updateChatContainerState();
+    // Append to messages container
+    if (messages) {
+        messages.appendChild(messageDiv);
+        // Scroll to bottom
+        const chatContainer = document.getElementById('chatContainer');
+        if (chatContainer) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    }
     
     // Save conversation after adding message
     setTimeout(saveConversation, 100);
@@ -579,9 +669,19 @@ function speakText(text) {
  * Update status display
  */
 function updateStatus(message, type) {
-    const statusElement = document.getElementById('status');
-    statusElement.textContent = message;
-    statusElement.className = `status status-${type}`;
+    // Update both status text and model indicator in new UI
+    const statusText = document.getElementById('statusText');
+    const modelIndicator = document.getElementById('modelIndicator');
+    
+    if (statusText) {
+        statusText.textContent = message;
+        statusText.className = `status-text status-${type}`;
+    }
+    
+    // Update model indicator if it's a model-related status
+    if (type === 'ready' && currentModel && modelIndicator) {
+        modelIndicator.textContent = currentModel;
+    }
 }
 
 /**
@@ -622,38 +722,24 @@ function showError(message) {
  * Clear chat display
  */
 function clearChatDisplay() {
-    const chatContainer = document.getElementById('chatContainer');
+    // Clear messages and show welcome state again
+    const messages = document.getElementById('messages');
+    const welcome = document.getElementById('welcome');
     
-    // Re-add the model quick select UI
-    const modelSelectHTML = `
-        <div class="model-quick-select" id="modelQuickSelect">
-            <h2>Select a Model to Start</h2>
-            <div class="model-cards">
-                <button class="model-card" data-model="llama3.2:3b">
-                    <div class="model-name">Llama 3.2 (3B)</div>
-                    <div class="model-desc">Fast & Lightweight</div>
-                    <div class="model-speed">⚡ ~1s response</div>
-                </button>
-                <button class="model-card" data-model="mistral:latest">
-                    <div class="model-name">Mistral Latest</div>
-                    <div class="model-desc">Balanced Performance</div>
-                    <div class="model-speed">⚡⚡ Best overall</div>
-                </button>
-                <button class="model-card" data-model="qwen3:14b">
-                    <div class="model-name">Qwen3 (14B)</div>
-                    <div class="model-desc">High Quality</div>
-                    <div class="model-speed">🎯 Accurate responses</div>
-                </button>
-            </div>
-        </div>
-    `;
-    chatContainer.innerHTML = modelSelectHTML;
+    if (messages) {
+        messages.innerHTML = '';
+        messages.classList.remove('active');
+    }
     
-    // Re-setup event listeners for the new cards
+    if (welcome) {
+        welcome.style.display = 'flex';
+    }
+    
+    // Re-setup model quick select
     setupModelQuickSelect();
     
-    // Update container state
-    updateChatContainerState();
+    // Update status
+    updateStatus('Ready', 'ready');
     
     // Clear saved conversation
     localStorage.removeItem('assistedVoiceConversation');
@@ -1005,14 +1091,15 @@ function loadSettings() {
  */
 function setupModelQuickSelect() {
     try {
-        const modelCards = document.querySelectorAll('.model-card');
+        // Use the new .model-btn class from simplified UI
+        const modelButtons = document.querySelectorAll('.model-btn');
         
-        modelCards.forEach(card => {
-            card.addEventListener('click', (e) => {
+        modelButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
                 try {
-                    const model = card.dataset.model;
+                    const model = btn.dataset.model;
                     if (!model) {
-                        console.error('No model specified for card');
+                        console.error('No model specified for button');
                         showError('Unable to select model. Please try again.');
                         return;
                     }
@@ -1024,13 +1111,12 @@ function setupModelQuickSelect() {
                         return;
                     }
                     
-                    // Show loading spinner
-                    showModelLoadingSpinner();
+                    // Update status to show loading
+                    updateStatus(`Loading ${model}...`, 'loading');
                     
                     // Change the model with timeout
                     const modelChangeTimeout = setTimeout(() => {
-                        hideModelLoadingSpinner();
-                        showError('Model change timed out. Please try again.');
+                        updateStatus('Model change timed out. Please try again.', 'error');
                     }, 30000);
                     
                     // Listen for successful model change

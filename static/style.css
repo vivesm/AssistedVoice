@@ -154,6 +154,32 @@ header h1 {
     color: var(--text-secondary);
     margin-top: 3px;
     opacity: 0.7;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.timestamp-time {
+    font-weight: 500;
+}
+
+.metrics-separator {
+    opacity: 0.4;
+}
+
+.metric-item {
+    background: rgba(74, 144, 226, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+    font-size: 0.65rem;
+    transition: all 0.2s ease;
+}
+
+.metric-item:hover {
+    background: rgba(74, 144, 226, 0.15);
+    transform: translateY(-1px);
 }
 
 .streaming .message-content::after {

@@ -50,6 +50,15 @@ function initializeWebSocket() {
     
     socket.on('response_chunk', (data) => {
         if (data.model) currentModel = data.model;
+        
+        // Track first token time
+        if (!firstTokenTime && messageStartTime) {
+            firstTokenTime = Date.now();
+        }
+        
+        // Count tokens (approximate by words)
+        tokenCount += data.text.split(/\s+/).filter(w => w.length > 0).length;
+        
         appendToCurrentResponse(data.text);
     });
     
@@ -226,6 +235,11 @@ async function startRecording() {
             // Convert to base64 and send
             const reader = new FileReader();
             reader.onloadend = () => {
+                // Start performance tracking
+                messageStartTime = Date.now();
+                firstTokenTime = null;
+                tokenCount = 0;
+                
                 socket.emit('process_audio', {
                     audio: reader.result,
                     enable_tts: ttsEnabled
@@ -281,6 +295,11 @@ function sendTextMessage() {
     const text = textInput.value.trim();
     
     if (!text) return;
+    
+    // Start performance tracking
+    messageStartTime = Date.now();
+    firstTokenTime = null;
+    tokenCount = 0;
     
     // Add message to chat
     addMessage('user', text);
@@ -354,6 +373,11 @@ function addMessage(role, text) {
 
 let currentResponse = '';
 let currentResponseDiv = null;
+
+// Performance metrics tracking
+let messageStartTime = null;
+let firstTokenTime = null;
+let tokenCount = 0;
 
 /**
  * Show typing indicator with animated dots
@@ -462,10 +486,38 @@ function completeResponse(fullText) {
                 speakText(fullText);
             });
         }
+        
+        // Calculate and display metrics
+        if (messageStartTime) {
+            const totalTime = Date.now() - messageStartTime;
+            const firstTokenDelay = firstTokenTime ? firstTokenTime - messageStartTime : 0;
+            const tokensPerSecond = tokenCount > 0 && totalTime > 0 ? 
+                (tokenCount / (totalTime / 1000)).toFixed(1) : 0;
+            
+            // Update timestamp with metrics
+            const timestampDiv = currentResponseDiv.parentElement.querySelector('.message-timestamp');
+            if (timestampDiv) {
+                const timeStr = new Date().toLocaleTimeString();
+                const totalSec = (totalTime / 1000).toFixed(2);
+                const firstSec = (firstTokenDelay / 1000).toFixed(2);
+                timestampDiv.innerHTML = `
+                    <span class="timestamp-time">${timeStr}</span>
+                    <span class="metrics-separator">•</span>
+                    <span class="metric-item" title="Total response time">${totalSec}s total</span>
+                    <span class="metrics-separator">•</span>
+                    <span class="metric-item" title="Time to first token">${firstSec}s first</span>
+                    <span class="metrics-separator">•</span>
+                    <span class="metric-item" title="Tokens per second">${tokensPerSecond} tokens/s</span>
+                `;
+            }
+        }
     }
     
     currentResponse = '';
     currentResponseDiv = null;
+    messageStartTime = null;
+    firstTokenTime = null;
+    tokenCount = 0;
 }
 
 /**

@@ -20,6 +20,11 @@ let reconnectTimeout = null;
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    // Ensure chat ID is always set
+    if (!currentChatId) {
+        currentChatId = Date.now().toString();
+    }
+    
     // Check for saved conversation before showing welcome
     const welcome = document.getElementById('welcome');
     const messages = document.getElementById('messages');
@@ -240,6 +245,20 @@ function setupEventListeners() {
     if (menuBtn) {
         menuBtn.addEventListener('click', () => {
             const sideMenu = document.getElementById('sideMenu');
+            
+            // Save current chat if needed before showing history
+            const currentConversation = localStorage.getItem('assistedVoiceConversation');
+            if (currentConversation && currentChatId) {
+                const data = JSON.parse(currentConversation);
+                if (data.messages && data.messages.length > 0) {
+                    saveChatToHistory(data.messages, currentChatId);
+                }
+            }
+            
+            // Load and display chat history
+            loadChatHistory();
+            
+            // Show the menu
             sideMenu.classList.add('open');
             overlay.classList.add('active');
         });
@@ -1480,7 +1499,7 @@ function setupModelQuickSelect() {
  */
 
 // Global variable to track current chat ID
-let currentChatId = 'current';
+let currentChatId = Date.now().toString(); // Initialize with unique ID on load
 
 /**
  * Start a new chat
@@ -1488,17 +1507,18 @@ let currentChatId = 'current';
 function startNewChat() {
     // Save current conversation if it has messages
     const currentConversation = localStorage.getItem('assistedVoiceConversation');
-    if (currentConversation) {
+    if (currentConversation && currentChatId) {
         const data = JSON.parse(currentConversation);
         if (data.messages && data.messages.length > 0) {
-            saveChatToHistory(data.messages);
+            saveChatToHistory(data.messages, currentChatId);
         }
     }
     
     // Clear current conversation
     clearChatDisplay();
     localStorage.removeItem('assistedVoiceConversation');
-    currentChatId = 'current';
+    // Generate new unique chat ID
+    currentChatId = Date.now().toString();
     
     // Update UI to show welcome screen
     showWelcomeScreen();
@@ -1510,15 +1530,16 @@ function startNewChat() {
 /**
  * Save current chat to history
  */
-function saveChatToHistory(messages) {
+function saveChatToHistory(messages, chatId = null) {
     if (!messages || messages.length === 0) return;
     
-    const chatId = Date.now().toString();
+    // Use provided chatId or generate new one
+    const id = chatId || Date.now().toString();
     const firstMessage = messages.find(msg => msg.role === 'user');
     const preview = firstMessage ? firstMessage.content.substring(0, 60) : 'New chat';
     
     const chatData = {
-        id: chatId,
+        id: id,
         timestamp: new Date().toISOString(),
         preview: preview,
         messageCount: messages.length,
@@ -1527,7 +1548,16 @@ function saveChatToHistory(messages) {
     
     // Get existing chat history
     const history = getChatHistory();
-    history.unshift(chatData); // Add to beginning
+    
+    // Check if this chat already exists and update it
+    const existingIndex = history.findIndex(chat => chat.id === id);
+    if (existingIndex !== -1) {
+        // Update existing chat
+        history[existingIndex] = chatData;
+    } else {
+        // Add new chat to beginning
+        history.unshift(chatData);
+    }
     
     // Keep only last 20 chats
     if (history.length > 20) {
@@ -1623,10 +1653,10 @@ function loadChatFromHistory(chatId) {
     
     // Save current conversation first if needed
     const currentConversation = localStorage.getItem('assistedVoiceConversation');
-    if (currentConversation && currentChatId === 'current') {
+    if (currentConversation && currentChatId) {
         const data = JSON.parse(currentConversation);
         if (data.messages && data.messages.length > 0) {
-            saveChatToHistory(data.messages);
+            saveChatToHistory(data.messages, currentChatId);
         }
     }
     

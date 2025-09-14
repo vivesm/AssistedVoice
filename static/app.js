@@ -218,6 +218,14 @@ function setupEventListeners() {
         });
     }
     
+    // Mute button - toggle voice output
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        muteBtn.addEventListener('click', () => {
+            toggleMute();
+        });
+    }
+    
     // Text input events
     if (textInput) {
         textInput.addEventListener('keypress', (e) => {
@@ -896,6 +904,73 @@ function updateSpeakerButtons() {
 }
 
 /**
+ * Toggle mute state for TTS
+ */
+function toggleMute() {
+    const muteBtn = document.getElementById('muteBtn');
+    const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
+    const speakerOffIcon = muteBtn.querySelector('.speaker-off-icon');
+    
+    if (ttsEnabled) {
+        // Currently unmuted, so mute it
+        // Save the current engine before muting
+        localStorage.setItem('previousTTSEngine', currentTTSEngine);
+        
+        // Mute
+        ttsEnabled = false;
+        currentTTSEngine = 'none';
+        
+        // Update UI
+        muteBtn.classList.add('muted');
+        speakerOnIcon.style.display = 'none';
+        speakerOffIcon.style.display = 'block';
+        
+        // Update voice selector in settings if open
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = 'none';
+        }
+        
+        // Emit to backend
+        socket.emit('change_tts', { engine: 'none' });
+        
+        // Save mute state
+        localStorage.setItem('ttsEngine', 'none');
+        localStorage.setItem('isMuted', 'true');
+        
+        updateStatus('Voice output muted', 'ready');
+    } else {
+        // Currently muted, so unmute it
+        // Restore previous engine or default to edge-tts
+        const previousEngine = localStorage.getItem('previousTTSEngine') || 'edge-tts';
+        
+        // Unmute
+        ttsEnabled = true;
+        currentTTSEngine = previousEngine;
+        
+        // Update UI
+        muteBtn.classList.remove('muted');
+        speakerOnIcon.style.display = 'block';
+        speakerOffIcon.style.display = 'none';
+        
+        // Update voice selector in settings if open
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = previousEngine;
+        }
+        
+        // Emit to backend
+        socket.emit('change_tts', { engine: previousEngine });
+        
+        // Save unmute state
+        localStorage.setItem('ttsEngine', previousEngine);
+        localStorage.setItem('isMuted', 'false');
+        
+        updateStatus('Voice output enabled', 'ready');
+    }
+}
+
+/**
  * Send text message
  */
 function sendTextMessage() {
@@ -1050,7 +1125,6 @@ function showTypingIndicator() {
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message assistant-message typing-indicator';
     typingDiv.innerHTML = `
-        <div class="message-label">Assistant • ${currentModel || 'llama3.2:3b'}</div>
         <div class="message-content">
             <span class="typing-dots">
                 <span></span>
@@ -1414,18 +1488,22 @@ function loadConversation() {
                 timestampDiv.textContent = 'Restored'; // Fallback for old format
             }
             
-            // Add speaker button for assistant messages (always add, will be hidden if TTS is disabled)
+            // Add speaker button for assistant messages only if not already in metadata
+            // Check if metadata already contains a speaker button to avoid duplicates
             if (msg.role === 'assistant') {
-                const speakerBtn = document.createElement('button');
-                speakerBtn.className = 'message-speaker-btn';
-                speakerBtn.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                    </svg>
-                `;
-                speakerBtn.onclick = () => replayMessage(msg.content);
-                timestampDiv.appendChild(speakerBtn);
+                const hasExistingSpeakerBtn = msg.metadata && msg.metadata.includes('message-speaker-btn');
+                if (!hasExistingSpeakerBtn) {
+                    const speakerBtn = document.createElement('button');
+                    speakerBtn.className = 'message-speaker-btn';
+                    speakerBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                    `;
+                    speakerBtn.onclick = () => replayMessage(msg.content);
+                    timestampDiv.appendChild(speakerBtn);
+                }
             }
             
             // Assemble message structure
@@ -1631,6 +1709,25 @@ function loadSettings() {
     
     // Don't call updateVoiceSelector here - it overwrites the Voice Engine dropdown
     // The Voice Engine dropdown should maintain its options
+    
+    // Update mute button visual state
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
+        const speakerOffIcon = muteBtn.querySelector('.speaker-off-icon');
+        
+        if (currentTTSEngine === 'none' || !ttsEnabled) {
+            // Show muted state
+            muteBtn.classList.add('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'none';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'block';
+        } else {
+            // Show unmuted state
+            muteBtn.classList.remove('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'block';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'none';
+        }
+    }
     
     // Update speaker buttons on existing messages to match TTS state
     updateSpeakerButtons();
@@ -1912,9 +2009,18 @@ function deleteChatFromHistory(chatId) {
     const updatedHistory = history.filter(c => c.id !== chatId);
     localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(updatedHistory));
     
-    // If we deleted the currently active chat, start a new one
+    // If we deleted the currently active chat, clear it first then start a new one
     if (currentChatId === chatId) {
-        startNewChat();
+        // Clear the current conversation from localStorage first to prevent re-saving
+        localStorage.removeItem('assistedVoiceConversation');
+        // Clear the display
+        clearChatDisplay();
+        // Generate new chat ID
+        currentChatId = Date.now().toString();
+        // Show welcome screen
+        showWelcomeScreen();
+        // Refresh history display
+        loadChatHistory();
     } else {
         // Just refresh the history display
         loadChatHistory();

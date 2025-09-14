@@ -305,6 +305,7 @@ body {
 }
 
 .voice-btn,
+.mute-btn,
 .send-btn {
     background: rgba(255, 255, 255, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -321,12 +322,14 @@ body {
 }
 
 .voice-btn:hover,
+.mute-btn:hover,
 .send-btn:hover {
     background: rgba(255, 255, 255, 0.25);
     border-color: rgba(255, 255, 255, 0.3);
 }
 
 .voice-btn:active,
+.mute-btn:active,
 .send-btn:active {
     transform: scale(0.95);
     background: var(--accent);
@@ -337,6 +340,12 @@ body {
     background: #ff3b30;
     border-color: #ff3b30;
     animation: pulse 1.5s infinite;
+}
+
+.mute-btn.muted {
+    background: rgba(255, 59, 48, 0.2);
+    border-color: rgba(255, 59, 48, 0.5);
+    color: #ff3b30;
 }
 
 @keyframes pulse {

@@ -11,6 +11,8 @@ let isRecording = false;
 let ttsEnabled = true; // Default to enabled
 let currentTTSEngine = 'edge-tts'; // Track current TTS engine
 let currentModel = null; // Track current model for responses
+let audioQueue = []; // Queue for audio playback
+let isPlayingAudio = false; // Track if audio is currently playing
 
 // WebSocket reconnection settings
 let reconnectAttempts = 0;
@@ -227,7 +229,26 @@ function setupEventListeners() {
                 }
             }
         });
+        
     }
+    
+    // Global click handler for audio playback (handles autoplay policy)
+    document.addEventListener('click', () => {
+        // Try to play pending audio on any user interaction
+        if (window.pendingAudio) {
+            console.log('User interaction detected, attempting to play pending audio');
+            window.pendingAudio.play().then(() => {
+                console.log('Pending audio now playing');
+                showAudioPlayingIndicator();
+            }).catch(err => {
+                console.error('Still cannot play audio:', err);
+            });
+            window.pendingAudio = null;
+            // Remove click to play message if it exists
+            const msg = document.querySelector('.click-to-play-msg');
+            if (msg) msg.remove();
+        }
+    });
     
     // Send button
     if (sendBtn) {
@@ -389,11 +410,24 @@ function setupEventListeners() {
             updateSpeakerButtons();
         });
         
-        // Load saved preference
-        const savedEngine = localStorage.getItem('ttsEngine');
-        if (savedEngine) {
-            voiceSelect.value = savedEngine;
+        // Load saved preference and apply it
+        const savedEngine = localStorage.getItem('ttsEngine') || 'edge-tts';
+        voiceSelect.value = savedEngine;
+        
+        // Apply the saved engine settings
+        if (savedEngine === 'none') {
+            ttsEnabled = false;
+            currentTTSEngine = 'none';
+        } else if (savedEngine === 'edge-tts') {
+            ttsEnabled = true;
+            currentTTSEngine = 'edge-tts';
+        } else if (savedEngine === 'macos') {
+            ttsEnabled = true;
+            currentTTSEngine = 'macos';
         }
+        
+        // Update speaker buttons based on current state
+        updateSpeakerButtons();
     }
 }
 
@@ -401,6 +435,9 @@ function setupEventListeners() {
  * Setup settings panel event listeners
  */
 function setupSettingsListeners() {
+    // Server Configuration
+    setupServerSettings();
+    
     // Theme buttons
     const themeButtons = document.querySelectorAll('.theme-btn');
     themeButtons.forEach(btn => {
@@ -646,27 +683,183 @@ function stopRecording() {
  * Replay a message using TTS
  */
 function replayMessage(text) {
-    if (ttsEnabled && text) {
+    // Always allow manual replay via speaker button, regardless of TTS settings
+    if (text) {
         socket.emit('replay_text', { text: text, enable_tts: true });
     }
 }
 
 /**
- * Play audio data received from server
+ * Play audio data received from server - simplified version
  */
 function playAudioData(audioDataUrl) {
     try {
-        console.log('Playing audio, data URL length:', audioDataUrl.length);
+        console.log('Received audio for playback, data URL length:', audioDataUrl.length);
+        console.log('First 100 chars:', audioDataUrl.substring(0, 100));
+        
+        // Validate the audio data URL format
+        if (!audioDataUrl.startsWith('data:audio')) {
+            console.error('Invalid audio data URL format, received:', audioDataUrl.substring(0, 50));
+            return;
+        }
+        
+        // Create and play audio directly - simple approach that works
         const audio = new Audio(audioDataUrl);
         audio.volume = 1.0;
+        
+        // Play the audio immediately
         audio.play().then(() => {
+            console.log('Audio playing successfully');
+        }).catch(err => {
+            console.error('Audio playback error:', err);
+            // Try clicking anywhere on the page to enable audio
+            if (err.name === 'NotAllowedError') {
+                console.log('Browser requires user interaction for audio. Click anywhere on the page.');
+                // Store audio for later playback after user interaction
+                window.pendingAudio = audio;
+                
+                // Add one-time click handler to play audio
+                document.addEventListener('click', function playPendingAudio() {
+                    if (window.pendingAudio) {
+                        window.pendingAudio.play().catch(e => console.error('Retry play error:', e));
+                        window.pendingAudio = null;
+                        document.removeEventListener('click', playPendingAudio);
+                    }
+                }, { once: true });
+            }
+        });
+        
+    } catch (err) {
+        console.error('Error in playAudioData:', err);
+    }
+}
+
+/**
+ * Play the next audio in queue
+ */
+function playNextInQueue() {
+    if (audioQueue.length === 0) {
+        isPlayingAudio = false;
+        return;
+    }
+    
+    isPlayingAudio = true;
+    const audioDataUrl = audioQueue.shift();
+    
+    const audio = new Audio(audioDataUrl);
+    audio.volume = 1.0;
+    
+    // Add event listeners
+    audio.addEventListener('ended', () => {
+        console.log('Audio playback ended');
+        // Play next in queue
+        playNextInQueue();
+    });
+    
+    audio.addEventListener('error', (e) => {
+        console.error('Audio error:', e);
+        // Try next in queue on error
+        playNextInQueue();
+    });
+    
+    // Attempt to play
+    const playPromise = audio.play();
+    
+    if (playPromise !== undefined) {
+        playPromise.then(() => {
             console.log('Audio playback started successfully');
+            // Add visual indicator that audio is playing
+            showAudioPlayingIndicator();
         }).catch(err => {
             console.error('Error playing audio:', err);
+            isPlayingAudio = false;
+            
+            if (err.name === 'NotAllowedError') {
+                console.log('Autoplay blocked - showing click to play message');
+                showClickToPlayMessage();
+                // Store for manual trigger
+                window.pendingAudioQueue = audioQueue;
+                window.pendingAudioQueue.unshift(audioDataUrl); // Put it back
+                audioQueue = []; // Clear queue
+            }
         });
-    } catch (err) {
-        console.error('Error creating audio:', err);
     }
+}
+
+/**
+ * Show visual indicator that audio is playing
+ */
+function showAudioPlayingIndicator() {
+    // Remove any existing indicator
+    const existingIndicator = document.querySelector('.audio-playing-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+    
+    // Create new indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'audio-playing-indicator';
+    indicator.innerHTML = '🔊 Playing audio...';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 70px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        z-index: 1000;
+        animation: fadeInOut 2s;
+    `;
+    document.body.appendChild(indicator);
+    
+    // Remove after 2 seconds
+    setTimeout(() => {
+        indicator.remove();
+    }, 2000);
+}
+
+/**
+ * Show click to play message when autoplay is blocked
+ */
+function showClickToPlayMessage() {
+    // Remove any existing message
+    const existingMsg = document.querySelector('.click-to-play-msg');
+    if (existingMsg) {
+        existingMsg.remove();
+    }
+    
+    // Create message
+    const msg = document.createElement('div');
+    msg.className = 'click-to-play-msg';
+    msg.innerHTML = '🔇 Click anywhere to enable audio playback';
+    msg.style.cssText = `
+        position: fixed;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ff9800;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 25px;
+        font-size: 14px;
+        z-index: 1000;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    `;
+    
+    // Add click handler to play pending audio
+    msg.onclick = () => {
+        msg.remove();
+        if (window.pendingAudioQueue && window.pendingAudioQueue.length > 0) {
+            audioQueue = window.pendingAudioQueue;
+            window.pendingAudioQueue = null;
+            playNextInQueue();
+        }
+    };
+    
+    document.body.appendChild(msg);
 }
 
 /**
@@ -680,7 +873,9 @@ function updateSpeakerButtons() {
         const messageContent = timestampDiv.parentElement.querySelector('.message-content');
         const text = messageContent ? messageContent.textContent : '';
         
-        if (ttsEnabled && !existingBtn && text) {
+        // Always show speaker button for assistant messages with text
+        // Speaker button should work regardless of TTS settings
+        if (!existingBtn && text) {
             // Add speaker button
             const speakerBtn = document.createElement('button');
             speakerBtn.className = 'message-speaker-btn';
@@ -692,10 +887,8 @@ function updateSpeakerButtons() {
             `;
             speakerBtn.onclick = () => replayMessage(text);
             timestampDiv.appendChild(speakerBtn);
-        } else if (!ttsEnabled && existingBtn) {
-            // Remove speaker button
-            existingBtn.remove();
         }
+        // Never remove speaker buttons - they should always be available
     });
 }
 
@@ -877,6 +1070,12 @@ function appendToCurrentResponse(text) {
         return;
     }
     
+    // Remove typing indicator when response starts
+    const typingIndicator = document.querySelector('.typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+    
     if (!currentResponseDiv) {
         // Hide welcome screen and show messages
         const welcome = document.getElementById('welcome');
@@ -944,6 +1143,12 @@ function appendToCurrentResponse(text) {
  * Complete the streaming response
  */
 function completeResponse(fullText) {
+    // Remove typing indicator if it exists
+    const typingIndicator = document.querySelector('.typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+    
     // Don't complete if we have no text
     if (!fullText || fullText.trim() === '') {
         currentResponse = '';
@@ -961,30 +1166,37 @@ function completeResponse(fullText) {
         
         // Update timestamp with metrics
         let timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
-        if (timestampDiv && messageStartTime) {
-            const now = new Date();
-            const totalTime = Date.now() - messageStartTime;
-            const firstTokenDelay = firstTokenTime ? firstTokenTime - messageStartTime : 0;
-            const tokensPerSecond = tokenCount > 0 && totalTime > 0 ? 
-                (tokenCount / (totalTime / 1000)).toFixed(1) : 0;
+        if (timestampDiv) {
+            // Save existing speaker button if present
+            const existingSpeakerBtn = timestampDiv.querySelector('.message-speaker-btn');
             
-            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const totalSec = (totalTime / 1000).toFixed(1);
-            const firstSec = (firstTokenDelay / 1000).toFixed(2);
+            if (messageStartTime) {
+                const now = new Date();
+                const totalTime = Date.now() - messageStartTime;
+                const firstTokenDelay = firstTokenTime ? firstTokenTime - messageStartTime : 0;
+                const tokensPerSecond = tokenCount > 0 && totalTime > 0 ? 
+                    (tokenCount / (totalTime / 1000)).toFixed(1) : 0;
+                
+                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const totalSec = (totalTime / 1000).toFixed(1);
+                const firstSec = (firstTokenDelay / 1000).toFixed(2);
+                
+                timestampDiv.innerHTML = `
+                    ${timeStr} • ${currentModel || 'llama3.2:3b'}<br>
+                    <span style="font-size: 11px; opacity: 0.7;">${totalSec}s total • ${firstSec}s first • ${tokensPerSecond} tokens/s</span>
+                `;
+            } else {
+                const now = new Date();
+                timestampDiv.innerHTML = `
+                    ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'llama3.2:3b'}
+                `;
+            }
             
-            timestampDiv.innerHTML = `
-                ${timeStr} • ${currentModel || 'llama3.2:3b'}<br>
-                <span style="font-size: 11px; opacity: 0.7;">${totalSec}s total • ${firstSec}s first • ${tokensPerSecond} tokens/s</span>
-            `;
-        } else if (timestampDiv) {
-            const now = new Date();
-            timestampDiv.innerHTML = `
-                ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'llama3.2:3b'}
-            `;
+            // Restore speaker button if it was removed
+            if (existingSpeakerBtn) {
+                timestampDiv.appendChild(existingSpeakerBtn);
+            }
         }
-        
-        // Re-query timestampDiv after innerHTML update and add speaker button
-        timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
         console.log('Speaker button debug:', {
             timestampDiv: !!timestampDiv,
             ttsEnabled,
@@ -992,8 +1204,8 @@ function completeResponse(fullText) {
             fullText: fullText?.substring(0, 50)
         });
         
-        // Always add speaker button for testing (removed TTS conditions temporarily)
-        if (timestampDiv) {
+        // Add speaker button if not already present
+        if (timestampDiv && !timestampDiv.querySelector('.message-speaker-btn')) {
             const speakerBtn = document.createElement('button');
             speakerBtn.className = 'message-speaker-btn';
             speakerBtn.innerHTML = `
@@ -1004,14 +1216,13 @@ function completeResponse(fullText) {
             `;
             speakerBtn.onclick = () => {
                 console.log('Speaker button clicked, text:', fullText);
-                if (ttsEnabled && currentTTSEngine !== 'none') {
-                    replayMessage(fullText);
-                } else {
-                    console.log('TTS not enabled or engine is none');
-                }
+                // Always allow manual replay via speaker button
+                replayMessage(fullText);
             };
             timestampDiv.appendChild(speakerBtn);
             console.log('Speaker button added successfully');
+        } else if (timestampDiv) {
+            console.log('Speaker button already present');
         } else {
             console.log('Could not find timestampDiv to add speaker button');
         }
@@ -1200,8 +1411,8 @@ function loadConversation() {
                 timestampDiv.textContent = 'Restored'; // Fallback for old format
             }
             
-            // Add speaker button for assistant messages
-            if (msg.role === 'assistant' && ttsEnabled) {
+            // Add speaker button for assistant messages (always add, will be hidden if TTS is disabled)
+            if (msg.role === 'assistant') {
                 const speakerBtn = document.createElement('button');
                 speakerBtn.className = 'message-speaker-btn';
                 speakerBtn.innerHTML = `
@@ -1247,8 +1458,8 @@ async function fetchConfig() {
         loadModels();
         // Voice loading is now handled by loadSettings()
         
-        // Load saved conversation
-        loadConversation();
+        // Don't load conversation here - it's already loaded in DOMContentLoaded
+        // loadConversation();
         
         // Setup model quick select after loading config
         setupModelQuickSelect();
@@ -1415,8 +1626,8 @@ function loadSettings() {
         }
     }
     
-    // Update voice selector options based on engine
-    updateVoiceSelector(currentTTSEngine);
+    // Don't call updateVoiceSelector here - it overwrites the Voice Engine dropdown
+    // The Voice Engine dropdown should maintain its options
     
     // Update speaker buttons on existing messages to match TTS state
     updateSpeakerButtons();
@@ -1741,4 +1952,128 @@ function updateChatContainerState() {
     } else {
         chatContainer.classList.remove('has-messages');
     }
+}
+
+/**
+ * Setup server configuration settings
+ */
+function setupServerSettings() {
+    const serverTypeSelect = document.getElementById('serverTypeSelect');
+    const serverHost = document.getElementById('serverHost');
+    const serverPort = document.getElementById('serverPort');
+    const testConnectionBtn = document.getElementById('testConnectionBtn');
+    const connectionStatus = document.getElementById('connectionStatus');
+    
+    // Load saved server config from localStorage
+    const savedServerType = localStorage.getItem('serverType') || 'ollama';
+    const savedServerHost = localStorage.getItem('serverHost') || 'localhost';
+    const savedServerPort = localStorage.getItem('serverPort') || '11434';
+    
+    if (serverTypeSelect) {
+        serverTypeSelect.value = savedServerType;
+        serverTypeSelect.addEventListener('change', (e) => {
+            const serverType = e.target.value;
+            localStorage.setItem('serverType', serverType);
+            
+            // Update default port based on server type
+            if (serverType === 'lm-studio' && serverPort.value === '11434') {
+                serverPort.value = '1234';
+                localStorage.setItem('serverPort', '1234');
+            } else if (serverType === 'ollama' && serverPort.value === '1234') {
+                serverPort.value = '11434';
+                localStorage.setItem('serverPort', '11434');
+            }
+            
+            showToast(`Server type changed to ${serverType}`, 'success');
+        });
+    }
+    
+    if (serverHost) {
+        serverHost.value = savedServerHost;
+        serverHost.addEventListener('change', (e) => {
+            localStorage.setItem('serverHost', e.target.value);
+            showToast('Server host updated', 'success');
+        });
+    }
+    
+    if (serverPort) {
+        serverPort.value = savedServerPort;
+        serverPort.addEventListener('change', (e) => {
+            localStorage.setItem('serverPort', e.target.value);
+            showToast('Server port updated', 'success');
+        });
+    }
+    
+    if (testConnectionBtn) {
+        testConnectionBtn.addEventListener('click', async () => {
+            testConnectionBtn.disabled = true;
+            testConnectionBtn.textContent = 'Testing...';
+            connectionStatus.textContent = '';
+            connectionStatus.className = 'connection-status';
+            
+            try {
+                const host = serverHost.value || 'localhost';
+                const port = serverPort.value || '11434';
+                const serverType = serverTypeSelect.value || 'ollama';
+                
+                // Send test request to backend
+                const response = await fetch('/api/test-connection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        type: serverType,
+                        host: host,
+                        port: parseInt(port)
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    connectionStatus.textContent = '✓ Connected';
+                    connectionStatus.className = 'connection-status success';
+                    showToast('Connection successful!', 'success');
+                } else {
+                    connectionStatus.textContent = '✗ Connection failed';
+                    connectionStatus.className = 'connection-status error';
+                    showToast(result.error || 'Connection failed', 'error');
+                }
+            } catch (error) {
+                connectionStatus.textContent = '✗ Connection failed';
+                connectionStatus.className = 'connection-status error';
+                showToast('Failed to test connection', 'error');
+            } finally {
+                testConnectionBtn.disabled = false;
+                testConnectionBtn.textContent = 'Test Connection';
+            }
+        });
+    }
+}
+
+/**
+ * Show toast notification
+ */
+function showToast(message, type = 'info') {
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    
+    // Add to body
+    document.body.appendChild(toast);
+    
+    // Trigger animation
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 300);
+    }, 3000);
 }

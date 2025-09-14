@@ -162,6 +162,35 @@
         </div>
         
         <div class="settings-content">
+            <!-- Server Configuration Section -->
+            <div class="settings-section">
+                <h4 class="section-title">Server Configuration</h4>
+                
+                <div class="setting-item">
+                    <label>Server Type</label>
+                    <select class="server-type-select" id="serverTypeSelect">
+                        <option value="ollama">Ollama</option>
+                        <option value="lm-studio">LM Studio</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                
+                <div class="setting-item">
+                    <label>Host</label>
+                    <input type="text" id="serverHost" class="text-input" placeholder="localhost" value="localhost">
+                </div>
+                
+                <div class="setting-item">
+                    <label>Port</label>
+                    <input type="number" id="serverPort" class="text-input" min="1" max="65535" placeholder="11434" value="11434">
+                </div>
+                
+                <div class="setting-item">
+                    <button class="test-connection-btn" id="testConnectionBtn">Test Connection</button>
+                    <span class="connection-status" id="connectionStatus"></span>
+                </div>
+            </div>
+            
             <!-- AI Configuration Section -->
             <div class="settings-section">
                 <h4 class="section-title">AI Configuration</h4>
@@ -238,6 +267,6 @@
     <!-- Overlay -->
     <div class="overlay" id="overlay"></div>
 
-    <script src="/static/app.js?v=24"></script>
+    <script src="/static/app.js?v=28"></script>
 </body>
 </html>

@@ -20,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from modules.stt import WhisperSTT
 from modules.llm import OllamaLLM
 from modules.tts import create_tts_engine
+from modules.config_helper import get_server_config, validate_server_config
+from modules.llm_factory import create_llm, detect_server_type, test_llm_connection, switch_llm_server
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,9 +61,9 @@ def initialize_components():
     stt = WhisperSTT(config)
     logger.info("✓ Speech-to-Text initialized")
     
-    # Initialize LLM
-    llm = OllamaLLM(config)
-    logger.info("✓ Language Model initialized")
+    # Initialize LLM using factory
+    llm = create_llm(config, optimized=True)
+    logger.info(f"✓ Language Model initialized ({llm.__class__.__name__})")
     
     # Initialize TTS
     tts = create_tts_engine(config)
@@ -101,6 +104,147 @@ def get_models():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-connection', methods=['POST'])
+def test_connection():
+    """Test connection to LLM server"""
+    try:
+        data = request.json
+        server_type = data.get('type', 'ollama')
+        host = data.get('host', 'localhost')
+        port = data.get('port', 11434 if server_type == 'ollama' else 1234)
+        
+        # Build test URL based on server type
+        if server_type == 'ollama':
+            test_url = f"http://{host}:{port}/api/tags"
+        elif server_type == 'lm-studio':
+            test_url = f"http://{host}:{port}/v1/models"
+        else:
+            test_url = f"http://{host}:{port}/"
+        
+        # Test connection with timeout
+        response = requests.get(test_url, timeout=5)
+        
+        if response.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': f'Successfully connected to {server_type} server',
+                'server_type': server_type,
+                'url': f"http://{host}:{port}"
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Server responded with status {response.status_code}'
+            }), 400
+            
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'success': False,
+            'message': 'Connection timeout - server may be offline'
+        }), 408
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'success': False,
+            'message': 'Connection refused - check if server is running'
+        }), 503
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Connection error: {str(e)}'
+        }), 500
+
+@app.route('/api/detect-server-type', methods=['POST'])
+def detect_server_type():
+    """Auto-detect server type by checking endpoints"""
+    try:
+        data = request.json
+        host = data.get('host', 'localhost')
+        port = data.get('port', 11434)
+        
+        # Try Ollama endpoint first
+        try:
+            ollama_url = f"http://{host}:{port}/api/tags"
+            response = requests.get(ollama_url, timeout=3)
+            if response.status_code == 200:
+                return jsonify({
+                    'success': True,
+                    'server_type': 'ollama',
+                    'message': 'Detected Ollama server'
+                })
+        except:
+            pass
+        
+        # Try LM Studio endpoint
+        try:
+            lm_url = f"http://{host}:{port}/v1/models"
+            response = requests.get(lm_url, timeout=3)
+            if response.status_code == 200:
+                return jsonify({
+                    'success': True,
+                    'server_type': 'lm-studio',
+                    'message': 'Detected LM Studio server'
+                })
+        except:
+            pass
+        
+        return jsonify({
+            'success': False,
+            'server_type': 'unknown',
+            'message': 'Could not detect server type'
+        }), 404
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Detection error: {str(e)}'
+        }), 500
+
+@app.route('/api/update-server', methods=['POST'])
+def update_server():
+    """Update server configuration at runtime"""
+    global llm, config
+    
+    try:
+        data = request.json
+        
+        # Update config with new server settings
+        config['server']['type'] = data.get('type', 'ollama')
+        config['server']['host'] = data.get('host', 'localhost')
+        config['server']['port'] = data.get('port', 11434)
+        
+        # Validate configuration
+        server_config = get_server_config(config)
+        is_valid, error_msg = validate_server_config(server_config)
+        
+        if not is_valid:
+            return jsonify({
+                'success': False,
+                'message': error_msg
+            }), 400
+        
+        # Reinitialize LLM with new configuration using factory
+        old_llm = llm
+        try:
+            llm = switch_llm_server(old_llm, config)
+            return jsonify({
+                'success': True,
+                'message': 'Server configuration updated successfully',
+                'config': server_config
+            })
+        except Exception as init_error:
+            # Restore old LLM on failure
+            llm = old_llm
+            return jsonify({
+                'success': False,
+                'message': f'Failed to initialize with new config: {str(init_error)}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Update error: {str(e)}'
+        }), 500
 
 @app.route('/api/tts-engines')
 def get_tts_engines():
@@ -430,11 +574,14 @@ def handle_replay_text(data):
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
             
             # Try to generate audio as base64 for browser playback
+            logger.info("Generating audio as base64...")
             if hasattr(tts, 'generate_audio_base64'):
                 audio_data = tts.generate_audio_base64(text)
                 if audio_data:
+                    logger.info(f"Audio data generated, length: {len(audio_data)}")
                     emit('audio_data', {'audio': audio_data})
                 else:
+                    logger.warning("No audio data generated, falling back to server-side playback")
                     # Fallback to server-side playback
                     if hasattr(tts, 'speak_async'):
                         tts.speak_async(text)

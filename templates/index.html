@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AssistedVoice</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
-    <link rel="stylesheet" href="/static/style-simple.css?v=13">
+    <link rel="stylesheet" href="/static/style-simple.css?v=15">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
@@ -109,6 +109,18 @@
                     <div class="recording-indicator" style="display: none;">
                         <span></span><span></span><span></span>
                     </div>
+                </button>
+                
+                <button class="mute-btn" id="muteBtn" title="Toggle voice output">
+                    <svg class="speaker-on-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                    <svg class="speaker-off-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <line x1="23" y1="9" x2="17" y2="15"/>
+                        <line x1="17" y1="9" x2="23" y2="15"/>
+                    </svg>
                 </button>
                 
                 <button class="send-btn" id="sendBtn">
@@ -224,6 +236,39 @@
                 </div>
             </div>
             
+            <!-- AI Model Settings Section -->
+            <div class="settings-section">
+                <h4 class="section-title">AI Model Settings</h4>
+                
+                <div class="setting-item">
+                    <label>Temperature <span id="temperatureValue">0.7</span></label>
+                    <input type="range" min="0" max="1" step="0.1" value="0.7" id="temperatureSlider">
+                    <small class="setting-hint">Controls response creativity (0=focused, 1=creative)</small>
+                </div>
+                
+                <div class="setting-item">
+                    <label>Max Tokens</label>
+                    <input type="number" min="50" max="2000" value="500" id="maxTokensInput" class="text-input">
+                    <small class="setting-hint">Maximum response length in tokens (~4 chars/token)</small>
+                </div>
+                
+                <div class="setting-item">
+                    <label>System Prompt</label>
+                    <textarea id="systemPromptTextarea" class="system-prompt-textarea" rows="4" placeholder="You are a helpful assistant...">You are a helpful voice assistant. Keep responses concise and natural for speech. Avoid using markdown, special characters, or formatting that doesn't work well when spoken aloud. Be conversational and friendly.</textarea>
+                    <div class="prompt-controls">
+                        <select id="promptTemplates" class="prompt-template-select">
+                            <option value="">Select template...</option>
+                            <option value="default">Default Assistant</option>
+                            <option value="technical">Technical Expert</option>
+                            <option value="creative">Creative Writer</option>
+                            <option value="tutor">Educational Tutor</option>
+                            <option value="concise">Concise Responder</option>
+                        </select>
+                        <button class="reset-prompt-btn" id="resetPromptBtn">Reset to Default</button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Chat Controls Section -->
             <div class="settings-section">
                 <h4 class="section-title">Chat Controls</h4>
@@ -267,6 +312,6 @@
     <!-- Overlay -->
     <div class="overlay" id="overlay"></div>
 
-    <script src="/static/app.js?v=28"></script>
+    <script src="/static/app.js?v=33"></script>
 </body>
 </html>

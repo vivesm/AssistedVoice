@@ -5,6 +5,20 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 ## 🆕 Recent Updates
 
 ### January 2025
+- **Quick Mute Button**: New mute button in input bar for instant voice output toggle
+  - One-click access to mute/unmute TTS without opening settings
+  - Visual state indication with red accent when muted
+  - Remembers previous TTS engine when unmuting
+  - Syncs with settings panel voice selector
+- **UI Improvements**: 
+  - Removed distracting "Assistant • model" label from typing indicator
+  - Fixed duplicate speaker buttons appearing on reload
+  - Fixed chat deletion requiring two clicks (now works with single click)
+- **AI Model Settings**: Advanced controls for fine-tuning AI behavior
+  - Temperature slider (0.0-1.0) for response creativity control
+  - Max tokens setting (50-2000) for response length management
+  - System prompt customization with 5 preset templates
+  - All settings persist across sessions and apply in real-time
 - **Modern UI Redesign**: Clean, minimalist interface with glassmorphism effects
 - **SVG Icons**: Replaced emojis with professional SVG icons throughout
 - **Enhanced TTS Controls**: Voice engine selector (Edge TTS, macOS, or Text-only mode)
@@ -32,6 +46,10 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Model Selection**: Switch between Ollama models on the fly with automatic fallback
 - **Whisper Model Selection**: Choose from tiny, base, small, medium, large, or turbo models
 - **Real-time Processing**: Fast responses with streaming support
+- **AI Model Customization**:
+  - Temperature control for response creativity (0.0 = focused, 1.0 = creative)
+  - Max tokens setting for response length (50-2000 tokens)
+  - Custom system prompts with preset templates (Default, Technical, Creative, Tutor, Concise)
 - **Multiple TTS Options**: 
   - Edge TTS: Microsoft neural voices for natural speech
   - macOS: System voices for offline TTS
@@ -108,6 +126,7 @@ http://localhost:5001
 | Control | Action |
 |---------|--------|
 | **Microphone Button** | Click and hold to record voice |
+| **Mute Button** | Toggle voice output on/off instantly |
 | **Text Input** | Type messages directly |
 | **Send Button** | Send typed message |
 | **Clear Button** | Clear conversation history |

@@ -218,6 +218,14 @@ function setupEventListeners() {
         });
     }
     
+    // Mute button - toggle voice output
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        muteBtn.addEventListener('click', () => {
+            toggleMute();
+        });
+    }
+    
     // Text input events
     if (textInput) {
         textInput.addEventListener('keypress', (e) => {
@@ -437,6 +445,9 @@ function setupEventListeners() {
 function setupSettingsListeners() {
     // Server Configuration
     setupServerSettings();
+    
+    // AI Model Settings
+    setupAIModelSettings();
     
     // Theme buttons
     const themeButtons = document.querySelectorAll('.theme-btn');
@@ -893,6 +904,73 @@ function updateSpeakerButtons() {
 }
 
 /**
+ * Toggle mute state for TTS
+ */
+function toggleMute() {
+    const muteBtn = document.getElementById('muteBtn');
+    const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
+    const speakerOffIcon = muteBtn.querySelector('.speaker-off-icon');
+    
+    if (ttsEnabled) {
+        // Currently unmuted, so mute it
+        // Save the current engine before muting
+        localStorage.setItem('previousTTSEngine', currentTTSEngine);
+        
+        // Mute
+        ttsEnabled = false;
+        currentTTSEngine = 'none';
+        
+        // Update UI
+        muteBtn.classList.add('muted');
+        speakerOnIcon.style.display = 'none';
+        speakerOffIcon.style.display = 'block';
+        
+        // Update voice selector in settings if open
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = 'none';
+        }
+        
+        // Emit to backend
+        socket.emit('change_tts', { engine: 'none' });
+        
+        // Save mute state
+        localStorage.setItem('ttsEngine', 'none');
+        localStorage.setItem('isMuted', 'true');
+        
+        updateStatus('Voice output muted', 'ready');
+    } else {
+        // Currently muted, so unmute it
+        // Restore previous engine or default to edge-tts
+        const previousEngine = localStorage.getItem('previousTTSEngine') || 'edge-tts';
+        
+        // Unmute
+        ttsEnabled = true;
+        currentTTSEngine = previousEngine;
+        
+        // Update UI
+        muteBtn.classList.remove('muted');
+        speakerOnIcon.style.display = 'block';
+        speakerOffIcon.style.display = 'none';
+        
+        // Update voice selector in settings if open
+        const voiceSelect = document.getElementById('voiceSelect');
+        if (voiceSelect) {
+            voiceSelect.value = previousEngine;
+        }
+        
+        // Emit to backend
+        socket.emit('change_tts', { engine: previousEngine });
+        
+        // Save unmute state
+        localStorage.setItem('ttsEngine', previousEngine);
+        localStorage.setItem('isMuted', 'false');
+        
+        updateStatus('Voice output enabled', 'ready');
+    }
+}
+
+/**
  * Send text message
  */
 function sendTextMessage() {
@@ -1047,7 +1125,6 @@ function showTypingIndicator() {
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message assistant-message typing-indicator';
     typingDiv.innerHTML = `
-        <div class="message-label">Assistant • ${currentModel || 'llama3.2:3b'}</div>
         <div class="message-content">
             <span class="typing-dots">
                 <span></span>
@@ -1411,18 +1488,22 @@ function loadConversation() {
                 timestampDiv.textContent = 'Restored'; // Fallback for old format
             }
             
-            // Add speaker button for assistant messages (always add, will be hidden if TTS is disabled)
+            // Add speaker button for assistant messages only if not already in metadata
+            // Check if metadata already contains a speaker button to avoid duplicates
             if (msg.role === 'assistant') {
-                const speakerBtn = document.createElement('button');
-                speakerBtn.className = 'message-speaker-btn';
-                speakerBtn.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                    </svg>
-                `;
-                speakerBtn.onclick = () => replayMessage(msg.content);
-                timestampDiv.appendChild(speakerBtn);
+                const hasExistingSpeakerBtn = msg.metadata && msg.metadata.includes('message-speaker-btn');
+                if (!hasExistingSpeakerBtn) {
+                    const speakerBtn = document.createElement('button');
+                    speakerBtn.className = 'message-speaker-btn';
+                    speakerBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                    `;
+                    speakerBtn.onclick = () => replayMessage(msg.content);
+                    timestampDiv.appendChild(speakerBtn);
+                }
             }
             
             // Assemble message structure
@@ -1628,6 +1709,25 @@ function loadSettings() {
     
     // Don't call updateVoiceSelector here - it overwrites the Voice Engine dropdown
     // The Voice Engine dropdown should maintain its options
+    
+    // Update mute button visual state
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
+        const speakerOffIcon = muteBtn.querySelector('.speaker-off-icon');
+        
+        if (currentTTSEngine === 'none' || !ttsEnabled) {
+            // Show muted state
+            muteBtn.classList.add('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'none';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'block';
+        } else {
+            // Show unmuted state
+            muteBtn.classList.remove('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'block';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'none';
+        }
+    }
     
     // Update speaker buttons on existing messages to match TTS state
     updateSpeakerButtons();
@@ -1909,9 +2009,18 @@ function deleteChatFromHistory(chatId) {
     const updatedHistory = history.filter(c => c.id !== chatId);
     localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(updatedHistory));
     
-    // If we deleted the currently active chat, start a new one
+    // If we deleted the currently active chat, clear it first then start a new one
     if (currentChatId === chatId) {
-        startNewChat();
+        // Clear the current conversation from localStorage first to prevent re-saving
+        localStorage.removeItem('assistedVoiceConversation');
+        // Clear the display
+        clearChatDisplay();
+        // Generate new chat ID
+        currentChatId = Date.now().toString();
+        // Show welcome screen
+        showWelcomeScreen();
+        // Refresh history display
+        loadChatHistory();
     } else {
         // Just refresh the history display
         loadChatHistory();
@@ -2048,6 +2157,133 @@ function setupServerSettings() {
                 testConnectionBtn.disabled = false;
                 testConnectionBtn.textContent = 'Test Connection';
             }
+        });
+    }
+}
+
+/**
+ * Setup AI Model Settings (temperature, max tokens, system prompt)
+ */
+function setupAIModelSettings() {
+    // Temperature slider
+    const temperatureSlider = document.getElementById('temperatureSlider');
+    const temperatureValue = document.getElementById('temperatureValue');
+    
+    if (temperatureSlider && temperatureValue) {
+        // Load saved temperature
+        const savedTemp = localStorage.getItem('aiTemperature') || '0.7';
+        temperatureSlider.value = savedTemp;
+        temperatureValue.textContent = savedTemp;
+        
+        // Handle temperature changes
+        temperatureSlider.addEventListener('input', (e) => {
+            const temp = e.target.value;
+            temperatureValue.textContent = temp;
+            localStorage.setItem('aiTemperature', temp);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_temperature', { temperature: parseFloat(temp) });
+            }
+        });
+    }
+    
+    // Max tokens input
+    const maxTokensInput = document.getElementById('maxTokensInput');
+    
+    if (maxTokensInput) {
+        // Load saved max tokens
+        const savedMaxTokens = localStorage.getItem('aiMaxTokens') || '500';
+        maxTokensInput.value = savedMaxTokens;
+        
+        // Handle max tokens changes
+        maxTokensInput.addEventListener('change', (e) => {
+            const maxTokens = parseInt(e.target.value);
+            
+            // Validate range
+            if (maxTokens < 50) {
+                e.target.value = 50;
+            } else if (maxTokens > 2000) {
+                e.target.value = 2000;
+            }
+            
+            localStorage.setItem('aiMaxTokens', e.target.value);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_max_tokens', { max_tokens: parseInt(e.target.value) });
+            }
+        });
+    }
+    
+    // System prompt textarea
+    const systemPromptTextarea = document.getElementById('systemPromptTextarea');
+    const promptTemplates = document.getElementById('promptTemplates');
+    const resetPromptBtn = document.getElementById('resetPromptBtn');
+    
+    const defaultPrompt = 'You are a helpful voice assistant. Keep responses concise and natural for speech. Avoid using markdown, special characters, or formatting that doesn\'t work well when spoken aloud. Be conversational and friendly.';
+    
+    const templates = {
+        'default': defaultPrompt,
+        'technical': 'You are a technical expert assistant. Provide detailed technical explanations while keeping responses clear and well-structured for voice output. Focus on accuracy and completeness.',
+        'creative': 'You are a creative writing assistant. Help with storytelling, creative ideas, and imaginative responses. Keep language vivid but natural for speech.',
+        'tutor': 'You are an educational tutor. Explain concepts clearly and patiently, breaking down complex topics into understandable parts. Encourage learning and ask clarifying questions.',
+        'concise': 'You are a concise assistant. Provide brief, direct answers without unnecessary elaboration. Focus on the essential information only.'
+    };
+    
+    if (systemPromptTextarea) {
+        // Load saved system prompt
+        const savedPrompt = localStorage.getItem('aiSystemPrompt') || defaultPrompt;
+        systemPromptTextarea.value = savedPrompt;
+        
+        // Handle system prompt changes
+        let promptDebounceTimeout = null;
+        systemPromptTextarea.addEventListener('input', (e) => {
+            // Debounce to avoid sending too many updates
+            clearTimeout(promptDebounceTimeout);
+            promptDebounceTimeout = setTimeout(() => {
+                const prompt = e.target.value;
+                localStorage.setItem('aiSystemPrompt', prompt);
+                
+                // Send to backend
+                if (socket && socket.connected) {
+                    socket.emit('update_system_prompt', { system_prompt: prompt });
+                }
+            }, 500); // Wait 500ms after user stops typing
+        });
+    }
+    
+    // Prompt templates dropdown
+    if (promptTemplates) {
+        promptTemplates.addEventListener('change', (e) => {
+            const templateKey = e.target.value;
+            if (templateKey && templates[templateKey]) {
+                systemPromptTextarea.value = templates[templateKey];
+                localStorage.setItem('aiSystemPrompt', templates[templateKey]);
+                
+                // Send to backend
+                if (socket && socket.connected) {
+                    socket.emit('update_system_prompt', { system_prompt: templates[templateKey] });
+                }
+                
+                // Reset dropdown to placeholder
+                promptTemplates.value = '';
+            }
+        });
+    }
+    
+    // Reset prompt button
+    if (resetPromptBtn) {
+        resetPromptBtn.addEventListener('click', () => {
+            systemPromptTextarea.value = defaultPrompt;
+            localStorage.setItem('aiSystemPrompt', defaultPrompt);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_system_prompt', { system_prompt: defaultPrompt });
+            }
+            
+            showToast('System prompt reset to default', 'success');
         });
     }
 }

@@ -438,6 +438,9 @@ function setupSettingsListeners() {
     // Server Configuration
     setupServerSettings();
     
+    // AI Model Settings
+    setupAIModelSettings();
+    
     // Theme buttons
     const themeButtons = document.querySelectorAll('.theme-btn');
     themeButtons.forEach(btn => {
@@ -2048,6 +2051,133 @@ function setupServerSettings() {
                 testConnectionBtn.disabled = false;
                 testConnectionBtn.textContent = 'Test Connection';
             }
+        });
+    }
+}
+
+/**
+ * Setup AI Model Settings (temperature, max tokens, system prompt)
+ */
+function setupAIModelSettings() {
+    // Temperature slider
+    const temperatureSlider = document.getElementById('temperatureSlider');
+    const temperatureValue = document.getElementById('temperatureValue');
+    
+    if (temperatureSlider && temperatureValue) {
+        // Load saved temperature
+        const savedTemp = localStorage.getItem('aiTemperature') || '0.7';
+        temperatureSlider.value = savedTemp;
+        temperatureValue.textContent = savedTemp;
+        
+        // Handle temperature changes
+        temperatureSlider.addEventListener('input', (e) => {
+            const temp = e.target.value;
+            temperatureValue.textContent = temp;
+            localStorage.setItem('aiTemperature', temp);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_temperature', { temperature: parseFloat(temp) });
+            }
+        });
+    }
+    
+    // Max tokens input
+    const maxTokensInput = document.getElementById('maxTokensInput');
+    
+    if (maxTokensInput) {
+        // Load saved max tokens
+        const savedMaxTokens = localStorage.getItem('aiMaxTokens') || '500';
+        maxTokensInput.value = savedMaxTokens;
+        
+        // Handle max tokens changes
+        maxTokensInput.addEventListener('change', (e) => {
+            const maxTokens = parseInt(e.target.value);
+            
+            // Validate range
+            if (maxTokens < 50) {
+                e.target.value = 50;
+            } else if (maxTokens > 2000) {
+                e.target.value = 2000;
+            }
+            
+            localStorage.setItem('aiMaxTokens', e.target.value);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_max_tokens', { max_tokens: parseInt(e.target.value) });
+            }
+        });
+    }
+    
+    // System prompt textarea
+    const systemPromptTextarea = document.getElementById('systemPromptTextarea');
+    const promptTemplates = document.getElementById('promptTemplates');
+    const resetPromptBtn = document.getElementById('resetPromptBtn');
+    
+    const defaultPrompt = 'You are a helpful voice assistant. Keep responses concise and natural for speech. Avoid using markdown, special characters, or formatting that doesn\'t work well when spoken aloud. Be conversational and friendly.';
+    
+    const templates = {
+        'default': defaultPrompt,
+        'technical': 'You are a technical expert assistant. Provide detailed technical explanations while keeping responses clear and well-structured for voice output. Focus on accuracy and completeness.',
+        'creative': 'You are a creative writing assistant. Help with storytelling, creative ideas, and imaginative responses. Keep language vivid but natural for speech.',
+        'tutor': 'You are an educational tutor. Explain concepts clearly and patiently, breaking down complex topics into understandable parts. Encourage learning and ask clarifying questions.',
+        'concise': 'You are a concise assistant. Provide brief, direct answers without unnecessary elaboration. Focus on the essential information only.'
+    };
+    
+    if (systemPromptTextarea) {
+        // Load saved system prompt
+        const savedPrompt = localStorage.getItem('aiSystemPrompt') || defaultPrompt;
+        systemPromptTextarea.value = savedPrompt;
+        
+        // Handle system prompt changes
+        let promptDebounceTimeout = null;
+        systemPromptTextarea.addEventListener('input', (e) => {
+            // Debounce to avoid sending too many updates
+            clearTimeout(promptDebounceTimeout);
+            promptDebounceTimeout = setTimeout(() => {
+                const prompt = e.target.value;
+                localStorage.setItem('aiSystemPrompt', prompt);
+                
+                // Send to backend
+                if (socket && socket.connected) {
+                    socket.emit('update_system_prompt', { system_prompt: prompt });
+                }
+            }, 500); // Wait 500ms after user stops typing
+        });
+    }
+    
+    // Prompt templates dropdown
+    if (promptTemplates) {
+        promptTemplates.addEventListener('change', (e) => {
+            const templateKey = e.target.value;
+            if (templateKey && templates[templateKey]) {
+                systemPromptTextarea.value = templates[templateKey];
+                localStorage.setItem('aiSystemPrompt', templates[templateKey]);
+                
+                // Send to backend
+                if (socket && socket.connected) {
+                    socket.emit('update_system_prompt', { system_prompt: templates[templateKey] });
+                }
+                
+                // Reset dropdown to placeholder
+                promptTemplates.value = '';
+            }
+        });
+    }
+    
+    // Reset prompt button
+    if (resetPromptBtn) {
+        resetPromptBtn.addEventListener('click', () => {
+            systemPromptTextarea.value = defaultPrompt;
+            localStorage.setItem('aiSystemPrompt', defaultPrompt);
+            
+            // Send to backend
+            if (socket && socket.connected) {
+                socket.emit('update_system_prompt', { system_prompt: defaultPrompt });
+            }
+            
+            showToast('System prompt reset to default', 'success');
         });
     }
 }

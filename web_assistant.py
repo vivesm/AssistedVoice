@@ -603,6 +603,56 @@ def handle_replay_text(data):
         emit('error', {'message': str(e)})
         emit('status', {'message': 'Ready', 'type': 'ready'})
 
+@socketio.on('update_temperature')
+def handle_update_temperature(data):
+    """Handle temperature setting update"""
+    try:
+        temperature = data.get('temperature', 0.7)
+        # Validate temperature range
+        if 0.0 <= temperature <= 1.0:
+            config['ollama']['temperature'] = temperature
+            logger.info(f"Temperature updated to: {temperature}")
+            emit('status', {'message': f'Temperature set to {temperature}', 'type': 'success'})
+        else:
+            emit('error', {'message': 'Temperature must be between 0.0 and 1.0'})
+    except Exception as e:
+        logger.error(f"Error updating temperature: {e}")
+        emit('error', {'message': str(e)})
+
+@socketio.on('update_max_tokens')
+def handle_update_max_tokens(data):
+    """Handle max tokens setting update"""
+    try:
+        max_tokens = data.get('max_tokens', 500)
+        # Validate max tokens range
+        if 50 <= max_tokens <= 2000:
+            config['ollama']['max_tokens'] = max_tokens
+            logger.info(f"Max tokens updated to: {max_tokens}")
+            emit('status', {'message': f'Max tokens set to {max_tokens}', 'type': 'success'})
+        else:
+            emit('error', {'message': 'Max tokens must be between 50 and 2000'})
+    except Exception as e:
+        logger.error(f"Error updating max tokens: {e}")
+        emit('error', {'message': str(e)})
+
+@socketio.on('update_system_prompt')
+def handle_update_system_prompt(data):
+    """Handle system prompt update"""
+    try:
+        system_prompt = data.get('system_prompt', '')
+        if system_prompt:
+            config['ollama']['system_prompt'] = system_prompt
+            # Update conversation manager with new system prompt
+            if 'conversation_manager' in globals():
+                conversation_manager.system_prompt = system_prompt
+            logger.info(f"System prompt updated")
+            emit('status', {'message': 'System prompt updated', 'type': 'success'})
+        else:
+            emit('error', {'message': 'System prompt cannot be empty'})
+    except Exception as e:
+        logger.error(f"Error updating system prompt: {e}")
+        emit('error', {'message': str(e)})
+
 if __name__ == '__main__':
     # Initialize components
     if initialize_components():

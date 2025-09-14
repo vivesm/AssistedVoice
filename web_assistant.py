@@ -574,11 +574,14 @@ def handle_replay_text(data):
             emit('status', {'message': 'Speaking...', 'type': 'speaking'})
             
             # Try to generate audio as base64 for browser playback
+            logger.info("Generating audio as base64...")
             if hasattr(tts, 'generate_audio_base64'):
                 audio_data = tts.generate_audio_base64(text)
                 if audio_data:
+                    logger.info(f"Audio data generated, length: {len(audio_data)}")
                     emit('audio_data', {'audio': audio_data})
                 else:
+                    logger.warning("No audio data generated, falling back to server-side playback")
                     # Fallback to server-side playback
                     if hasattr(tts, 'speak_async'):
                         tts.speak_async(text)

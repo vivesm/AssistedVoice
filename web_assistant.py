@@ -21,6 +21,7 @@ from modules.stt import WhisperSTT
 from modules.llm import OllamaLLM
 from modules.tts import create_tts_engine
 from modules.config_helper import get_server_config, validate_server_config
+from modules.llm_factory import create_llm, detect_server_type, test_llm_connection, switch_llm_server
 import requests
 
 # Configure logging
@@ -60,9 +61,9 @@ def initialize_components():
     stt = WhisperSTT(config)
     logger.info("✓ Speech-to-Text initialized")
     
-    # Initialize LLM
-    llm = OllamaLLM(config)
-    logger.info("✓ Language Model initialized")
+    # Initialize LLM using factory
+    llm = create_llm(config, optimized=True)
+    logger.info(f"✓ Language Model initialized ({llm.__class__.__name__})")
     
     # Initialize TTS
     tts = create_tts_engine(config)
@@ -222,10 +223,10 @@ def update_server():
                 'message': error_msg
             }), 400
         
-        # Reinitialize LLM with new configuration
+        # Reinitialize LLM with new configuration using factory
         old_llm = llm
         try:
-            llm = OllamaLLM(config)
+            llm = switch_llm_server(old_llm, config)
             return jsonify({
                 'success': True,
                 'message': 'Server configuration updated successfully',

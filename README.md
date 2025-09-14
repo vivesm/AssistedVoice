@@ -5,6 +5,11 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 ## 🆕 Recent Updates
 
 ### January 2025
+- **AI Model Settings**: Advanced controls for fine-tuning AI behavior
+  - Temperature slider (0.0-1.0) for response creativity control
+  - Max tokens setting (50-2000) for response length management
+  - System prompt customization with 5 preset templates
+  - All settings persist across sessions and apply in real-time
 - **Modern UI Redesign**: Clean, minimalist interface with glassmorphism effects
 - **SVG Icons**: Replaced emojis with professional SVG icons throughout
 - **Enhanced TTS Controls**: Voice engine selector (Edge TTS, macOS, or Text-only mode)
@@ -32,6 +37,10 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Model Selection**: Switch between Ollama models on the fly with automatic fallback
 - **Whisper Model Selection**: Choose from tiny, base, small, medium, large, or turbo models
 - **Real-time Processing**: Fast responses with streaming support
+- **AI Model Customization**:
+  - Temperature control for response creativity (0.0 = focused, 1.0 = creative)
+  - Max tokens setting for response length (50-2000 tokens)
+  - Custom system prompts with preset templates (Default, Technical, Creative, Tutor, Concise)
 - **Multiple TTS Options**: 
   - Edge TTS: Microsoft neural voices for natural speech
   - macOS: System voices for offline TTS

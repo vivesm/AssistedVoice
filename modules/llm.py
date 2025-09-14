@@ -8,6 +8,7 @@ import ollama
 from ollama import Client
 from dataclasses import dataclass
 from datetime import datetime
+from .config_helper import get_server_config
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class OllamaLLM:
     
     def __init__(self, config: dict):
         self.config = config
+        self.server_config = get_server_config(config)
         self.client = None
         self.model = config['ollama']['model']
         self.fallback_model = config['ollama'].get('fallback_model')
@@ -89,11 +91,29 @@ class OllamaLLM:
         self.setup()
     
     def setup(self):
-        """Initialize Ollama client"""
+        """Initialize Ollama client with custom host configuration"""
         try:
-            self.client = Client()
-            # Test connection
-            models = self.client.list()
+            # Use custom host from configuration
+            host = self.server_config['base_url']
+            logger.info(f"Connecting to Ollama at {host}")
+            
+            # Try configured host first
+            try:
+                self.client = Client(host=host)
+                # Test connection
+                models = self.client.list()
+                logger.info(f"Successfully connected to {host}")
+            except Exception as e:
+                logger.warning(f"Failed to connect to {host}: {e}")
+                
+                # Fallback to localhost:11434 if custom host fails
+                if host != "http://localhost:11434":
+                    logger.info("Falling back to localhost:11434")
+                    self.client = Client(host="http://localhost:11434")
+                    models = self.client.list()
+                    logger.info("Connected to fallback server at localhost:11434")
+                else:
+                    raise  # Re-raise if already using default
             # Handle different response formats
             available_models = []
             if hasattr(models, 'models'):

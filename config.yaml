@@ -1,5 +1,18 @@
 # AssistedVoice Configuration
 
+# Server Configuration
+server:
+  type: "ollama"              # Options: ollama, lm-studio, custom
+  host: "localhost"           # Server hostname or IP address
+  port: 11434                 # Server port (11434 for Ollama, 1234 for LM Studio)
+  timeout: 30                 # Connection timeout in seconds
+  retry_attempts: 3           # Number of retry attempts on failure
+  
+  # LM Studio specific settings (when type is 'lm-studio')
+  lm_studio:
+    api_key: "not-needed"     # LM Studio doesn't require API key
+    base_url: "/v1"           # API base path
+
 # Speech Recognition (Whisper)
 whisper:
   model: "turbo"              # Options: tiny, base, small, medium, large, turbo

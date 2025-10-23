@@ -40,6 +40,42 @@ function logConnectionState(state, details = '') {
     updateConnectionIndicator(state);
 }
 
+// Toast Notification System
+function showToast(message, type = 'success', duration = 2000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+
+    // Create icon based on type
+    let iconSVG = '';
+    if (type === 'success') {
+        iconSVG = '<svg class="toast-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+    } else if (type === 'error') {
+        iconSVG = '<svg class="toast-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    } else {
+        iconSVG = '<svg class="toast-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+    }
+
+    toast.innerHTML = `
+        ${iconSVG}
+        <div class="toast-message">${message}</div>
+    `;
+
+    container.appendChild(toast);
+
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Auto-remove after duration
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
 function updateConnectionIndicator(state) {
     // Visual indicator for connection state
     const statusText = document.getElementById('statusText');
@@ -395,7 +431,55 @@ function setupEventListeners() {
             overlay.classList.remove('active');
         });
     }
-    
+
+    // Settings Search Functionality
+    const settingsSearch = document.getElementById('settingsSearch');
+    if (settingsSearch) {
+        settingsSearch.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const settingsSections = document.querySelectorAll('.settings-section');
+
+            settingsSections.forEach(section => {
+                const sectionTitle = section.querySelector('.section-title')?.textContent.toLowerCase() || '';
+                const settingItems = section.querySelectorAll('.setting-item');
+                let sectionHasMatch = false;
+
+                settingItems.forEach(item => {
+                    const label = item.querySelector('label')?.textContent.toLowerCase() || '';
+                    const hint = item.querySelector('.setting-hint')?.textContent.toLowerCase() || '';
+                    const select = item.querySelector('select');
+                    const selectText = select ? Array.from(select.options).map(opt => opt.textContent.toLowerCase()).join(' ') : '';
+
+                    const matches = searchTerm === '' ||
+                                  label.includes(searchTerm) ||
+                                  hint.includes(searchTerm) ||
+                                  sectionTitle.includes(searchTerm) ||
+                                  selectText.includes(searchTerm);
+
+                    if (matches) {
+                        item.style.display = '';
+                        sectionHasMatch = true;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+
+                // Hide/show entire section based on matches
+                if (sectionHasMatch || searchTerm === '') {
+                    section.style.display = '';
+                } else {
+                    section.style.display = 'none';
+                }
+            });
+        });
+
+        // Clear search when settings panel closes
+        document.getElementById('closeSettings')?.addEventListener('click', () => {
+            settingsSearch.value = '';
+            settingsSearch.dispatchEvent(new Event('input')); // Reset filter
+        });
+    }
+
     // Settings Panel Event Listeners
     setupSettingsListeners();
     
@@ -514,37 +598,47 @@ function setupSettingsListeners() {
             themeButtons.forEach(b => b.classList.remove('active'));
             // Add active to clicked button
             btn.classList.add('active');
-            
+
             // Apply theme
             const theme = btn.dataset.theme;
             applyTheme(theme);
             localStorage.setItem('theme', theme);
+            showToast(`Theme changed to ${theme}`, 'success');
         });
     });
-    
+
     // Font size slider
     const fontSlider = document.getElementById('fontSlider');
     if (fontSlider) {
+        let fontSizeTimeout;
         fontSlider.addEventListener('input', (e) => {
             const size = e.target.value;
             document.documentElement.style.fontSize = `${size}px`;
             localStorage.setItem('fontSize', size);
+
+            // Debounce toast notification
+            clearTimeout(fontSizeTimeout);
+            fontSizeTimeout = setTimeout(() => {
+                showToast(`Font size set to ${size}px`, 'success');
+            }, 500);
         });
     }
-    
+
     // Send on Enter checkbox
     const sendOnEnter = document.getElementById('sendOnEnter');
     if (sendOnEnter) {
         sendOnEnter.addEventListener('change', (e) => {
             localStorage.setItem('sendOnEnter', e.target.checked);
+            showToast(`Send on Enter ${e.target.checked ? 'enabled' : 'disabled'}`, 'success');
         });
     }
-    
+
     // Sound effects checkbox
     const soundEffects = document.getElementById('soundEffects');
     if (soundEffects) {
         soundEffects.addEventListener('change', (e) => {
             localStorage.setItem('soundEffects', e.target.checked);
+            showToast(`Sound effects ${e.target.checked ? 'enabled' : 'disabled'}`, 'success');
         });
     }
 }
@@ -2295,6 +2389,7 @@ function setupAIModelSettings() {
         temperatureValue.textContent = savedTemp;
         
         // Handle temperature changes
+        let tempDebounce;
         temperatureSlider.addEventListener('input', (e) => {
             const temp = e.target.value;
             temperatureValue.textContent = temp;
@@ -2305,6 +2400,12 @@ function setupAIModelSettings() {
                 const requestData = { temperature: parseFloat(temp) };
                 logRequest('update_temperature', requestData);
                 socket.emit('update_temperature', requestData);
+
+                // Debounced toast
+                clearTimeout(tempDebounce);
+                tempDebounce = setTimeout(() => {
+                    showToast(`Temperature set to ${temp}`, 'success');
+                }, 500);
             }
         });
     }
@@ -2335,6 +2436,7 @@ function setupAIModelSettings() {
                 const requestData = { max_tokens: parseInt(e.target.value) };
                 logRequest('update_max_tokens', requestData);
                 socket.emit('update_max_tokens', requestData);
+                showToast(`Max tokens set to ${e.target.value}`, 'success');
             }
         });
     }
@@ -2373,6 +2475,7 @@ function setupAIModelSettings() {
                     const requestData = { system_prompt: prompt };
                     logRequest('update_system_prompt', { promptLength: prompt.length });
                     socket.emit('update_system_prompt', requestData);
+                    showToast('System prompt updated', 'success');
                 }
             }, 500); // Wait 500ms after user stops typing
         });

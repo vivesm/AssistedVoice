@@ -114,8 +114,8 @@ def get_models():
         # Check if LLM has list_models method (for LM Studio, custom backends, etc.)
         if hasattr(llm, 'list_models'):
             model_list = llm.list_models()
-            # Get current model from appropriate config section
-            current_model = config.get('lm_studio', {}).get('model') or config.get('ollama', {}).get('model', 'unknown')
+            # Use actual model loaded by LLM instance (handles fallback correctly)
+            current_model = llm.model
             return jsonify({
                 'models': model_list,
                 'current': current_model

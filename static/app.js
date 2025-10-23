@@ -1630,6 +1630,8 @@ async function loadModels() {
         const savedModel = localStorage.getItem('selectedModel');
         
         modelSelect.innerHTML = '';
+        let modelFound = false;
+
         data.models.forEach(model => {
             const option = document.createElement('option');
             option.value = model;
@@ -1637,18 +1639,32 @@ async function loadModels() {
             if (model === data.current || model === savedModel) {
                 option.selected = true;
                 currentModel = model;  // Set current model
-                
+                modelFound = true;
+
                 // Update model indicator when loading
                 const modelIndicator = document.getElementById('modelIndicator');
                 if (modelIndicator) {
                     modelIndicator.textContent = model;
-                    // console.log('Model indicator updated in loadModels to:', model);
-                } else {
-                    // console.error('Model indicator element not found in loadModels!');
                 }
             }
             modelSelect.appendChild(option);
         });
+
+        // Fallback: If no model was matched, use first available model
+        if (!modelFound && data.models.length > 0) {
+            const firstModel = data.models[0];
+            currentModel = firstModel;
+
+            // Select first model in dropdown
+            modelSelect.value = firstModel;
+
+            // Update model indicator
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) {
+                modelIndicator.textContent = firstModel;
+                logResponse('loadModels', { fallbackUsed: true, model: firstModel });
+            }
+        }
     } catch (err) {
         // console.error('Failed to load models:', err);
     }

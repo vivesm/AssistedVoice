@@ -21,8 +21,8 @@ class LMStudioLLM(BaseLLM):
         self.server_config = get_server_config(config)
         
         # LM Studio specific configuration
-        self.server_url = self.server_config.get('base_url', 'http://localhost:1234')
-        self.api_base = f"{self.server_url}/v1"
+        # Note: base_url from config_helper already includes /v1 path for LM Studio
+        self.api_base = self.server_config.get('base_url', 'http://localhost:1234/v1')
         self.api_key = self.server_config.get('api_key', 'not-needed')
         
         # Model configuration
@@ -103,15 +103,17 @@ class LMStudioLLM(BaseLLM):
             # Try to get models list from LM Studio
             models_response = self.client.models.list()
             available_models = []
-            
+
             # Parse the response (OpenAI client returns a special object)
-            if hasattr(models_response, 'data'):
-                for model in models_response.data:
-                    if hasattr(model, 'id'):
-                        available_models.append(model.id)
-            
+            if models_response and hasattr(models_response, 'data'):
+                # Check that data is not None before iterating
+                if models_response.data:
+                    for model in models_response.data:
+                        if hasattr(model, 'id'):
+                            available_models.append(model.id)
+
             return available_models
-        
+
         except Exception as e:
             logger.warning(f"Could not list models from LM Studio: {e}")
             # Return empty list but don't fail - LM Studio might still work

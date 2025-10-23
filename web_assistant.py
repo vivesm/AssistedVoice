@@ -109,21 +109,31 @@ def get_config():
 
 @app.route('/api/models')
 def get_models():
-    """Get available Ollama models"""
+    """Get available models from current LLM backend"""
     try:
-        models = llm.client.list()
-        # Filter out known problematic models but add a note about them
-        model_list = []
-        for model in models['models']:
-            model_name = model.model
-            # Keep gpt-oss models but mark them
-            model_list.append(model_name)
-        
-        return jsonify({
-            'models': model_list,
-            'current': config['ollama']['model']
-        })
+        # Check if LLM has list_models method (for LM Studio, custom backends, etc.)
+        if hasattr(llm, 'list_models'):
+            model_list = llm.list_models()
+            # Get current model from appropriate config section
+            current_model = config.get('lm_studio', {}).get('model') or config.get('ollama', {}).get('model', 'unknown')
+            return jsonify({
+                'models': model_list,
+                'current': current_model
+            })
+        # Fallback to Ollama-specific API
+        else:
+            models = llm.client.list()
+            model_list = []
+            for model in models['models']:
+                model_name = model.model
+                model_list.append(model_name)
+
+            return jsonify({
+                'models': model_list,
+                'current': config['ollama']['model']
+            })
     except Exception as e:
+        logger.error(f"Error getting models: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/test-connection', methods=['POST'])

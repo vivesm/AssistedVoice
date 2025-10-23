@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AssistedVoice is a local AI voice assistant that runs entirely on macOS, combining Whisper speech recognition with Ollama language models for private, offline AI conversations through a modern web interface.
+AssistedVoice is a local AI voice assistant that runs entirely on macOS, combining Whisper speech recognition with Ollama/LM Studio language models for private, offline AI conversations through a modern web interface.
+
+**Architecture**: Modern async FastAPI backend with Socket.IO for real-time communication, modular service layer (chat, audio, models), Pydantic validation, and automatic OpenAPI documentation.
 
 ## Commands
 
@@ -40,13 +42,20 @@ ollama serve
 source venv/bin/activate
 python web_assistant.py
 
-# Development mode with auto-reload and template changes
-FLASK_DEBUG=True python web_assistant.py
+# Development mode with auto-reload (default)
+# Auto-reload is enabled by default when FLASK_DEBUG=True (in .env)
+python web_assistant.py
 
-# Open browser to http://localhost:5001
+# Or use uvicorn directly:
+uvicorn web_assistant:socket_app --reload --port 5001
+
+# Open browser to:
+# - Main UI: http://localhost:5001
+# - API Docs (Swagger): http://localhost:5001/docs
+# - API Docs (ReDoc): http://localhost:5001/redoc
 ```
 
-**Note**: The `start.sh` script may reference an outdated filename. Use manual startup instead.
+**Note**: The server runs with **uvicorn** (ASGI) with automatic code reloading enabled in development mode.
 
 ### Testing
 ```bash
@@ -66,9 +75,14 @@ pytest --cov=modules tests/
 ### Core Components
 
 **Web Server** (`web_assistant.py`)
-- Flask application with SocketIO for real-time communication
-- Handles audio processing, model switching, and TTS requests
-- Template auto-reload enabled for development
+- FastAPI application with async/await architecture
+- Socket.IO (python-socketio[asyncio]) for async real-time communication
+- Uvicorn ASGI server with auto-reload in development
+- Automatic OpenAPI/Swagger documentation at `/docs` and `/redoc`
+- Lifespan context manager for clean startup/shutdown
+- Modular routers: `routers/api.py` (REST), `routers/pages.py` (HTML), `routers/websocket.py` (Socket.IO)
+- Service layer: `services/chat_service.py`, `services/audio_service.py`, `services/model_service.py`
+- Pydantic models in `models/schemas.py` for type-safe validation
 
 **Speech Recognition** (`modules/stt.py`)
 - WhisperSTT class using faster-whisper library
@@ -198,10 +212,10 @@ Create `.env` from `.env.example`: `cp .env.example .env`
 - Mock fixtures for external dependencies
 
 ## Port Usage
-- `5001`: Flask web server (AssistedVoice UI)
+- `5001`: Uvicorn ASGI server (AssistedVoice UI + API docs)
 - `11434`: Ollama API server (default)
 - `1234`: LM Studio API server (default)
-- Change web port in `web_assistant.py:app.run()` if needed
+- Change web port via environment variable `PORT` in `.env` or in `web_assistant.py:uvicorn.run()`
 
 ## Key Implementation Details
 
@@ -220,5 +234,11 @@ The app uses a factory pattern to support multiple LLM backends:
 5. LLM response streams back via WebSocket
 6. Optional TTS playback via Edge TTS or macOS voices
 
-### Template Auto-Reload
-`app.config['TEMPLATES_AUTO_RELOAD'] = True` in web_assistant.py:39 enables automatic template reloading in development. Changes to `templates/index.html` appear on browser refresh without server restart.
+### Auto-Reload in Development
+Uvicorn automatically reloads the server when Python files change (enabled with `--reload` flag or when `FLASK_DEBUG=True` in `.env`). Jinja2 templates in `templates/` are reloaded automatically. Changes to Python code, templates, or configuration trigger a server restart within 1-2 seconds.
+
+### Async Architecture Benefits
+- **Non-blocking I/O**: STT, TTS, and LLM operations run in thread pool via `asyncio.to_thread()`
+- **Concurrent requests**: Multiple clients can interact simultaneously without blocking
+- **Streaming responses**: LLM responses stream in real-time via async Socket.IO
+- **Better scalability**: Handles more concurrent connections with fewer resources

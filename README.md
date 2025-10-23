@@ -4,7 +4,27 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 
 ## 🆕 Recent Updates
 
-### January 2025
+### January 2025 - Latest
+
+- **FastAPI Migration**: Complete async architecture upgrade (Phase 2)
+  - Migrated from Flask to FastAPI with async/await throughout
+  - Better performance with non-blocking I/O operations
+  - Automatic OpenAPI/Swagger documentation at `/docs`
+  - Type-safe request/response validation with Pydantic
+  - Proper async WebSocket handlers using python-socketio[asyncio]
+  - Lifespan context manager for clean startup/shutdown
+  - Runs with uvicorn ASGI server with auto-reload in development
+- **Audio Playback Fix**: Concurrent audio playback prevention
+  - Stops previous TTS audio when new response arrives
+  - No more overlapping voice responses when asking multiple questions
+  - Clean audio state management with proper cleanup
+- **Modular Architecture** (Phase 1)
+  - Organized code into services (chat, audio, model management)
+  - Separate routers for API, pages, and WebSocket handlers
+  - Better separation of concerns and maintainability
+
+### January 2025 - Earlier
+
 - **Request/Response Logging**: Comprehensive WebSocket logging system for debugging
   - ISO-timestamped logs for all requests, responses, and connection state changes
   - Visual connection state indicators (connecting, connected, disconnected, error)
@@ -211,23 +231,35 @@ tts:
 
 ```
 AssistedVoice/
-├── web_assistant.py       # Main Flask application
+├── web_assistant.py       # Main FastAPI application with lifespan management
 ├── config.yaml           # Configuration
-├── modules/
-│   ├── stt.py           # Speech recognition (Whisper)
-│   ├── llm.py           # Language model (Ollama)
-│   ├── tts.py           # Text-to-speech engines
-│   └── ui.py            # Terminal UI (legacy)
-├── static/              # Frontend assets
-│   ├── app.js          # JavaScript with performance tracking
-│   └── style.css       # Enhanced styling with metrics
-├── templates/          # HTML templates
+├── routers/              # FastAPI route handlers
+│   ├── api.py           # REST API endpoints (async)
+│   ├── pages.py         # Page routes with Jinja2
+│   └── websocket.py     # Async Socket.IO event handlers
+├── services/            # Business logic layer
+│   ├── chat_service.py  # Chat conversation management
+│   ├── audio_service.py # Audio processing
+│   └── model_service.py # Model switching and management
+├── modules/             # Core components
+│   ├── stt.py          # Speech recognition (Whisper)
+│   ├── llm.py          # Language model (Ollama)
+│   ├── llm_factory.py  # LLM creation and configuration
+│   ├── llm_lmstudio.py # LM Studio integration
+│   ├── tts.py          # Text-to-speech engines
+│   └── ui.py           # Terminal UI (legacy)
+├── models/             # Pydantic schemas and Whisper models
+│   ├── schemas.py      # Request/response validation models
+│   └── whisper/        # Downloaded Whisper models (gitignored)
+├── static/             # Frontend assets
+│   ├── app.js          # JavaScript with audio management
+│   └── style-simple.css # Modern glassmorphic styling
+├── templates/          # Jinja2 templates
 │   └── index.html      # Main web UI
 ├── tests/              # Test suite
 │   ├── unit/          # Unit tests
 │   └── integration/   # Integration tests
 ├── archive/           # Legacy versions
-├── models/            # Downloaded Whisper models
 └── logs/              # Conversation logs
 ```
 
@@ -366,14 +398,38 @@ ollama serve
 # Activate virtual environment
 source venv/bin/activate
 
-# Run the web server
+# Run the web server with auto-reload
 python web_assistant.py
+# Or use uvicorn directly:
+# uvicorn web_assistant:socket_app --reload --port 5001
 ```
+
+The server runs with **uvicorn** in development mode with automatic code reloading enabled. Any changes to Python files will automatically restart the server.
+
+### API Documentation
+FastAPI provides automatic interactive API documentation:
+- **Swagger UI**: http://localhost:5001/docs
+- **ReDoc**: http://localhost:5001/redoc
+
+These interfaces allow you to:
+- View all available endpoints
+- Test API calls directly from the browser
+- See request/response schemas
+- Understand Pydantic models
 
 ### Using Different Ports
 ```bash
 # Edit web_assistant.py and change:
-app.run(host='0.0.0.0', port=5001)  # Change 5001 to your preferred port
+uvicorn.run(
+    "web_assistant:socket_app",
+    host=host,
+    port=5001,  # Change to your preferred port
+    reload=debug_mode
+)
+
+# Or set via environment variable:
+export PORT=8000
+python web_assistant.py
 ```
 
 ## Privacy & Security

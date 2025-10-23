@@ -243,6 +243,34 @@
                         <option value="none">Text Only (No Voice)</option>
                     </select>
                 </div>
+
+                <div class="setting-item">
+                    <label>Speech Rate <span id="speechRateValue">1.0x</span></label>
+                    <input type="range" min="0.5" max="2.0" step="0.1" value="1.0" id="speechRateSlider">
+                    <small class="setting-hint">Controls how fast the voice speaks (0.5x = slow, 2.0x = fast)</small>
+                </div>
+
+                <div class="setting-item">
+                    <label>Voice Volume <span id="voiceVolumeValue">100%</span></label>
+                    <input type="range" min="0" max="100" step="5" value="100" id="voiceVolumeSlider">
+                    <small class="setting-hint">Controls voice playback volume (0% = muted, 100% = full)</small>
+                </div>
+
+                <div class="setting-item" id="edgeVoiceSettingItem">
+                    <label>Edge TTS Voice</label>
+                    <select class="edge-voice-select" id="edgeVoiceSelect">
+                        <option value="en-US-JennyNeural">Jenny (US Female)</option>
+                        <option value="en-US-GuyNeural">Guy (US Male)</option>
+                        <option value="en-US-AriaNeural">Aria (US Female, Younger)</option>
+                        <option value="en-GB-SoniaNeural">Sonia (UK Female)</option>
+                        <option value="en-GB-RyanNeural">Ryan (UK Male)</option>
+                        <option value="en-AU-NatashaNeural">Natasha (AU Female)</option>
+                        <option value="en-AU-WilliamNeural">William (AU Male)</option>
+                        <option value="en-CA-ClaraNeural">Clara (CA Female)</option>
+                        <option value="en-CA-LiamNeural">Liam (CA Male)</option>
+                    </select>
+                    <small class="setting-hint">Select voice for Edge TTS engine (only applies when Edge TTS is active)</small>
+                </div>
             </div>
             
             <!-- AI Model Settings Section -->
@@ -314,6 +342,70 @@
                     <label>Font Size</label>
                     <input type="range" min="12" max="20" value="16" id="fontSlider">
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Help Panel -->
+    <div class="shortcuts-modal" id="shortcutsModal">
+        <div class="shortcuts-content">
+            <div class="shortcuts-header">
+                <h3>Keyboard Shortcuts</h3>
+                <button class="close-shortcuts" id="closeShortcuts">✕</button>
+            </div>
+
+            <div class="shortcuts-grid">
+                <div class="shortcuts-section">
+                    <h4>General</h4>
+                    <div class="shortcut-item">
+                        <kbd>?</kbd>
+                        <span>Show this help</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Esc</kbd>
+                        <span>Close panels/modals</span>
+                    </div>
+                </div>
+
+                <div class="shortcuts-section">
+                    <h4>Navigation</h4>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd> + <kbd>K</kbd>
+                        <span>Open settings</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd> + <kbd>M</kbd>
+                        <span>Open menu</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd> + <kbd>L</kbd>
+                        <span>Clear chat</span>
+                    </div>
+                </div>
+
+                <div class="shortcuts-section">
+                    <h4>Input</h4>
+                    <div class="shortcut-item">
+                        <kbd>Enter</kbd>
+                        <span>Send message</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd> + <kbd>R</kbd>
+                        <span>Toggle recording</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd> + <kbd>D</kbd>
+                        <span>Toggle mute</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>/</kbd>
+                        <span>Focus input</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="shortcuts-footer">
+                <p>Press <kbd>?</kbd> anytime to toggle this help</p>
             </div>
         </div>
     </div>

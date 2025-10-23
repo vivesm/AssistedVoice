@@ -480,6 +480,118 @@ function setupEventListeners() {
         });
     }
 
+    // Keyboard Shortcuts Modal
+    const shortcutsModal = document.getElementById('shortcutsModal');
+    const closeShortcuts = document.getElementById('closeShortcuts');
+
+    function showShortcutsModal() {
+        if (shortcutsModal) {
+            shortcutsModal.classList.add('active');
+            if (overlay) overlay.classList.add('active');
+        }
+    }
+
+    function hideShortcutsModal() {
+        if (shortcutsModal) {
+            shortcutsModal.classList.remove('active');
+            if (overlay) overlay.classList.remove('active');
+        }
+    }
+
+    if (closeShortcuts) {
+        closeShortcuts.addEventListener('click', hideShortcutsModal);
+    }
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ignore if typing in input fields (except for specific shortcuts)
+        const isTyping = document.activeElement.tagName === 'INPUT' ||
+                        document.activeElement.tagName === 'TEXTAREA';
+
+        // ? - Show keyboard shortcuts (works anywhere)
+        if (e.key === '?' && !isTyping) {
+            e.preventDefault();
+            if (shortcutsModal.classList.contains('active')) {
+                hideShortcutsModal();
+            } else {
+                showShortcutsModal();
+            }
+            return;
+        }
+
+        // Escape - Close any open panel
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            const sideMenu = document.getElementById('sideMenu');
+            const settingsPanel = document.getElementById('settingsPanel');
+
+            if (shortcutsModal.classList.contains('active')) {
+                hideShortcutsModal();
+            } else if (settingsPanel?.classList.contains('active')) {
+                settingsPanel.classList.remove('active');
+                if (overlay) overlay.classList.remove('active');
+            } else if (sideMenu?.classList.contains('active')) {
+                sideMenu.classList.remove('active');
+                if (overlay) overlay.classList.remove('active');
+            }
+            return;
+        }
+
+        // Don't process other shortcuts if typing
+        if (isTyping && e.key !== 'Enter') return;
+
+        // Ctrl/Cmd + K - Open settings
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            if (settingsBtn) settingsBtn.click();
+            return;
+        }
+
+        // Ctrl/Cmd + M - Open menu
+        if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+            e.preventDefault();
+            if (menuBtn) menuBtn.click();
+            return;
+        }
+
+        // Ctrl/Cmd + L - Clear chat
+        if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+            e.preventDefault();
+            if (clearBtn) clearBtn.click();
+            return;
+        }
+
+        // Ctrl/Cmd + R - Toggle recording
+        if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+            e.preventDefault();
+            if (voiceBtn) {
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            }
+            return;
+        }
+
+        // Ctrl/Cmd + D - Toggle mute
+        if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+            e.preventDefault();
+            const muteBtn = document.getElementById('muteBtn');
+            if (muteBtn) muteBtn.click();
+            return;
+        }
+
+        // / - Focus input (when not already typing)
+        if (e.key === '/' && !isTyping) {
+            e.preventDefault();
+            if (textInput) {
+                textInput.focus();
+            }
+            return;
+        }
+    });
+
     // Settings Panel Event Listeners
     setupSettingsListeners();
     
@@ -577,6 +689,100 @@ function setupEventListeners() {
         
         // Update speaker buttons based on current state
         updateSpeakerButtons();
+    }
+
+    // Speech Rate Slider
+    const speechRateSlider = document.getElementById('speechRateSlider');
+    const speechRateValue = document.getElementById('speechRateValue');
+    let speechRateTimeout;
+    if (speechRateSlider && speechRateValue) {
+        // Load saved value
+        const savedRate = parseFloat(localStorage.getItem('speechRate') || '1.0');
+        speechRateSlider.value = savedRate;
+        speechRateValue.textContent = savedRate.toFixed(1) + 'x';
+
+        speechRateSlider.addEventListener('input', (e) => {
+            const rate = parseFloat(e.target.value);
+            speechRateValue.textContent = rate.toFixed(1) + 'x';
+            localStorage.setItem('speechRate', rate.toString());
+
+            // Debounced toast and socket emit
+            clearTimeout(speechRateTimeout);
+            speechRateTimeout = setTimeout(() => {
+                showToast(`Speech rate set to ${rate.toFixed(1)}x`, 'success');
+                // Emit to server if needed for real-time TTS updates
+                const requestData = { rate: rate };
+                logRequest('update_speech_rate', requestData);
+                socket.emit('update_speech_rate', requestData);
+            }, 500);
+        });
+    }
+
+    // Voice Volume Slider
+    const voiceVolumeSlider = document.getElementById('voiceVolumeSlider');
+    const voiceVolumeValue = document.getElementById('voiceVolumeValue');
+    let voiceVolumeTimeout;
+    if (voiceVolumeSlider && voiceVolumeValue) {
+        // Load saved value
+        const savedVolume = parseInt(localStorage.getItem('voiceVolume') || '100');
+        voiceVolumeSlider.value = savedVolume;
+        voiceVolumeValue.textContent = savedVolume + '%';
+
+        voiceVolumeSlider.addEventListener('input', (e) => {
+            const volume = parseInt(e.target.value);
+            voiceVolumeValue.textContent = volume + '%';
+            localStorage.setItem('voiceVolume', volume.toString());
+
+            // Apply volume to current and future audio elements
+            document.querySelectorAll('audio').forEach(audio => {
+                audio.volume = volume / 100;
+            });
+
+            // Debounced toast and socket emit
+            clearTimeout(voiceVolumeTimeout);
+            voiceVolumeTimeout = setTimeout(() => {
+                showToast(`Voice volume set to ${volume}%`, 'success');
+                const requestData = { volume: volume };
+                logRequest('update_voice_volume', requestData);
+                socket.emit('update_voice_volume', requestData);
+            }, 500);
+        });
+    }
+
+    // Edge Voice Selector
+    const edgeVoiceSelect = document.getElementById('edgeVoiceSelect');
+    const edgeVoiceSettingItem = document.getElementById('edgeVoiceSettingItem');
+    if (edgeVoiceSelect && edgeVoiceSettingItem) {
+        // Load saved voice
+        const savedVoice = localStorage.getItem('edgeVoice') || 'en-US-JennyNeural';
+        edgeVoiceSelect.value = savedVoice;
+
+        // Show/hide based on current TTS engine
+        const updateEdgeVoiceVisibility = () => {
+            const currentEngine = voiceSelect?.value || localStorage.getItem('ttsEngine') || 'edge-tts';
+            if (currentEngine === 'edge-tts') {
+                edgeVoiceSettingItem.style.display = '';
+            } else {
+                edgeVoiceSettingItem.style.display = 'none';
+            }
+        };
+
+        edgeVoiceSelect.addEventListener('change', (e) => {
+            const voice = e.target.value;
+            localStorage.setItem('edgeVoice', voice);
+            showToast('Edge TTS voice changed', 'success');
+
+            // Emit to server
+            const requestData = { voice: voice };
+            logRequest('update_edge_voice', requestData);
+            socket.emit('update_edge_voice', requestData);
+        });
+
+        // Update visibility on load and when engine changes
+        updateEdgeVoiceVisibility();
+        if (voiceSelect) {
+            voiceSelect.addEventListener('change', updateEdgeVoiceVisibility);
+        }
     }
 }
 

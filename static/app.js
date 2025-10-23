@@ -13,6 +13,7 @@ let currentTTSEngine = 'edge-tts'; // Track current TTS engine
 let currentModel = null; // Track current model for responses
 let audioQueue = []; // Queue for audio playback
 let isPlayingAudio = false; // Track if audio is currently playing
+let currentAudio = null; // Track currently playing audio element
 
 // WebSocket reconnection settings
 let reconnectAttempts = 0;
@@ -767,28 +768,58 @@ function playAudioData(audioDataUrl) {
     try {
         console.log('Received audio for playback, data URL length:', audioDataUrl.length);
         console.log('First 100 chars:', audioDataUrl.substring(0, 100));
-        
+
         // Validate the audio data URL format
         if (!audioDataUrl.startsWith('data:audio')) {
             console.error('Invalid audio data URL format, received:', audioDataUrl.substring(0, 50));
             return;
         }
-        
+
+        // Stop any currently playing audio first
+        if (currentAudio) {
+            console.log('Stopping previous audio to play new response');
+            currentAudio.pause();
+            currentAudio.currentTime = 0;
+            currentAudio = null;
+        }
+
         // Create and play audio directly - simple approach that works
         const audio = new Audio(audioDataUrl);
         audio.volume = 1.0;
-        
+        currentAudio = audio; // Track this audio element
+
+        // Clear reference when audio finishes
+        audio.addEventListener('ended', () => {
+            console.log('Audio playback ended');
+            if (currentAudio === audio) {
+                currentAudio = null;
+            }
+        });
+
+        // Clear reference on error
+        audio.addEventListener('error', (e) => {
+            console.error('Audio error:', e);
+            if (currentAudio === audio) {
+                currentAudio = null;
+            }
+        });
+
         // Play the audio immediately
         audio.play().then(() => {
             console.log('Audio playing successfully');
         }).catch(err => {
             console.error('Audio playback error:', err);
+            // Clear reference if play failed
+            if (currentAudio === audio) {
+                currentAudio = null;
+            }
+
             // Try clicking anywhere on the page to enable audio
             if (err.name === 'NotAllowedError') {
                 console.log('Browser requires user interaction for audio. Click anywhere on the page.');
                 // Store audio for later playback after user interaction
                 window.pendingAudio = audio;
-                
+
                 // Add one-time click handler to play audio
                 document.addEventListener('click', function playPendingAudio() {
                     if (window.pendingAudio) {
@@ -799,9 +830,13 @@ function playAudioData(audioDataUrl) {
                 }, { once: true });
             }
         });
-        
+
     } catch (err) {
         console.error('Error in playAudioData:', err);
+        // Clear reference if exception occurred
+        if (currentAudio) {
+            currentAudio = null;
+        }
     }
 }
 

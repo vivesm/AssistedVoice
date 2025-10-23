@@ -18,9 +18,13 @@ pyttsx3                        # Fallback TTS engine
 edge-tts                       # Microsoft Edge TTS (realistic voices)
 
 # Web interface
-flask                          # Web framework
-flask-socketio                 # WebSocket support
-python-socketio                # Socket.IO client
+flask                          # Web framework (legacy - to be removed)
+flask-socketio                 # WebSocket support (legacy - to be removed)
+python-socketio[asyncio]       # Socket.IO with async support
+fastapi                        # Modern async web framework
+uvicorn[standard]              # ASGI server with WebSocket support
+jinja2                         # Template engine for FastAPI
+aiofiles                       # Async file I/O
 
 # Utilities
 keyboard                       # Keyboard input detection

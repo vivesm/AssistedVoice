@@ -1,20 +1,29 @@
 """
-REST API route handlers
+FastAPI REST API route handlers
 """
 import logging
-from flask import jsonify, request
-import requests
+from fastapi import APIRouter, HTTPException, status
+from models.schemas import (
+    ConfigResponse,
+    ModelListResponse,
+    ConnectionTestResponse,
+    TTSEngineRequest,
+    SuccessResponse,
+    ErrorResponse,
+    TranscriptionResponse
+)
 
 logger = logging.getLogger(__name__)
 
 
-def register_api_routes(app, config, llm, stt, model_service):
-    """Register API routes with the Flask app"""
+def register_api_routes(app, app_state):
+    """Register FastAPI routes with the app"""
 
-    @app.route('/config')
-    def get_config():
+    @app.get("/config", response_model=ConfigResponse, tags=["Configuration"])
+    async def get_config():
         """Get current configuration"""
-        return jsonify({
+        config = app_state['config']
+        return {
             'whisper': {
                 'model': config['whisper']['model']
             },
@@ -34,65 +43,85 @@ def register_api_routes(app, config, llm, stt, model_service):
             'server': {
                 'type': config.get('server', {}).get('type', 'ollama')
             }
-        })
+        }
 
-    @app.route('/api/models')
-    def get_models():
+    @app.get("/api/models", response_model=ModelListResponse, tags=["Models"])
+    async def get_models():
         """Get available models from current LLM backend"""
         try:
+            model_service = app_state['model_service']
             model_list, current_model = model_service.list_available_models()
-            return jsonify({
+            return {
                 'models': model_list,
                 'current': current_model
-            })
+            }
         except Exception as e:
             logger.error(f"Error getting models: {e}")
-            return jsonify({'error': str(e)}), 500
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
 
-    @app.route('/api/test-connection', methods=['POST'])
-    def test_connection():
+    @app.post("/api/test-connection", response_model=ConnectionTestResponse, tags=["Connection"])
+    async def test_connection():
         """Test connection to LLM server"""
         try:
+            llm = app_state['llm']
             success, message = llm.test_connection()
-            return jsonify({
+            return {
                 'success': success,
                 'message': message
-            })
+            }
         except Exception as e:
-            return jsonify({
+            logger.error(f"Connection test failed: {e}")
+            return {
                 'success': False,
                 'message': f"Connection test failed: {str(e)}"
-            }), 500
+            }
 
-    @app.route('/api/tts/engine', methods=['POST'])
-    def set_tts_engine():
+    @app.post("/api/tts/engine", response_model=SuccessResponse, tags=["TTS"])
+    async def set_tts_engine(request: TTSEngineRequest):
         """Set TTS engine"""
-        data = request.json
-        engine = data.get('engine', 'edge-tts')
+        try:
+            config = app_state['config']
+            engine = request.engine
+            config['tts']['engine'] = engine
 
-        config['tts']['engine'] = engine
+            return {
+                'success': True,
+                'message': f"TTS engine set to {engine}"
+            }
+        except Exception as e:
+            logger.error(f"Error setting TTS engine: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
 
-        return jsonify({
-            'success': True,
-            'engine': engine
-        })
-
-    @app.route('/transcribe', methods=['POST'])
-    def transcribe_audio():
+    @app.post("/transcribe", response_model=TranscriptionResponse, tags=["Audio"])
+    async def transcribe_audio(audio_data: dict):
         """Transcribe audio file"""
         try:
-            data = request.json
-            audio_data = data.get('audio')
+            audio = audio_data.get('audio')
 
-            if not audio_data:
-                return jsonify({'error': 'No audio data provided'}), 400
+            if not audio:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail='No audio data provided'
+                )
 
-            # Process audio with STT
-            text = stt.transcribe_base64(audio_data)
+            # Process audio with STT (run in thread pool for blocking operation)
+            import asyncio
+            stt = app_state['stt']
+            text = await asyncio.to_thread(stt.transcribe_base64, audio)
 
-            return jsonify({
-                'text': text
-            })
+            return {'text': text}
+
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Transcription error: {e}")
-            return jsonify({'error': str(e)}), 500
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )

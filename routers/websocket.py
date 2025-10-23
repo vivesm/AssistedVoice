@@ -1,19 +1,18 @@
 """
-WebSocket event handlers
+Async WebSocket event handlers
 Handles real-time communication between client and server
 """
 import os
 import logging
 import base64
 import tempfile
-from flask import request
-from flask_socketio import emit
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 
-def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_service, model_service):
-    """Register WebSocket event handlers"""
+def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_service, model_service):
+    """Register async WebSocket event handlers"""
 
     # Store references for handler access
     _state = {
@@ -26,24 +25,24 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
         'model_service': model_service
     }
 
-    @socketio.on('connect')
-    def handle_connect():
+    @sio.event
+    async def connect(sid, environ):
         """Handle client connection"""
-        logger.info(f"Client connected: {request.sid}")
-        emit('connected', {'status': 'Connected to AssistedVoice'})
+        logger.info(f"Client connected: {sid}")
+        await sio.emit('connected', {'status': 'Connected to AssistedVoice'}, room=sid)
 
-    @socketio.on('disconnect')
-    def handle_disconnect():
+    @sio.event
+    async def disconnect(sid):
         """Handle client disconnection"""
-        logger.info(f"Client disconnected: {request.sid}")
+        logger.info(f"Client disconnected: {sid}")
 
-    @socketio.on('process_audio')
-    def handle_audio(data):
+    @sio.event
+    async def process_audio(sid, data):
         """Process audio from client (PTT mode)"""
         try:
             enable_tts = data.get('enable_tts', True)
 
-            emit('status', {'message': 'Processing audio...', 'type': 'processing'})
+            await sio.emit('status', {'message': 'Processing audio...', 'type': 'processing'}, room=sid)
 
             # Decode base64 audio
             audio_data = base64.b64decode(data['audio'].split(',')[1] if ',' in data['audio'] else data['audio'])
@@ -53,67 +52,71 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                 tmp_file.write(audio_data)
                 tmp_path = tmp_file.name
 
-            # Transcribe
-            emit('status', {'message': 'Transcribing...', 'type': 'transcribing'})
+            # Transcribe (run in thread pool for blocking operation)
+            await sio.emit('status', {'message': 'Transcribing...', 'type': 'transcribing'}, room=sid)
 
-            segments, info = _state['stt'].model.transcribe(tmp_path, language=_state['config']['whisper']['language'])
+            segments, info = await asyncio.to_thread(
+                _state['stt'].model.transcribe,
+                tmp_path,
+                language=_state['config']['whisper']['language']
+            )
             transcription = " ".join([segment.text for segment in segments]).strip()
 
             if not transcription:
-                emit('error', {'message': 'No speech detected'})
+                await sio.emit('error', {'message': 'No speech detected'}, room=sid)
                 os.unlink(tmp_path)
                 return
 
             # Emit transcription
-            emit('transcription', {'text': transcription})
+            await sio.emit('transcription', {'text': transcription}, room=sid)
 
             # Generate response
-            emit('status', {'message': 'Generating response...', 'type': 'generating'})
+            await sio.emit('status', {'message': 'Generating response...', 'type': 'generating'}, room=sid)
 
             response_text = ""
             for chunk in _state['chat_service'].generate_response(transcription, stream=True):
                 response_text += chunk
-                emit('response_chunk', {'text': chunk, 'model': _state['llm'].model})
+                await sio.emit('response_chunk', {'text': chunk, 'model': _state['llm'].model}, room=sid)
 
             # Complete response with model info
-            emit('response_complete', {'text': response_text, 'model': _state['llm'].model})
+            await sio.emit('response_complete', {'text': response_text, 'model': _state['llm'].model}, room=sid)
 
             # Generate TTS if enabled
             if enable_tts and _state['config']['tts']['engine'] != 'none':
-                emit('status', {'message': 'Speaking...', 'type': 'speaking'})
+                await sio.emit('status', {'message': 'Speaking...', 'type': 'speaking'}, room=sid)
 
                 # Generate audio for browser playback
                 if hasattr(_state['tts'], 'generate_audio_base64'):
                     logger.info("Generating audio as base64...")
-                    audio_data = _state['tts'].generate_audio_base64(response_text)
+                    audio_data = await asyncio.to_thread(_state['tts'].generate_audio_base64, response_text)
                     if audio_data:
                         logger.info(f"Audio data generated, length: {len(audio_data)}")
-                        emit('audio_data', {'audio': audio_data})
+                        await sio.emit('audio_data', {'audio': audio_data}, room=sid)
                     else:
                         logger.warning("Failed to generate audio data")
                         if hasattr(_state['tts'], 'speak_async'):
-                            _state['tts'].speak_async(response_text)
+                            await asyncio.to_thread(_state['tts'].speak_async, response_text)
                         else:
-                            _state['tts'].speak(response_text)
+                            await asyncio.to_thread(_state['tts'].speak, response_text)
                 else:
                     if hasattr(_state['tts'], 'speak_async'):
-                        _state['tts'].speak_async(response_text)
+                        await asyncio.to_thread(_state['tts'].speak_async, response_text)
                     else:
-                        _state['tts'].speak(response_text)
+                        await asyncio.to_thread(_state['tts'].speak, response_text)
 
-                emit('tts_complete', {})
+                await sio.emit('tts_complete', {}, room=sid)
 
-            emit('status', {'message': 'Ready', 'type': 'ready'})
+            await sio.emit('status', {'message': 'Ready', 'type': 'ready'}, room=sid)
 
             # Clean up
             os.unlink(tmp_path)
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('process_text')
-    def handle_text(data):
+    @sio.event
+    async def process_text(sid, data):
         """Process text input from client"""
         try:
             text = data.get('text', '').strip()
@@ -123,54 +126,54 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                 return
 
             # Generate response
-            emit('status', {'message': 'Generating response...', 'type': 'generating'})
+            await sio.emit('status', {'message': 'Generating response...', 'type': 'generating'}, room=sid)
 
             response_text = ""
             for chunk in _state['chat_service'].generate_response(text, stream=True):
                 response_text += chunk
-                emit('response_chunk', {'text': chunk, 'model': _state['llm'].model})
+                await sio.emit('response_chunk', {'text': chunk, 'model': _state['llm'].model}, room=sid)
 
             # Complete response with model info
-            emit('response_complete', {'text': response_text, 'model': _state['llm'].model})
+            await sio.emit('response_complete', {'text': response_text, 'model': _state['llm'].model}, room=sid)
 
             # Generate TTS if enabled
             if enable_tts and _state['config']['tts']['engine'] != 'none':
-                emit('status', {'message': 'Speaking...', 'type': 'speaking'})
+                await sio.emit('status', {'message': 'Speaking...', 'type': 'speaking'}, room=sid)
 
                 if hasattr(_state['tts'], 'generate_audio_base64'):
                     logger.info("Generating audio as base64...")
-                    audio_data = _state['tts'].generate_audio_base64(response_text)
+                    audio_data = await asyncio.to_thread(_state['tts'].generate_audio_base64, response_text)
                     if audio_data:
                         logger.info(f"Audio data generated, length: {len(audio_data)}")
-                        emit('audio_data', {'audio': audio_data})
+                        await sio.emit('audio_data', {'audio': audio_data}, room=sid)
                     else:
                         logger.warning("Failed to generate audio data")
                         if hasattr(_state['tts'], 'speak_async'):
-                            _state['tts'].speak_async(response_text)
+                            await asyncio.to_thread(_state['tts'].speak_async, response_text)
                         else:
-                            _state['tts'].speak(response_text)
+                            await asyncio.to_thread(_state['tts'].speak, response_text)
                 else:
                     if hasattr(_state['tts'], 'speak_async'):
-                        _state['tts'].speak_async(response_text)
+                        await asyncio.to_thread(_state['tts'].speak_async, response_text)
                     else:
-                        _state['tts'].speak(response_text)
+                        await asyncio.to_thread(_state['tts'].speak, response_text)
 
-                emit('tts_complete', {})
+                await sio.emit('tts_complete', {}, room=sid)
 
-            emit('status', {'message': 'Ready', 'type': 'ready'})
+            await sio.emit('status', {'message': 'Ready', 'type': 'ready'}, room=sid)
 
         except Exception as e:
             logger.error(f"Error processing text: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('clear_conversation')
-    def handle_clear(data=None):
+    @sio.event
+    async def clear_conversation(sid, data=None):
         """Clear conversation history"""
         _state['chat_service'].clear_conversation()
-        emit('conversation_cleared', {})
+        await sio.emit('conversation_cleared', {}, room=sid)
 
-    @socketio.on('change_model')
-    def handle_change_model(data):
+    @sio.event
+    async def change_model(sid, data):
         """Change the LLM model"""
         try:
             new_model = data.get('model')
@@ -182,31 +185,35 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                 _state['llm'] = new_llm
                 _state['chat_service'].llm = new_llm
 
-                emit('model_changed', {'model': actual_model})
+                await sio.emit('model_changed', {'model': actual_model}, room=sid)
 
         except Exception as e:
             logger.error(f"Error changing model: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('change_tts')
-    def handle_change_tts(data):
+    @sio.event
+    async def change_tts(sid, data):
         """Change TTS engine or voice"""
         try:
             engine = data.get('engine')
             if engine:
-                # Use audio service to switch TTS
-                new_tts = _state['audio_service'].switch_tts_engine(engine, _state['config'])
+                # Use audio service to switch TTS (run in thread pool)
+                new_tts = await asyncio.to_thread(
+                    _state['audio_service'].switch_tts_engine,
+                    engine,
+                    _state['config']
+                )
                 _state['tts'] = new_tts
 
-                emit('tts_changed', {'engine': engine})
+                await sio.emit('tts_changed', {'engine': engine}, room=sid)
                 logger.info(f"TTS engine changed to: {engine}")
 
         except Exception as e:
             logger.error(f"Error changing TTS engine: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('change_whisper_model')
-    def handle_change_whisper(data):
+    @sio.event
+    async def change_whisper_model(sid, data):
         """Change Whisper model"""
         try:
             model = data.get('model')
@@ -216,20 +223,20 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                 # Update config
                 _state['config']['whisper']['model'] = model
 
-                # Reinitialize Whisper
+                # Reinitialize Whisper (run in thread pool)
                 from modules.stt import WhisperSTT
-                new_stt = WhisperSTT(_state['config'])
+                new_stt = await asyncio.to_thread(WhisperSTT, _state['config'])
                 _state['stt'] = new_stt
 
-                emit('whisper_model_changed', {'model': model})
+                await sio.emit('whisper_model_changed', {'model': model}, room=sid)
                 logger.info(f"Whisper model changed to: {model}")
 
         except Exception as e:
             logger.error(f"Error changing Whisper model: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('replay_text')
-    def handle_replay(data):
+    @sio.event
+    async def replay_text(sid, data):
         """Replay text with TTS"""
         try:
             text = data.get('text', '').strip()
@@ -239,32 +246,32 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                 return
 
             if _state['config']['tts']['engine'] != 'none':
-                emit('status', {'message': 'Speaking...', 'type': 'speaking'})
+                await sio.emit('status', {'message': 'Speaking...', 'type': 'speaking'}, room=sid)
 
                 if hasattr(_state['tts'], 'generate_audio_base64'):
-                    audio_data = _state['tts'].generate_audio_base64(text)
+                    audio_data = await asyncio.to_thread(_state['tts'].generate_audio_base64, text)
                     if audio_data:
-                        emit('audio_data', {'audio': audio_data})
+                        await sio.emit('audio_data', {'audio': audio_data}, room=sid)
                     else:
                         if hasattr(_state['tts'], 'speak_async'):
-                            _state['tts'].speak_async(text)
+                            await asyncio.to_thread(_state['tts'].speak_async, text)
                         else:
-                            _state['tts'].speak(text)
+                            await asyncio.to_thread(_state['tts'].speak, text)
                 else:
                     if hasattr(_state['tts'], 'speak_async'):
-                        _state['tts'].speak_async(text)
+                        await asyncio.to_thread(_state['tts'].speak_async, text)
                     else:
-                        _state['tts'].speak(text)
+                        await asyncio.to_thread(_state['tts'].speak, text)
 
-                emit('tts_complete', {})
-                emit('status', {'message': 'Ready', 'type': 'ready'})
+                await sio.emit('tts_complete', {}, room=sid)
+                await sio.emit('status', {'message': 'Ready', 'type': 'ready'}, room=sid)
 
         except Exception as e:
             logger.error(f"Error replaying text: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('update_temperature')
-    def handle_temperature(data):
+    @sio.event
+    async def update_temperature(sid, data):
         """Update temperature setting"""
         try:
             temperature = data.get('temperature')
@@ -277,14 +284,14 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                     _state['config'][config_section] = {}
                 _state['config'][config_section]['temperature'] = temperature
 
-                emit('status', {'message': f'Temperature set to {temperature}', 'type': 'ready'})
+                await sio.emit('status', {'message': f'Temperature set to {temperature}', 'type': 'ready'}, room=sid)
 
         except Exception as e:
             logger.error(f"Error updating temperature: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('update_max_tokens')
-    def handle_max_tokens(data):
+    @sio.event
+    async def update_max_tokens(sid, data):
         """Update max tokens setting"""
         try:
             max_tokens = data.get('max_tokens')
@@ -297,14 +304,14 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                     _state['config'][config_section] = {}
                 _state['config'][config_section]['max_tokens'] = max_tokens
 
-                emit('status', {'message': f'Max tokens set to {max_tokens}', 'type': 'ready'})
+                await sio.emit('status', {'message': f'Max tokens set to {max_tokens}', 'type': 'ready'}, room=sid)
 
         except Exception as e:
             logger.error(f"Error updating max tokens: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
 
-    @socketio.on('update_system_prompt')
-    def handle_system_prompt(data):
+    @sio.event
+    async def update_system_prompt(sid, data):
         """Update system prompt"""
         try:
             system_prompt = data.get('system_prompt')
@@ -317,8 +324,10 @@ def register_websocket_handlers(socketio, config, stt, tts, chat_service, audio_
                     _state['config'][config_section] = {}
                 _state['config'][config_section]['system_prompt'] = system_prompt
 
-                emit('status', {'message': 'System prompt updated', 'type': 'ready'})
+                await sio.emit('status', {'message': 'System prompt updated', 'type': 'ready'}, room=sid)
 
         except Exception as e:
             logger.error(f"Error updating system prompt: {e}")
-            emit('error', {'message': str(e)})
+            await sio.emit('error', {'message': str(e)}, room=sid)
+
+    logger.info("✓ WebSocket handlers registered")

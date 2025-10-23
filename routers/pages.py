@@ -1,13 +1,18 @@
 """
-Page route handlers
+FastAPI page route handlers
 """
-from flask import render_template
+from fastapi import Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+# Initialize Jinja2 templates
+templates = Jinja2Templates(directory="templates")
 
 
 def register_page_routes(app):
-    """Register page routes with the Flask app"""
+    """Register page routes with the FastAPI app"""
 
-    @app.route('/')
-    def index():
-        """Serve the simple interface"""
-        return render_template('index.html')
+    @app.get("/", response_class=HTMLResponse, tags=["Pages"])
+    async def index(request: Request):
+        """Serve the main interface"""
+        return templates.TemplateResponse("index.html", {"request": request})

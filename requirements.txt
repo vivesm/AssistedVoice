@@ -24,3 +24,8 @@ python-socketio                # Socket.IO client
 
 # Utilities
 keyboard                       # Keyboard input detection
+
+# Testing
+pytest                         # Testing framework
+pytest-cov                     # Coverage reporting
+flask-cors                     # CORS support

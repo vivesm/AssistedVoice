@@ -29,10 +29,14 @@ ollama pull mistral:7b      # Good balance
 
 ### Running the Application
 ```bash
-# Start Ollama service (required for Ollama backend)
+# 1. (Optional) Create .env file for configuration
+cp .env.example .env
+# Edit .env to set SECRET_KEY, CORS_ALLOWED_ORIGINS, etc.
+
+# 2. Start Ollama service (required for Ollama backend)
 ollama serve
 
-# Start AssistedVoice manually (recommended)
+# 3. Start AssistedVoice manually (recommended)
 source venv/bin/activate
 python web_assistant.py
 
@@ -109,12 +113,41 @@ pytest --cov=modules tests/
 
 ### WebSocket Events
 
-- `connect`/`disconnect` - Client connection management
-- Real-time streaming of LLM responses
+**Connection**
+- `connect` - Client connection established
+- `disconnect` - Client disconnected
+
+**Audio & Chat**
+- `process_audio` - Process audio from microphone (base64 audio data)
+- `process_text` - Process text message to LLM
+- Real-time streaming of LLM responses via chunks
+
+**Model Management**
+- `change_model` - Switch active LLM model
+- `change_whisper_model` - Switch Whisper speech recognition model
+- `change_tts` - Switch TTS engine and voice
+
+**AI Settings** (real-time updates)
+- `update_temperature` - Adjust LLM temperature (0.0-1.0)
+- `update_max_tokens` - Set max response tokens (50-2000)
+- `update_system_prompt` - Update system prompt with custom text or templates
+
+**Other**
+- `clear_conversation` - Clear chat history
+- `replay_text` - Replay message with TTS
 
 ### Configuration
 
-Main configuration in `config.yaml`:
+**Environment Variables** (`.env` file - optional but recommended)
+- `SECRET_KEY` - Flask session secret key (generate with: `python3 -c "import secrets; print(secrets.token_hex(32))"`)
+- `CORS_ALLOWED_ORIGINS` - Allowed CORS origins (default: `*` for development, set specific origins for production)
+- `FLASK_DEBUG` - Enable debug mode (default: `True`)
+- `HOST` - Server host binding (default: `0.0.0.0`)
+- `PORT` - Server port (default: `5001`)
+
+Create `.env` from `.env.example`: `cp .env.example .env`
+
+**Application Settings** (`config.yaml`)
 - `server`: Backend server settings (type: ollama/lm-studio, host, port, timeout)
 - `whisper`: Speech recognition settings (model, language, device, compute_type)
 - `ollama`: Ollama-specific LLM settings (model, temperature, max_tokens, system_prompt)

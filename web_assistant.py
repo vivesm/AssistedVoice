@@ -13,6 +13,11 @@ from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import logging
+from dotenv import load_dotenv
+import secrets
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add modules to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -30,7 +35,16 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+
+# Security Configuration
+# SECRET_KEY: Used for session management and CSRF protection
+# Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+# Set in .env file or it will use a random key (sessions won't persist across restarts)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+
+# Warn if using default random secret key
+if not os.environ.get('SECRET_KEY'):
+    logger.warning("⚠️  Using random SECRET_KEY. Set SECRET_KEY in .env for persistent sessions.")
 
 # IMPORTANT: Template caching behavior
 # In development (debug=True): Templates auto-reload when changed
@@ -38,8 +52,15 @@ app.config['SECRET_KEY'] = 'your-secret-key-here'
 # To force template reload without restart, set TEMPLATES_AUTO_RELOAD=True
 app.config['TEMPLATES_AUTO_RELOAD'] = True  # Always reload templates when changed
 
+# CORS Configuration
+# In production, set CORS_ALLOWED_ORIGINS in .env to specific origins
+# Example: CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '*')
+if cors_origins == '*':
+    logger.warning("⚠️  CORS allows all origins (*). Set CORS_ALLOWED_ORIGINS in .env for production.")
+
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins=cors_origins)
 
 # Global components
 stt = None
@@ -672,7 +693,9 @@ if __name__ == '__main__':
         # Set debug=True for development (auto-reloads templates and code)
         # Set debug=False for production (better performance, caches templates)
         debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
-        socketio.run(app, debug=debug_mode, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
+        host = os.environ.get('HOST', '0.0.0.0')
+        port = int(os.environ.get('PORT', 5001))
+        socketio.run(app, debug=debug_mode, host=host, port=port, allow_unsafe_werkzeug=True)
     else:
         print("Failed to initialize components")
         sys.exit(1)

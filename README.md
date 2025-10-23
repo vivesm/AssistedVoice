@@ -347,10 +347,56 @@ app.run(host='0.0.0.0', port=5001)  # Change 5001 to your preferred port
 
 ## Privacy & Security
 
+### Privacy Features
 - **No Internet Required**: Works completely offline
 - **No Data Collection**: Your conversations stay on your device
 - **No Cloud Services**: All processing is local
 - **Open Source**: Fully auditable code
+
+### Production Security Best Practices
+
+When deploying AssistedVoice, follow these security recommendations:
+
+#### 1. Environment Configuration
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Generate a secure SECRET_KEY
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Add it to .env
+echo "SECRET_KEY=your-generated-key-here" >> .env
+```
+
+#### 2. CORS Configuration
+In production, restrict CORS to specific origins:
+```bash
+# In .env file
+CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+```
+
+#### 3. Debug Mode
+Disable debug mode in production for better performance and security:
+```bash
+# In .env file
+FLASK_DEBUG=False
+```
+
+#### 4. Network Binding
+For localhost-only access, bind to 127.0.0.1:
+```bash
+# In .env file
+HOST=127.0.0.1
+```
+
+#### 5. File Permissions
+Ensure `.env` file is not readable by others:
+```bash
+chmod 600 .env
+```
+
+**Note**: The `.env` file is automatically ignored by git to prevent accidentally committing secrets.
 
 ## Contributing
 

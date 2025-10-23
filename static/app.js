@@ -19,6 +19,47 @@ let reconnectAttempts = 0;
 const maxReconnectAttempts = 10;
 const baseReconnectDelay = 1000; // Start with 1 second
 let reconnectTimeout = null;
+let connectionState = 'disconnected'; // Track connection state: disconnected, connecting, connected, error
+
+// Request/Response logging
+const REQUEST_LOG_ENABLED = true; // Enable for debugging
+function logRequest(type, data) {
+    if (!REQUEST_LOG_ENABLED) return;
+    console.log(`[REQUEST] ${new Date().toISOString()} - ${type}`, data);
+}
+
+function logResponse(type, data) {
+    if (!REQUEST_LOG_ENABLED) return;
+    console.log(`[RESPONSE] ${new Date().toISOString()} - ${type}`, data);
+}
+
+function logConnectionState(state, details = '') {
+    console.log(`[CONNECTION] ${new Date().toISOString()} - State: ${state}`, details);
+    connectionState = state;
+    updateConnectionIndicator(state);
+}
+
+function updateConnectionIndicator(state) {
+    // Visual indicator for connection state
+    const statusText = document.getElementById('statusText');
+    if (!statusText) return;
+
+    switch(state) {
+        case 'connecting':
+            statusText.classList.add('status-warning');
+            statusText.classList.remove('status-error', 'status-ready');
+            break;
+        case 'connected':
+            statusText.classList.add('status-ready');
+            statusText.classList.remove('status-error', 'status-warning');
+            break;
+        case 'error':
+        case 'disconnected':
+            statusText.classList.add('status-error');
+            statusText.classList.remove('status-ready', 'status-warning');
+            break;
+    }
+}
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
@@ -76,7 +117,9 @@ function initializeWebSocket() {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
     }
-    
+
+    logConnectionState('connecting', 'Initializing WebSocket connection');
+
     socket = io({
         reconnection: true,
         reconnectionAttempts: maxReconnectAttempts,
@@ -84,108 +127,115 @@ function initializeWebSocket() {
         reconnectionDelayMax: 30000,
         timeout: 20000
     });
-    
+
     socket.on('connect', () => {
         reconnectAttempts = 0; // Reset counter on successful connection
+        logConnectionState('connected', 'Successfully connected to server');
         updateStatus('Connected', 'ready');
-        // console.log('Connected to server');
     });
-    
+
     socket.on('disconnect', (reason) => {
+        logConnectionState('disconnected', `Disconnected: ${reason}`);
         updateStatus('Disconnected', 'error');
         stopRecording();
-        // console.log('Disconnected:', reason);
-        
+
         // Handle reconnection with exponential backoff
         if (reason === 'io server disconnect') {
             // Server disconnected us, try to reconnect
             attemptReconnection();
         }
     });
-    
+
     socket.on('connect_error', (error) => {
-        // console.error('Connection error:', error.message);
+        logConnectionState('error', `Connection error: ${error.message}`);
         attemptReconnection();
     });
     
     socket.on('connected', (data) => {
-        // console.log(data.status);
+        logResponse('connected', data);
         fetchConfig();
     });
-    
+
     socket.on('status', (data) => {
+        logResponse('status', data);
         updateStatus(data.message, data.type);
     });
-    
+
     socket.on('transcription', (data) => {
+        logResponse('transcription', data);
         addMessage('user', data.text);
     });
-    
+
     socket.on('response_chunk', (data) => {
+        // Only log first chunk to avoid spam
+        if (!firstTokenTime && messageStartTime) {
+            logResponse('response_chunk', { model: data.model, length: data.text.length });
+        }
+
         if (data.model) currentModel = data.model;
-        
+
         // Track first token time
         if (!firstTokenTime && messageStartTime) {
             firstTokenTime = Date.now();
         }
-        
+
         // Count tokens (approximate by words)
         tokenCount += data.text.split(/\s+/).filter(w => w.length > 0).length;
-        
+
         appendToCurrentResponse(data.text);
     });
-    
+
     socket.on('response_complete', (data) => {
+        logResponse('response_complete', { model: data.model, length: data.text?.length });
         if (data.model) currentModel = data.model;
         completeResponse(data.text);
         // Save conversation after response is complete
         setTimeout(saveConversation, 100);
     });
-    
+
     socket.on('tts_complete', () => {
+        logResponse('tts_complete', {});
         updateStatus('Ready', 'ready');
     });
-    
+
     socket.on('audio_data', (data) => {
-        console.log('Received audio_data event:', data.audio ? 'Audio data present' : 'No audio data');
+        logResponse('audio_data', { hasAudio: !!data.audio, length: data.audio?.length });
         if (data.audio) {
             playAudioData(data.audio);
         }
     });
-    
+
     socket.on('error', (data) => {
-        // Loading spinners removed - not in simplified UI
+        logResponse('error', data);
         showError(data.message);
     });
-    
+
     socket.on('conversation_cleared', () => {
+        logResponse('conversation_cleared', {});
         clearChatDisplay();
     });
-    
+
     socket.on('model_changed', (data) => {
-        // console.log('Model changed event received:', data.model);
+        logResponse('model_changed', data);
         currentModel = data.model;  // Update current model
-        // Loading spinner removed - not in simplified UI
         updateStatus(`Model changed to ${data.model}`, 'ready');
-        
+
         // Directly update model indicator to ensure it's visible
         const modelIndicator = document.getElementById('modelIndicator');
         if (modelIndicator) {
             modelIndicator.textContent = data.model;
-            // console.log('Model indicator updated via socket to:', data.model);
-        } else {
-            // console.error('Model indicator element not found!');
         }
-        
+
         loadModels();
     });
-    
+
     socket.on('tts_changed', (data) => {
+        logResponse('tts_changed', data);
         updateStatus('Voice settings updated', 'ready');
     });
-    
+
     socket.on('whisper_model_changed', (data) => {
-        // Loading spinner removed
+        logResponse('whisper_model_changed', data);
         updateStatus(`Whisper model changed to ${data.model}`, 'ready');
     });
     
@@ -266,6 +316,7 @@ function setupEventListeners() {
     // Clear button
     if (clearBtn) {
         clearBtn.addEventListener('click', () => {
+            logRequest('clear_conversation', {});
             socket.emit('clear_conversation');
         });
     }
@@ -356,22 +407,21 @@ function setupEventListeners() {
         modelSelect.addEventListener('change', (e) => {
             const model = e.target.value;
             if (model) {
-                // Show loading spinner when switching models
-                // Loading spinner removed - not in simplified UI
-                socket.emit('change_model', { model: model });
+                const requestData = { model: model };
+                logRequest('change_model', requestData);
+                socket.emit('change_model', requestData);
                 currentModel = model;
                 localStorage.setItem('selectedModel', model);
-                
+
                 // Immediately update model indicator
                 const modelIndicator = document.getElementById('modelIndicator');
                 if (modelIndicator) {
                     modelIndicator.textContent = model;
-                    // console.log('Model indicator updated to:', model);
                 }
             }
         });
     }
-    
+
     // Whisper model selector
     const whisperSelect = document.getElementById('whisperSelect');
     if (whisperSelect) {
@@ -379,24 +429,26 @@ function setupEventListeners() {
             const model = e.target.value;
             if (model) {
                 showWhisperLoadingSpinner();
-                socket.emit('change_whisper_model', { model: model });
+                const requestData = { model: model };
+                logRequest('change_whisper_model', requestData);
+                socket.emit('change_whisper_model', requestData);
                 localStorage.setItem('selectedWhisperModel', model);
             }
         });
-        
+
         // Load saved Whisper model preference
         const savedWhisperModel = localStorage.getItem('selectedWhisperModel');
         if (savedWhisperModel) {
             whisperSelect.value = savedWhisperModel;
         }
     }
-    
+
     // Voice/TTS engine selector in menu
     const voiceSelect = document.getElementById('voiceSelect');
     if (voiceSelect) {
         voiceSelect.addEventListener('change', (e) => {
             const engine = e.target.value;
-            
+
             // Update TTS settings based on selection
             if (engine === 'none') {
                 ttsEnabled = false;
@@ -404,16 +456,20 @@ function setupEventListeners() {
             } else if (engine === 'edge-tts') {
                 ttsEnabled = true;
                 currentTTSEngine = 'edge-tts';
-                socket.emit('change_tts', { engine: 'edge-tts' });
+                const requestData = { engine: 'edge-tts' };
+                logRequest('change_tts', requestData);
+                socket.emit('change_tts', requestData);
             } else if (engine === 'macos') {
                 ttsEnabled = true;
                 currentTTSEngine = 'macos';
-                socket.emit('change_tts', { engine: 'macos' });
+                const requestData = { engine: 'macos' };
+                logRequest('change_tts', requestData);
+                socket.emit('change_tts', requestData);
             }
-            
+
             // Save preference
             localStorage.setItem('ttsEngine', engine);
-            
+
             // Update speaker buttons on existing messages
             updateSpeakerButtons();
         });
@@ -610,7 +666,7 @@ async function startRecording() {
         mediaRecorder.onstop = () => {
             // Create blob from chunks
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            
+
             // Convert to base64 and send
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -618,14 +674,16 @@ async function startRecording() {
                 messageStartTime = Date.now();
                 firstTokenTime = null;
                 tokenCount = 0;
-                
-                socket.emit('process_audio', {
+
+                const requestData = {
                     audio: reader.result,
                     enable_tts: ttsEnabled
-                });
+                };
+                logRequest('process_audio', { audioSize: reader.result.length, enable_tts: ttsEnabled });
+                socket.emit('process_audio', requestData);
             };
             reader.readAsDataURL(audioBlob);
-            
+
             // Clean up
             audioChunks = [];
         };
@@ -696,7 +754,9 @@ function stopRecording() {
 function replayMessage(text) {
     // Always allow manual replay via speaker button, regardless of TTS settings
     if (text) {
-        socket.emit('replay_text', { text: text, enable_tts: true });
+        const requestData = { text: text, enable_tts: true };
+        logRequest('replay_text', { textLength: text.length });
+        socket.emit('replay_text', requestData);
     }
 }
 
@@ -932,35 +992,39 @@ function toggleMute() {
         }
         
         // Emit to backend
-        socket.emit('change_tts', { engine: 'none' });
-        
+        const muteRequestData = { engine: 'none' };
+        logRequest('change_tts', muteRequestData);
+        socket.emit('change_tts', muteRequestData);
+
         // Save mute state
         localStorage.setItem('ttsEngine', 'none');
         localStorage.setItem('isMuted', 'true');
-        
+
         updateStatus('Voice output muted', 'ready');
     } else {
         // Currently muted, so unmute it
         // Restore previous engine or default to edge-tts
         const previousEngine = localStorage.getItem('previousTTSEngine') || 'edge-tts';
-        
+
         // Unmute
         ttsEnabled = true;
         currentTTSEngine = previousEngine;
-        
+
         // Update UI
         muteBtn.classList.remove('muted');
         speakerOnIcon.style.display = 'block';
         speakerOffIcon.style.display = 'none';
-        
+
         // Update voice selector in settings if open
         const voiceSelect = document.getElementById('voiceSelect');
         if (voiceSelect) {
             voiceSelect.value = previousEngine;
         }
-        
+
         // Emit to backend
-        socket.emit('change_tts', { engine: previousEngine });
+        const unmuteRequestData = { engine: previousEngine };
+        logRequest('change_tts', unmuteRequestData);
+        socket.emit('change_tts', unmuteRequestData);
         
         // Save unmute state
         localStorage.setItem('ttsEngine', previousEngine);
@@ -976,31 +1040,33 @@ function toggleMute() {
 function sendTextMessage() {
     const textInput = document.getElementById('textInput');
     const text = textInput.value.trim();
-    
+
     if (!text) return;
-    
+
     // Start performance tracking
     messageStartTime = Date.now();
     firstTokenTime = null;
     tokenCount = 0;
-    
+
     // Add message to chat
     addMessage('user', text);
-    
+
     // Clear input
     textInput.value = '';
-    
+
     // Show typing indicator immediately
     showTypingIndicator();
-    
+
     // Update status subtly
     updateStatus('Thinking...', 'processing');
-    
+
     // Send to server
-    socket.emit('process_text', { 
+    const requestData = {
         text: text,
-        enable_tts: ttsEnabled 
-    });
+        enable_tts: ttsEnabled
+    };
+    logRequest('process_text', { textLength: text.length, enable_tts: ttsEnabled });
+    socket.emit('process_text', requestData);
 }
 
 /**
@@ -1781,10 +1847,12 @@ function setupModelQuickSelect() {
                     });
                     
                     // Change the model
-                    socket.emit('change_model', { model: model });
+                    const requestData = { model: model };
+                    logRequest('change_model', requestData);
+                    socket.emit('change_model', requestData);
                     currentModel = model;
                     localStorage.setItem('selectedModel', model);
-                    
+
                     // Update the model selector dropdown
                     const modelSelect = document.getElementById('modelSelect');
                     if (modelSelect) {
@@ -2180,38 +2248,42 @@ function setupAIModelSettings() {
             const temp = e.target.value;
             temperatureValue.textContent = temp;
             localStorage.setItem('aiTemperature', temp);
-            
+
             // Send to backend
             if (socket && socket.connected) {
-                socket.emit('update_temperature', { temperature: parseFloat(temp) });
+                const requestData = { temperature: parseFloat(temp) };
+                logRequest('update_temperature', requestData);
+                socket.emit('update_temperature', requestData);
             }
         });
     }
-    
+
     // Max tokens input
     const maxTokensInput = document.getElementById('maxTokensInput');
-    
+
     if (maxTokensInput) {
         // Load saved max tokens
         const savedMaxTokens = localStorage.getItem('aiMaxTokens') || '500';
         maxTokensInput.value = savedMaxTokens;
-        
+
         // Handle max tokens changes
         maxTokensInput.addEventListener('change', (e) => {
             const maxTokens = parseInt(e.target.value);
-            
+
             // Validate range
             if (maxTokens < 50) {
                 e.target.value = 50;
             } else if (maxTokens > 2000) {
                 e.target.value = 2000;
             }
-            
+
             localStorage.setItem('aiMaxTokens', e.target.value);
-            
+
             // Send to backend
             if (socket && socket.connected) {
-                socket.emit('update_max_tokens', { max_tokens: parseInt(e.target.value) });
+                const requestData = { max_tokens: parseInt(e.target.value) };
+                logRequest('update_max_tokens', requestData);
+                socket.emit('update_max_tokens', requestData);
             }
         });
     }
@@ -2244,15 +2316,17 @@ function setupAIModelSettings() {
             promptDebounceTimeout = setTimeout(() => {
                 const prompt = e.target.value;
                 localStorage.setItem('aiSystemPrompt', prompt);
-                
+
                 // Send to backend
                 if (socket && socket.connected) {
-                    socket.emit('update_system_prompt', { system_prompt: prompt });
+                    const requestData = { system_prompt: prompt };
+                    logRequest('update_system_prompt', { promptLength: prompt.length });
+                    socket.emit('update_system_prompt', requestData);
                 }
             }, 500); // Wait 500ms after user stops typing
         });
     }
-    
+
     // Prompt templates dropdown
     if (promptTemplates) {
         promptTemplates.addEventListener('change', (e) => {
@@ -2260,29 +2334,33 @@ function setupAIModelSettings() {
             if (templateKey && templates[templateKey]) {
                 systemPromptTextarea.value = templates[templateKey];
                 localStorage.setItem('aiSystemPrompt', templates[templateKey]);
-                
+
                 // Send to backend
                 if (socket && socket.connected) {
-                    socket.emit('update_system_prompt', { system_prompt: templates[templateKey] });
+                    const requestData = { system_prompt: templates[templateKey] };
+                    logRequest('update_system_prompt', { template: templateKey });
+                    socket.emit('update_system_prompt', requestData);
                 }
-                
+
                 // Reset dropdown to placeholder
                 promptTemplates.value = '';
             }
         });
     }
-    
+
     // Reset prompt button
     if (resetPromptBtn) {
         resetPromptBtn.addEventListener('click', () => {
             systemPromptTextarea.value = defaultPrompt;
             localStorage.setItem('aiSystemPrompt', defaultPrompt);
-            
+
             // Send to backend
             if (socket && socket.connected) {
-                socket.emit('update_system_prompt', { system_prompt: defaultPrompt });
+                const requestData = { system_prompt: defaultPrompt };
+                logRequest('update_system_prompt', { action: 'reset' });
+                socket.emit('update_system_prompt', requestData);
             }
-            
+
             showToast('System prompt reset to default', 'success');
         });
     }

@@ -5,6 +5,11 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 ## 🆕 Recent Updates
 
 ### January 2025
+- **Request/Response Logging**: Comprehensive WebSocket logging system for debugging
+  - ISO-timestamped logs for all requests, responses, and connection state changes
+  - Visual connection state indicators (connecting, connected, disconnected, error)
+  - Toggle-able logging via REQUEST_LOG_ENABLED flag
+  - Browser console output with color-coded prefixes for easy debugging
 - **Quick Mute Button**: New mute button in input bar for instant voice output toggle
   - One-click access to mute/unmute TTS without opening settings
   - Visual state indication with red accent when muted
@@ -285,6 +290,32 @@ Each assistant response displays real-time performance metrics:
 - **Tokens Per Second**: Generation speed (e.g., "18.5 tokens/s")
 
 Metrics appear as subtle blue badges below each message, helping you understand model performance and identify any latency issues.
+
+### Developer Tools & Debugging
+
+**Request/Response Logging**
+The application includes comprehensive logging for debugging and observability:
+- All WebSocket requests and responses are logged with ISO timestamps
+- Connection state changes are tracked and logged (connecting, connected, disconnected, error)
+- Enable/disable logging via `REQUEST_LOG_ENABLED` flag in `static/app.js`
+- Logs appear in browser console with color-coded prefixes:
+  - `[REQUEST]` - Outgoing WebSocket events
+  - `[RESPONSE]` - Incoming WebSocket events
+  - `[CONNECTION]` - Connection state changes
+
+**Example Console Output:**
+```
+[CONNECTION] 2025-01-22T19:30:00.123Z - State: connecting Initializing WebSocket connection
+[CONNECTION] 2025-01-22T19:30:01.456Z - State: connected Successfully connected to server
+[REQUEST] 2025-01-22T19:30:15.789Z - process_text {textLength: 21, enable_tts: true}
+[RESPONSE] 2025-01-22T19:30:16.012Z - response_chunk {model: "llama3.2:3b", length: 42}
+```
+
+This logging system helps diagnose:
+- WebSocket connection issues
+- Request/response timing
+- Model selection problems
+- TTS and audio processing issues
 
 ### Visual Feedback
 - **Typing Dots Animation**: Animated dots appear while the assistant is generating a response

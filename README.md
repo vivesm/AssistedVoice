@@ -6,6 +6,28 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 
 ### January 2025 - Latest
 
+- **Priority 1 UX Enhancements**: Modern UI/UX improvements following 2025 best practices
+  - **Settings Search**: Real-time filtering of settings by keyword
+    - Searches labels, hints, section titles, and dropdown options
+    - Auto-clears when settings panel closes
+  - **Toast Notifications**: Visual feedback for all settings changes
+    - Success/error/info variants with icons and animations
+    - Debounced for sliders to prevent notification spam
+  - **Keyboard Shortcuts**: Full keyboard navigation support
+    - `?` - Show/hide keyboard shortcuts help panel
+    - `Esc` - Close any open panel
+    - `Ctrl+K` - Open settings
+    - `Ctrl+M` - Open menu
+    - `Ctrl+L` - Clear chat
+    - `Ctrl+R` - Toggle recording
+    - `Ctrl+D` - Toggle mute
+    - `/` - Focus input field
+  - **Advanced Voice Controls**:
+    - Speech rate slider (0.5x - 2.0x) for TTS speed control
+    - Voice volume slider (0% - 100%) with instant audio adjustment
+    - Edge TTS voice selector (9 voices across US, UK, AU, CA English)
+    - Auto-shows/hides based on selected TTS engine
+    - All settings persist across sessions via localStorage
 - **FastAPI Migration**: Complete async architecture upgrade (Phase 2)
   - Migrated from Flask to FastAPI with async/await throughout
   - Better performance with non-blocking I/O operations

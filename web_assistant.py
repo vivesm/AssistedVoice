@@ -498,25 +498,39 @@ def handle_change_model(data):
     try:
         new_model = data.get('model')
         if new_model:
-            # Note: gpt-oss template issues have been fixed
             logger.info(f"Switching to model: {new_model}")
-            
-            # Save old model in case we need to revert
-            old_model = config['ollama']['model']
+
+            # Detect which backend is active
+            server_type = config.get('server', {}).get('type', 'ollama')
+
+            # Save old model from correct config section
+            if server_type == 'lm-studio':
+                old_model = config.get('lm_studio', {}).get('model', 'unknown')
+                config_section = 'lm_studio'
+            else:
+                old_model = config.get('ollama', {}).get('model', 'unknown')
+                config_section = 'ollama'
+
             old_llm = llm
-            
+
             try:
-                # Update config
-                config['ollama']['model'] = new_model
-                # Reinitialize LLM with new model
-                llm = OllamaLLM(config)
-                # Get the actual model name that was loaded (might be different due to version tags)
+                # Update config in the correct section
+                if config_section not in config:
+                    config[config_section] = {}
+                config[config_section]['model'] = new_model
+
+                # Reinitialize LLM using factory (creates correct type)
+                from modules.llm_factory import create_llm
+                llm = create_llm(config, optimized=True)
+
+                # Get the actual model name that was loaded
                 actual_model = llm.model
                 emit('model_changed', {'model': actual_model})
                 logger.info(f"Changed model to: {actual_model}")
+
             except Exception as model_error:
                 # Revert to old model if new one fails
-                config['ollama']['model'] = old_model
+                config[config_section]['model'] = old_model
                 llm = old_llm
                 logger.error(f"Failed to switch to {new_model}, keeping {old_model}: {model_error}")
                 emit('error', {'message': f"Failed to switch model: {str(model_error)}. Keeping current model."})

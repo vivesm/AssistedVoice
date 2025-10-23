@@ -329,6 +329,9 @@ performance:
 
 ### Running in Development Mode
 ```bash
+# Make sure Ollama Server is running
+ollama serve
+
 # Activate virtual environment
 source venv/bin/activate
 

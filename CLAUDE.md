@@ -29,19 +29,20 @@ ollama pull mistral:7b      # Good balance
 
 ### Running the Application
 ```bash
-# Start Ollama service (required)
+# Start Ollama service (required for Ollama backend)
 ollama serve
 
-# Start AssistedVoice (activates venv automatically)
-./start.sh
-
-# Or manually
+# Start AssistedVoice manually (recommended)
 source venv/bin/activate
 python web_assistant.py
 
-# Development mode with auto-reload
+# Development mode with auto-reload and template changes
 FLASK_DEBUG=True python web_assistant.py
+
+# Open browser to http://localhost:5001
 ```
+
+**Note**: The `start.sh` script may reference an outdated filename. Use manual startup instead.
 
 ### Testing
 ```bash
@@ -70,11 +71,15 @@ pytest --cov=modules tests/
 - Supports multiple model sizes (tiny to turbo)
 - Automatic device detection (Metal/CUDA/CPU)
 
-**Language Model** (`modules/llm.py`)
-- OllamaLLM class with streaming support
+**Language Model** (`modules/llm.py` and `modules/llm_factory.py`)
+- Factory pattern (`create_llm()`) supports multiple backends
+- OllamaLLM and OptimizedOllamaLLM (with caching) for Ollama
+- LMStudioLLM (`modules/llm_lmstudio.py`) for LM Studio OpenAI-compatible API
+- BaseLLM (`modules/llm_base.py`) interface for extensibility
 - ConversationManager for context management
 - Automatic fallback to working models
 - Performance metrics tracking (response time, tokens/second)
+- Server type auto-detection
 
 **Text-to-Speech** (`modules/tts.py`)
 - Multiple engines: Edge TTS (neural voices), macOS (system voices), pyttsx3
@@ -83,16 +88,24 @@ pytest --cov=modules tests/
 
 ### API Endpoints
 
+**Core**
 - `GET /` - Main web interface
 - `GET /config` - Get current configuration
-- `GET /api/models` - List available Ollama models
-- `POST /api/models/switch` - Switch active model
+
+**Models**
+- `GET /api/models` - List available models (Ollama or LM Studio)
+- `POST /api/models/switch` - Switch active LLM model
 - `POST /api/whisper/switch` - Switch Whisper model
-- `POST /transcribe` - Process audio to text
-- `POST /chat` - Send text message to LLM
+
+**Inference**
+- `POST /transcribe` - Process audio to text (base64 audio → text)
+- `POST /chat` - Send text message to LLM (with streaming via WebSocket)
+
+**TTS**
 - `POST /tts` - Generate speech from text
-- `POST /api/tts/engine` - Switch TTS engine
+- `POST /api/tts/engine` - Switch TTS engine (edge-tts/macos/none)
 - `POST /api/tts/voice` - Switch TTS voice
+- `GET /api/tts/voices` - List available voices for current engine
 
 ### WebSocket Events
 
@@ -102,24 +115,38 @@ pytest --cov=modules tests/
 ### Configuration
 
 Main configuration in `config.yaml`:
-- `whisper`: Speech recognition settings (model, language, device)
-- `ollama`: LLM settings (model, temperature, system prompt)
-- `tts`: Text-to-speech settings (engine, voice, rate)
-- `audio`: Recording settings (sample rate, VAD)
+- `server`: Backend server settings (type: ollama/lm-studio, host, port, timeout)
+- `whisper`: Speech recognition settings (model, language, device, compute_type)
+- `ollama`: Ollama-specific LLM settings (model, temperature, max_tokens, system_prompt)
+- `tts`: Text-to-speech settings (engine: edge-tts/macos/none, voice, rate)
+- `audio`: Recording settings (sample_rate, channels, silence_threshold)
+- `vad`: Voice Activity Detection settings (enabled, mode, speech_timeout)
+- `performance`: Optimization flags (cache_responses, response_streaming)
 
 ### Frontend
 
-- **Static files**: `static/app.js`, `static/style_simple.css`
-- **Templates**: `templates/index.html`
-- Features: Push-to-talk, model selection, performance metrics display
-- Visual feedback: Recording animation, typing indicators, loading states
+- **Static files**:
+  - `static/app.js` - Main application logic with WebSocket, audio recording, model switching
+  - `static/style-simple.css` - Modern glassmorphism UI with animations
+  - `static/style.css` - Legacy styles (if needed)
+- **Templates**: `templates/index.html` - Single-page web UI
+- **Features**:
+  - Push-to-talk recording with visual feedback (animated border, status updates)
+  - Real-time model switching (LLM, Whisper, TTS engine/voice)
+  - Performance metrics display (response time, first token, tokens/sec)
+  - Advanced AI settings (temperature, max tokens, system prompt presets)
+  - Message replay with TTS speaker buttons
+  - Conversation persistence across page refreshes
+  - Quick mute button for instant TTS toggle
 
 ## Development Notes
 
 ### Model Management
-- Models stored in `models/` directory
-- Whisper models auto-download on first use
-- Ollama models must be pulled manually via `ollama pull`
+- **Whisper models**: Auto-download to `models/` directory on first use
+- **Ollama models**: Must be pulled manually via `ollama pull <model>` before use
+- **LM Studio models**: Configured in LM Studio app, accessible via API on port 1234
+- **Model switching**: Automatic fallback if selected model fails (e.g., gpt-oss models → mistral)
+- **Server switching**: Change `server.type` in config.yaml to switch between Ollama/LM Studio
 
 ### Error Handling
 - Automatic fallback when selected Ollama model fails
@@ -138,5 +165,27 @@ Main configuration in `config.yaml`:
 - Mock fixtures for external dependencies
 
 ## Port Usage
-- `5001`: Default web server port
-- Change in `web_assistant.py:app.run()` if needed
+- `5001`: Flask web server (AssistedVoice UI)
+- `11434`: Ollama API server (default)
+- `1234`: LM Studio API server (default)
+- Change web port in `web_assistant.py:app.run()` if needed
+
+## Key Implementation Details
+
+### LLM Backend Flexibility
+The app uses a factory pattern to support multiple LLM backends:
+- Configure `server.type` in config.yaml as `ollama`, `lm-studio`, or `custom`
+- Factory (`create_llm()`) instantiates appropriate class
+- All backends implement `BaseLLM` interface for consistency
+- OptimizedOllamaLLM adds response caching when `performance.cache_responses: true`
+
+### Audio Processing Pipeline
+1. Client records audio in browser (push-to-talk button)
+2. Audio sent as base64 to `/transcribe` endpoint
+3. WhisperSTT processes with selected model (tiny→turbo)
+4. Transcribed text displayed and sent to LLM via `/chat`
+5. LLM response streams back via WebSocket
+6. Optional TTS playback via Edge TTS or macOS voices
+
+### Template Auto-Reload
+`app.config['TEMPLATES_AUTO_RELOAD'] = True` in web_assistant.py:39 enables automatic template reloading in development. Changes to `templates/index.html` appear on browser refresh without server restart.

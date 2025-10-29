@@ -40,6 +40,63 @@ function logConnectionState(state, details = '') {
     updateConnectionIndicator(state);
 }
 
+/**
+ * Render markdown text to safe HTML
+ * @param {string} text - Markdown text to render
+ * @returns {string} - Sanitized HTML
+ */
+function renderMarkdown(text) {
+    if (!text || typeof text !== 'string') return '';
+
+    // Configure marked.js with highlight.js integration
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (typeof hljs !== 'undefined') {
+                    if (lang && hljs.getLanguage(lang)) {
+                        try {
+                            return hljs.highlight(code, { language: lang }).value;
+                        } catch (e) {
+                            console.error('Highlight error:', e);
+                        }
+                    }
+                    try {
+                        return hljs.highlightAuto(code).value;
+                    } catch (e) {
+                        console.error('Highlight auto error:', e);
+                        return code;
+                    }
+                }
+                return code;
+            },
+            breaks: true,        // GFM line breaks
+            gfm: true,          // GitHub Flavored Markdown
+            tables: true,       // Support tables
+            smartLists: true,   // Better list handling
+            smartypants: false  // Don't convert quotes/dashes
+        });
+
+        try {
+            // Parse markdown to HTML
+            const rawHtml = marked.parse(text);
+
+            // Sanitize HTML with DOMPurify
+            if (typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(rawHtml, {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'div', 'span'],
+                    ALLOWED_ATTR: ['href', 'target', 'rel', 'class']
+                });
+            }
+            return rawHtml;
+        } catch (e) {
+            console.error('Markdown render error:', e);
+            return text; // Fallback to plain text on error
+        }
+    }
+
+    return text; // Fallback if marked is not loaded
+}
+
 // Toast Notification System
 function showToast(message, type = 'success', duration = 2000) {
     const container = document.getElementById('toastContainer');
@@ -1447,7 +1504,13 @@ function addMessage(role, text) {
     // Add message content
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.textContent = text;
+
+    // Render markdown for assistant messages, plain text for user messages
+    if (role === 'assistant') {
+        contentDiv.innerHTML = renderMarkdown(text);
+    } else {
+        contentDiv.textContent = text;
+    }
     
     // Add timestamp
     const timestampDiv = document.createElement('div');
@@ -1635,13 +1698,16 @@ function completeResponse(fullText) {
     }
     
     if (currentResponseDiv) {
+        // Render the complete response as markdown
+        currentResponseDiv.innerHTML = renderMarkdown(fullText);
+
         // Play sound effect if enabled
         // Commented out: Sound effects not implemented, playSound function doesn't exist
         // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
         // if (soundEnabled) {
         //     playSound('receive');
         // }
-        
+
         // Update timestamp with metrics
         let timestampDiv = currentResponseDiv.parentElement?.querySelector('.message-time');
         if (timestampDiv) {

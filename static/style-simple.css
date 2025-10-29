@@ -718,6 +718,74 @@ body.recording .input-bar {
     border-color: var(--accent);
 }
 
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.checkbox-group input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* Voice Controls */
+.voice-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.voice-preview-btn,
+.voice-favorite-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.voice-preview-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.voice-favorite-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.voice-favorite-btn.active {
+    background: gold;
+    border-color: gold;
+    color: #000;
+}
+
+.voice-favorite-btn.active svg {
+    fill: currentColor;
+}
+
+#voiceSearchInput {
+    margin-bottom: 8px;
+}
+
 input[type="range"] {
     width: 100%;
     height: 4px;
@@ -1126,4 +1194,90 @@ input[type="number"]:focus {
         grid-template-columns: 1fr;
         gap: 20px;
     }
+}
+
+/* Display Options - Compact View */
+body.compact-view .message {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
+body.compact-view .message-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+}
+
+body.compact-view .message-content {
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+body.compact-view .message-time {
+    font-size: 10px;
+}
+
+body.compact-view .speaker-button {
+    width: 24px;
+    height: 24px;
+}
+
+body.compact-view .speaker-button svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Hide Timestamps */
+body.hide-timestamps .message-time {
+    display: none;
+}
+
+/* Hide Metrics */
+body.hide-metrics .metrics {
+    display: none;
+}
+
+/* Disable Animations */
+body.no-animations * {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* Scroll to Bottom Button */
+.scroll-to-bottom {
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+.scroll-to-bottom.show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.scroll-to-bottom:hover {
+    background: var(--accent-hover);
+    transform: translateY(-2px);
+}
+
+.scroll-to-bottom svg {
+    width: 24px;
+    height: 24px;
+    color: white;
 }

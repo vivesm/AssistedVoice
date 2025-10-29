@@ -330,4 +330,54 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             logger.error(f"Error updating system prompt: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
 
+    @sio.event
+    async def update_voice_pitch(sid, data):
+        """Update TTS voice pitch (Edge TTS only)"""
+        try:
+            pitch = data.get('pitch', '+0Hz')
+            if hasattr(_state['tts'], 'set_pitch'):
+                _state['tts'].set_pitch(pitch)
+                # Update config
+                _state['config']['tts']['pitch'] = pitch
+                logger.info(f"Voice pitch updated to {pitch}")
+                await sio.emit('status', {'message': f'Voice pitch updated to {pitch}', 'type': 'ready'}, room=sid)
+            else:
+                logger.warning("Current TTS engine does not support pitch adjustment")
+        except Exception as e:
+            logger.error(f"Error updating voice pitch: {e}")
+            await sio.emit('error', {'message': str(e)}, room=sid)
+
+    @sio.event
+    async def preview_voice(sid, data):
+        """Preview a TTS voice"""
+        try:
+            text = data.get('text', 'Hello! This is a voice preview.')
+            voice = data.get('voice')
+
+            if not voice:
+                await sio.emit('error', {'message': 'No voice specified'}, room=sid)
+                return
+
+            # Temporarily switch voice for preview
+            old_voice = getattr(_state['tts'], 'voice', None)
+            if hasattr(_state['tts'], 'set_voice'):
+                _state['tts'].set_voice(voice)
+
+            # Generate preview audio
+            audio_data = await asyncio.to_thread(_state['audio_service'].generate_speech, text)
+
+            # Restore original voice
+            if old_voice and hasattr(_state['tts'], 'set_voice'):
+                _state['tts'].set_voice(old_voice)
+
+            if audio_data:
+                await sio.emit('voice_preview', {'audio': audio_data}, room=sid)
+                logger.info(f"Voice preview sent for {voice}")
+            else:
+                await sio.emit('error', {'message': 'Failed to generate preview'}, room=sid)
+
+        except Exception as e:
+            logger.error(f"Error generating voice preview: {e}")
+            await sio.emit('error', {'message': str(e)}, room=sid)
+
     logger.info("✓ WebSocket handlers registered")

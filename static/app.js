@@ -332,7 +332,16 @@ function initializeWebSocket() {
         logResponse('whisper_model_changed', data);
         updateStatus(`Whisper model changed to ${data.model}`, 'ready');
     });
-    
+
+    socket.on('voice_preview', (data) => {
+        logResponse('voice_preview', { hasAudio: !!data.audio });
+        if (data.audio) {
+            // Play the preview audio
+            playAudioData(data.audio);
+            showToast('Voice preview playing', 'success');
+        }
+    });
+
     // Loading progress removed - using simple inline spinners instead
 }
 
@@ -806,6 +815,50 @@ function setupEventListeners() {
         });
     }
 
+    // Voice Pitch Slider (Edge TTS only)
+    const voicePitchSlider = document.getElementById('voicePitchSlider');
+    const voicePitchValue = document.getElementById('voicePitchValue');
+    const voicePitchSettingItem = document.getElementById('voicePitchSettingItem');
+    let voicePitchTimeout;
+    if (voicePitchSlider && voicePitchValue && voicePitchSettingItem) {
+        // Load saved value
+        const savedPitch = parseInt(localStorage.getItem('voicePitch') || '0');
+        voicePitchSlider.value = savedPitch;
+        voicePitchValue.textContent = (savedPitch >= 0 ? '+' : '') + savedPitch + 'Hz';
+
+        // Show/hide based on current TTS engine
+        const updatePitchVisibility = () => {
+            const currentEngine = voiceSelect?.value || localStorage.getItem('ttsEngine') || 'edge-tts';
+            if (currentEngine === 'edge-tts') {
+                voicePitchSettingItem.style.display = '';
+            } else {
+                voicePitchSettingItem.style.display = 'none';
+            }
+        };
+        updatePitchVisibility();
+
+        voicePitchSlider.addEventListener('input', (e) => {
+            const pitch = parseInt(e.target.value);
+            voicePitchValue.textContent = (pitch >= 0 ? '+' : '') + pitch + 'Hz';
+            localStorage.setItem('voicePitch', pitch.toString());
+
+            // Debounced toast and socket emit
+            clearTimeout(voicePitchTimeout);
+            voicePitchTimeout = setTimeout(() => {
+                showToast(`Voice pitch set to ${(pitch >= 0 ? '+' : '')}${pitch}Hz`, 'success');
+                const pitchStr = (pitch >= 0 ? '+' : '') + pitch + 'Hz';
+                const requestData = { pitch: pitchStr };
+                logRequest('update_voice_pitch', requestData);
+                socket.emit('update_voice_pitch', requestData);
+            }, 500);
+        });
+
+        // Update visibility when TTS engine changes
+        if (voiceSelect) {
+            voiceSelect.addEventListener('change', updatePitchVisibility);
+        }
+    }
+
     // Edge Voice Selector
     const edgeVoiceSelect = document.getElementById('edgeVoiceSelect');
     const edgeVoiceSettingItem = document.getElementById('edgeVoiceSettingItem');
@@ -839,6 +892,111 @@ function setupEventListeners() {
         updateEdgeVoiceVisibility();
         if (voiceSelect) {
             voiceSelect.addEventListener('change', updateEdgeVoiceVisibility);
+        }
+
+        // Voice Search
+        const voiceSearchInput = document.getElementById('voiceSearchInput');
+        if (voiceSearchInput) {
+            voiceSearchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                const options = edgeVoiceSelect.querySelectorAll('option');
+
+                options.forEach(option => {
+                    const text = option.textContent.toLowerCase();
+                    const value = option.value.toLowerCase();
+                    const matches = text.includes(searchTerm) || value.includes(searchTerm);
+                    option.style.display = matches ? '' : 'none';
+                });
+
+                // Hide empty optgroups
+                const optgroups = edgeVoiceSelect.querySelectorAll('optgroup');
+                optgroups.forEach(group => {
+                    const visibleOptions = Array.from(group.querySelectorAll('option')).filter(opt => opt.style.display !== 'none');
+                    group.style.display = visibleOptions.length > 0 ? '' : 'none';
+                });
+            });
+        }
+
+        // Voice Preview
+        const voicePreviewBtn = document.getElementById('voicePreviewBtn');
+        if (voicePreviewBtn) {
+            voicePreviewBtn.addEventListener('click', () => {
+                const selectedVoice = edgeVoiceSelect.value;
+                if (selectedVoice) {
+                    const previewText = "Hello! This is a preview of this voice. How do I sound?";
+                    showToast('Playing voice preview...', 'info');
+
+                    // Request preview from server
+                    const requestData = {
+                        text: previewText,
+                        voice: selectedVoice
+                    };
+                    logRequest('preview_voice', requestData);
+                    socket.emit('preview_voice', requestData);
+                }
+            });
+        }
+
+        // Voice Favorites
+        const voiceFavoriteBtn = document.getElementById('voiceFavoriteBtn');
+        if (voiceFavoriteBtn) {
+            // Load favorites
+            let favorites = JSON.parse(localStorage.getItem('voiceFavorites') || '[]');
+
+            // Update favorites optgroup
+            function updateFavoritesOptgroup() {
+                const favoritesGroup = edgeVoiceSelect.querySelector('optgroup[label="⭐ Favorites"]');
+                if (favoritesGroup) {
+                    favoritesGroup.innerHTML = '';
+                    favorites.forEach(voiceValue => {
+                        const originalOption = edgeVoiceSelect.querySelector(`option[value="${voiceValue}"]`);
+                        if (originalOption && originalOption.parentElement.label !== '⭐ Favorites') {
+                            const favOption = originalOption.cloneNode(true);
+                            favoritesGroup.appendChild(favOption);
+                        }
+                    });
+                }
+            }
+
+            // Update button state
+            function updateFavoriteButtonState() {
+                const selectedVoice = edgeVoiceSelect.value;
+                if (favorites.includes(selectedVoice)) {
+                    voiceFavoriteBtn.classList.add('active');
+                    voiceFavoriteBtn.title = 'Remove from favorites';
+                } else {
+                    voiceFavoriteBtn.classList.remove('active');
+                    voiceFavoriteBtn.title = 'Add to favorites';
+                }
+            }
+
+            // Toggle favorite
+            voiceFavoriteBtn.addEventListener('click', () => {
+                const selectedVoice = edgeVoiceSelect.value;
+                if (!selectedVoice) return;
+
+                if (favorites.includes(selectedVoice)) {
+                    // Remove from favorites
+                    favorites = favorites.filter(v => v !== selectedVoice);
+                    showToast('Removed from favorites', 'success');
+                } else {
+                    // Add to favorites
+                    favorites.push(selectedVoice);
+                    showToast('Added to favorites', 'success');
+                }
+
+                // Save and update
+                localStorage.setItem('voiceFavorites', JSON.stringify(favorites));
+                updateFavoritesOptgroup();
+                updateFavoriteButtonState();
+            });
+
+            // Update on selection change
+            edgeVoiceSelect.addEventListener('change', updateFavoriteButtonState);
+
+            // Initialize
+            updateFavoritesOptgroup();
+            updateFavoriteButtonState();
         }
     }
 }
@@ -904,6 +1062,159 @@ function setupSettingsListeners() {
             showToast(`Sound effects ${e.target.checked ? 'enabled' : 'disabled'}`, 'success');
         });
     }
+
+    // Display Options - Show Timestamps
+    const showTimestamps = document.getElementById('showTimestamps');
+    if (showTimestamps) {
+        const savedTimestamps = localStorage.getItem('showTimestamps');
+        if (savedTimestamps === 'false') {
+            showTimestamps.checked = false;
+            document.body.classList.add('hide-timestamps');
+        }
+
+        showTimestamps.addEventListener('change', (e) => {
+            localStorage.setItem('showTimestamps', e.target.checked);
+            if (e.target.checked) {
+                document.body.classList.remove('hide-timestamps');
+                showToast('Timestamps shown', 'success');
+            } else {
+                document.body.classList.add('hide-timestamps');
+                showToast('Timestamps hidden', 'success');
+            }
+        });
+    }
+
+    // Display Options - Show Metrics
+    const showMetrics = document.getElementById('showMetrics');
+    if (showMetrics) {
+        const savedMetrics = localStorage.getItem('showMetrics');
+        if (savedMetrics === 'false') {
+            showMetrics.checked = false;
+            document.body.classList.add('hide-metrics');
+        }
+
+        showMetrics.addEventListener('change', (e) => {
+            localStorage.setItem('showMetrics', e.target.checked);
+            if (e.target.checked) {
+                document.body.classList.remove('hide-metrics');
+                showToast('Performance metrics shown', 'success');
+            } else {
+                document.body.classList.add('hide-metrics');
+                showToast('Performance metrics hidden', 'success');
+            }
+        });
+    }
+
+    // Display Options - Compact View
+    const compactView = document.getElementById('compactView');
+    if (compactView) {
+        const savedCompact = localStorage.getItem('compactView');
+        if (savedCompact === 'true') {
+            compactView.checked = true;
+            document.body.classList.add('compact-view');
+        }
+
+        compactView.addEventListener('change', (e) => {
+            localStorage.setItem('compactView', e.target.checked);
+            if (e.target.checked) {
+                document.body.classList.add('compact-view');
+                showToast('Compact view enabled', 'success');
+            } else {
+                document.body.classList.remove('compact-view');
+                showToast('Normal view enabled', 'success');
+            }
+        });
+    }
+
+    // Display Options - Enable Animations
+    const enableAnimations = document.getElementById('enableAnimations');
+    if (enableAnimations) {
+        const savedAnimations = localStorage.getItem('enableAnimations');
+        if (savedAnimations === 'false') {
+            enableAnimations.checked = false;
+            document.body.classList.add('no-animations');
+        }
+
+        enableAnimations.addEventListener('change', (e) => {
+            localStorage.setItem('enableAnimations', e.target.checked);
+            if (e.target.checked) {
+                document.body.classList.remove('no-animations');
+                showToast('Animations enabled', 'success');
+            } else {
+                document.body.classList.add('no-animations');
+                showToast('Animations disabled', 'success');
+            }
+        });
+    }
+
+    // Auto-scroll toggle
+    const autoScrollCheckbox = document.getElementById('autoScroll');
+    if (autoScrollCheckbox) {
+        const savedAutoScroll = localStorage.getItem('autoScroll');
+        if (savedAutoScroll === 'false') {
+            autoScrollCheckbox.checked = false;
+            window.autoScrollEnabled = false;
+        } else {
+            window.autoScrollEnabled = true;
+        }
+
+        autoScrollCheckbox.addEventListener('change', (e) => {
+            window.autoScrollEnabled = e.target.checked;
+            localStorage.setItem('autoScroll', e.target.checked);
+            showToast(`Auto-scroll ${e.target.checked ? 'enabled' : 'disabled'}`, 'success');
+        });
+    }
+
+    // Scroll to Bottom Button
+    setupScrollToBottom();
+}
+
+/**
+ * Setup scroll-to-bottom button
+ */
+function setupScrollToBottom() {
+    const chatMessages = document.getElementById('chatMessages');
+    const scrollBtn = document.getElementById('scrollToBottomBtn');
+
+    if (!chatMessages || !scrollBtn) return;
+
+    let userHasScrolledUp = false;
+
+    // Show/hide button based on scroll position
+    function updateScrollButton() {
+        const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 100;
+
+        if (!isNearBottom && !userHasScrolledUp) {
+            userHasScrolledUp = true;
+            scrollBtn.classList.add('show');
+        } else if (isNearBottom && userHasScrolledUp) {
+            userHasScrolledUp = false;
+            scrollBtn.classList.remove('show');
+        }
+    }
+
+    // Scroll detection
+    chatMessages.addEventListener('scroll', updateScrollButton);
+
+    // Click to scroll to bottom
+    scrollBtn.addEventListener('click', () => {
+        chatMessages.scrollTo({
+            top: chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
+        userHasScrolledUp = false;
+        scrollBtn.classList.remove('show');
+    });
+
+    // Export function for use when adding messages
+    window.scrollToBottomIfEnabled = function() {
+        if (window.autoScrollEnabled !== false && !userHasScrolledUp) {
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    };
 }
 
 /**
@@ -1550,10 +1861,9 @@ function addMessage(role, text) {
         //     playSound(role === 'user' ? 'send' : 'receive');
         // }
         
-        // Scroll to bottom
-        const chatContainer = document.getElementById('chatContainer');
-        if (chatContainer) {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+        // Scroll to bottom if enabled
+        if (typeof window.scrollToBottomIfEnabled === 'function') {
+            setTimeout(() => window.scrollToBottomIfEnabled(), 100);
         }
     }
     

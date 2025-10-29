@@ -263,20 +263,84 @@
                     <small class="setting-hint">Controls voice playback volume (0% = muted, 100% = full)</small>
                 </div>
 
+                <div class="setting-item" id="voicePitchSettingItem">
+                    <label>Voice Pitch <span id="voicePitchValue">+0Hz</span></label>
+                    <input type="range" min="-50" max="50" step="5" value="0" id="voicePitchSlider">
+                    <small class="setting-hint">Adjust voice pitch higher or lower (Edge TTS only)</small>
+                </div>
+
                 <div class="setting-item" id="edgeVoiceSettingItem">
                     <label>Edge TTS Voice</label>
-                    <select class="edge-voice-select" id="edgeVoiceSelect">
-                        <option value="en-US-JennyNeural">Jenny (US Female)</option>
-                        <option value="en-US-GuyNeural">Guy (US Male)</option>
-                        <option value="en-US-AriaNeural">Aria (US Female, Younger)</option>
-                        <option value="en-GB-SoniaNeural">Sonia (UK Female)</option>
-                        <option value="en-GB-RyanNeural">Ryan (UK Male)</option>
-                        <option value="en-AU-NatashaNeural">Natasha (AU Female)</option>
-                        <option value="en-AU-WilliamNeural">William (AU Male)</option>
-                        <option value="en-CA-ClaraNeural">Clara (CA Female)</option>
-                        <option value="en-CA-LiamNeural">Liam (CA Male)</option>
+
+                    <!-- Voice search -->
+                    <input type="text" id="voiceSearchInput" class="text-input" placeholder="Search voices...">
+
+                    <!-- Voice selector with expanded list -->
+                    <select class="edge-voice-select" id="edgeVoiceSelect" size="1">
+                        <optgroup label="⭐ Favorites">
+                            <!-- Favorites will be populated here -->
+                        </optgroup>
+                        <optgroup label="🇺🇸 US English">
+                            <option value="en-US-JennyNeural">Jenny (Female, Warm)</option>
+                            <option value="en-US-GuyNeural">Guy (Male, Professional)</option>
+                            <option value="en-US-AriaNeural">Aria (Female, Young)</option>
+                            <option value="en-US-DavisNeural">Davis (Male, Deep)</option>
+                            <option value="en-US-AmberNeural">Amber (Female, Casual)</option>
+                            <option value="en-US-AnaNeural">Ana (Female, Friendly)</option>
+                            <option value="en-US-AshleyNeural">Ashley (Female, Clear)</option>
+                            <option value="en-US-BrandonNeural">Brandon (Male, Young)</option>
+                            <option value="en-US-ChristopherNeural">Christopher (Male, Professional)</option>
+                            <option value="en-US-CoraNeural">Cora (Female, Mature)</option>
+                            <option value="en-US-ElizabethNeural">Elizabeth (Female, Professional)</option>
+                            <option value="en-US-EricNeural">Eric (Male, News)</option>
+                            <option value="en-US-JacobNeural">Jacob (Male, Clear)</option>
+                            <option value="en-US-MichelleNeural">Michelle (Female, News)</option>
+                            <option value="en-US-MonicaNeural">Monica (Female, Energetic)</option>
+                        </optgroup>
+                        <optgroup label="🇬🇧 UK English">
+                            <option value="en-GB-SoniaNeural">Sonia (Female, BBC)</option>
+                            <option value="en-GB-RyanNeural">Ryan (Male, BBC)</option>
+                            <option value="en-GB-LibbyNeural">Libby (Female, Young)</option>
+                            <option value="en-GB-MiaNeural">Mia (Female, Professional)</option>
+                            <option value="en-GB-AlfieNeural">Alfie (Male, Young)</option>
+                        </optgroup>
+                        <optgroup label="🇦🇺 Australian English">
+                            <option value="en-AU-NatashaNeural">Natasha (Female)</option>
+                            <option value="en-AU-WilliamNeural">William (Male)</option>
+                            <option value="en-AU-AnnetteNeural">Annette (Female, Clear)</option>
+                            <option value="en-AU-CarlyNeural">Carly (Female, Young)</option>
+                            <option value="en-AU-DarrenNeural">Darren (Male, Professional)</option>
+                        </optgroup>
+                        <optgroup label="🇨🇦 Canadian English">
+                            <option value="en-CA-ClaraNeural">Clara (Female)</option>
+                            <option value="en-CA-LiamNeural">Liam (Male)</option>
+                        </optgroup>
+                        <optgroup label="🇮🇳 Indian English">
+                            <option value="en-IN-NeerjaNeural">Neerja (Female)</option>
+                            <option value="en-IN-PrabhatNeural">Prabhat (Male)</option>
+                        </optgroup>
+                        <optgroup label="🇮🇪 Irish English">
+                            <option value="en-IE-EmilyNeural">Emily (Female)</option>
+                            <option value="en-IE-ConnorNeural">Connor (Male)</option>
+                        </optgroup>
                     </select>
-                    <small class="setting-hint">Select voice for Edge TTS engine (only applies when Edge TTS is active)</small>
+
+                    <!-- Voice controls -->
+                    <div class="voice-controls">
+                        <button class="voice-preview-btn" id="voicePreviewBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                            Preview
+                        </button>
+                        <button class="voice-favorite-btn" id="voiceFavoriteBtn" title="Add to favorites">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <small class="setting-hint">Select voice for Edge TTS engine • Click star to favorite • Click play to preview</small>
                 </div>
             </div>
             
@@ -348,6 +412,22 @@
                 <div class="setting-item">
                     <label>Font Size</label>
                     <input type="range" min="12" max="20" value="16" id="fontSlider">
+                </div>
+
+                <div class="setting-item">
+                    <label>Message Display</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="showTimestamps" checked> Show Timestamps</label>
+                        <label><input type="checkbox" id="showMetrics" checked> Show Performance Metrics</label>
+                        <label><input type="checkbox" id="compactView"> Compact View</label>
+                        <label><input type="checkbox" id="enableAnimations" checked> Message Animations</label>
+                    </div>
+                    <small class="setting-hint">Customize what information is displayed with messages</small>
+                </div>
+
+                <div class="setting-item">
+                    <label><input type="checkbox" id="autoScroll" checked> Auto-scroll to new messages</label>
+                    <small class="setting-hint">Automatically scroll to bottom when new messages arrive</small>
                 </div>
             </div>
         </div>
@@ -423,6 +503,13 @@
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/app.js?v=33"></script>
+    <!-- Scroll to Bottom Button -->
+    <button class="scroll-to-bottom" id="scrollToBottomBtn">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+        </svg>
+    </button>
+
+    <script src="/static/app.js?v=34"></script>
 </body>
 </html>

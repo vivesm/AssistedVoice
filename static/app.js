@@ -200,7 +200,111 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
     
     loadChatHistory(); // Load chat history for the hamburger menu
+
+    // Initialize routing
+    initializeRouting();
 });
+
+/**
+ * View Routing System - Navigate between chat and settings page
+ */
+function initializeRouting() {
+    const chatContainer = document.getElementById('chatContainer');
+    const settingsPage = document.getElementById('settingsPage');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const settingsPageContent = document.getElementById('settingsPageContent');
+    const settingsContent = document.querySelector('.settings-content');
+    const menuBtn = document.getElementById('menuBtn');
+    const backBtn = document.getElementById('backBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const appTitle = document.querySelector('.app-title');
+
+    // Navigate to a specific view
+    function navigateToView(view) {
+        if (view === 'settings') {
+            // Move settings content from panel to page
+            if (settingsContent && settingsPageContent) {
+                settingsPageContent.appendChild(settingsContent);
+            }
+
+            // Hide chat, show settings page
+            if (chatContainer) chatContainer.style.display = 'none';
+            if (settingsPage) settingsPage.style.display = 'flex';
+            if (settingsPanel) settingsPanel.classList.remove('open');
+
+            // Update header
+            if (menuBtn) menuBtn.style.display = 'none';
+            if (backBtn) backBtn.style.display = 'flex';
+            if (settingsBtn) settingsBtn.style.display = 'none';
+            if (appTitle) appTitle.textContent = 'Settings';
+
+            // Update URL hash
+            window.location.hash = '#/settings';
+        } else {
+            // Move settings content back to panel
+            const settingsPanelContainer = settingsPanel?.querySelector('.settings-panel > div:last-child');
+            if (settingsContent && settingsPanelContainer) {
+                // Find the correct parent in the panel
+                const panelParent = settingsPanel.querySelector('.settings-panel');
+                if (panelParent && panelParent.children.length >= 2) {
+                    // Insert after settings-header and settings-search-wrapper
+                    panelParent.appendChild(settingsContent);
+                }
+            }
+
+            // Hide settings page, show chat
+            if (chatContainer) chatContainer.style.display = 'flex';
+            if (settingsPage) settingsPage.style.display = 'none';
+
+            // Update header
+            if (menuBtn) menuBtn.style.display = 'flex';
+            if (backBtn) backBtn.style.display = 'none';
+            if (settingsBtn) settingsBtn.style.display = 'flex';
+            if (appTitle) appTitle.textContent = 'AssistedVoice';
+
+            // Update URL hash
+            if (window.location.hash === '#/settings') {
+                window.location.hash = '';
+            }
+        }
+    }
+
+    // Handle browser back/forward buttons
+    window.addEventListener('hashchange', () => {
+        const hash = window.location.hash;
+        if (hash === '#/settings') {
+            navigateToView('settings');
+        } else {
+            navigateToView('chat');
+        }
+    });
+
+    // Settings button - navigate to settings page
+    if (settingsBtn) {
+        const oldClickHandler = settingsBtn.onclick;
+        settingsBtn.onclick = (e) => {
+            e.preventDefault();
+            navigateToView('settings');
+        };
+    }
+
+    // Back button - navigate to chat
+    if (backBtn) {
+        backBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToView('chat');
+        });
+    }
+
+    // Handle initial route on page load
+    const initialHash = window.location.hash;
+    if (initialHash === '#/settings') {
+        navigateToView('settings');
+    }
+
+    // Export for use elsewhere
+    window.navigateToView = navigateToView;
+}
 
 /**
  * Initialize WebSocket connection

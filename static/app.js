@@ -218,6 +218,7 @@ function initializeRouting() {
     const backBtn = document.getElementById('backBtn');
     const settingsBtn = document.getElementById('settingsBtn');
     const appTitle = document.querySelector('.app-title');
+    const overlay = document.getElementById('overlay');
 
     // Navigate to a specific view
     function navigateToView(view) {
@@ -231,6 +232,9 @@ function initializeRouting() {
             if (chatContainer) chatContainer.style.display = 'none';
             if (settingsPage) settingsPage.style.display = 'flex';
             if (settingsPanel) settingsPanel.classList.remove('open');
+
+            // Remove overlay and blur effect
+            if (overlay) overlay.classList.remove('active');
 
             // Update header
             if (menuBtn) menuBtn.style.display = 'none';
@@ -255,6 +259,9 @@ function initializeRouting() {
             // Hide settings page, show chat
             if (chatContainer) chatContainer.style.display = 'flex';
             if (settingsPage) settingsPage.style.display = 'none';
+
+            // Remove overlay and blur effect
+            if (overlay) overlay.classList.remove('active');
 
             // Update header
             if (menuBtn) menuBtn.style.display = 'flex';

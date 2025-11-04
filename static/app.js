@@ -14,6 +14,13 @@ let currentModel = null; // Track current model for responses
 let audioQueue = []; // Queue for audio playback
 let isPlayingAudio = false; // Track if audio is currently playing
 let currentAudio = null; // Track currently playing audio element
+let isGenerating = false; // Track if LLM is generating response
+
+// Audio visualization (Feature 2.1)
+let audioContext = null;
+let analyser = null;
+let animationFrameId = null;
+let audioBars = [];
 
 // WebSocket reconnection settings
 let reconnectAttempts = 0;
@@ -95,6 +102,74 @@ function renderMarkdown(text) {
     }
 
     return text; // Fallback if marked is not loaded
+}
+
+/**
+ * Add copy buttons to code blocks
+ * @param {HTMLElement} container - Container element with rendered markdown
+ */
+function addCopyButtonsToCodeBlocks(container) {
+    if (!container) return;
+
+    const codeBlocks = container.querySelectorAll('pre > code');
+
+    codeBlocks.forEach((codeBlock) => {
+        const pre = codeBlock.parentElement;
+
+        // Skip if copy button already exists
+        if (pre.querySelector('.code-copy-btn')) return;
+
+        // Create copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'code-copy-btn';
+        copyBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+        `;
+        copyBtn.setAttribute('aria-label', 'Copy code');
+        copyBtn.title = 'Copy code';
+
+        // Add click handler
+        copyBtn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            try {
+                const code = codeBlock.textContent;
+                await navigator.clipboard.writeText(code);
+
+                // Visual feedback
+                copyBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                `;
+                copyBtn.classList.add('copied');
+
+                showToast('Code copied to clipboard!', 'success');
+
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    copyBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                    `;
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy code:', err);
+                showToast('Failed to copy code', 'error');
+            }
+        };
+
+        // Add button to pre element
+        pre.style.position = 'relative';
+        pre.appendChild(copyBtn);
+    });
 }
 
 // Toast Notification System
@@ -337,6 +412,9 @@ function initializeWebSocket() {
         reconnectAttempts = 0; // Reset counter on successful connection
         logConnectionState('connected', 'Successfully connected to server');
         updateStatus('Connected', 'ready');
+
+        // Sync AI settings from localStorage to backend
+        syncAISettingsToBackend();
     });
 
     socket.on('disconnect', (reason) => {
@@ -379,6 +457,12 @@ function initializeWebSocket() {
 
         if (data.model) currentModel = data.model;
 
+        // Show stop generation button
+        if (!isGenerating) {
+            isGenerating = true;
+            showStopGenerationButton();
+        }
+
         // Track first token time
         if (!firstTokenTime && messageStartTime) {
             firstTokenTime = Date.now();
@@ -393,6 +477,11 @@ function initializeWebSocket() {
     socket.on('response_complete', (data) => {
         logResponse('response_complete', { model: data.model, length: data.text?.length });
         if (data.model) currentModel = data.model;
+
+        // Hide stop generation button
+        isGenerating = false;
+        hideStopGenerationButton();
+
         completeResponse(data.text);
         // Save conversation after response is complete
         setTimeout(saveConversation, 100);
@@ -422,16 +511,10 @@ function initializeWebSocket() {
 
     socket.on('model_changed', (data) => {
         logResponse('model_changed', data);
-        currentModel = data.model;  // Update current model
         updateStatus(`Model changed to ${data.model}`, 'ready');
 
-        // Directly update model indicator to ensure it's visible
-        const modelIndicator = document.getElementById('modelIndicator');
-        if (modelIndicator) {
-            modelIndicator.textContent = data.model;
-        }
-
-        loadModels();
+        // Update all displays using central function
+        updateModelDisplay(data.model);
     });
 
     socket.on('tts_changed', (data) => {
@@ -534,7 +617,13 @@ function setupEventListeners() {
             socket.emit('clear_conversation');
         });
     }
-    
+
+    // Stop generation button
+    const stopGenerationBtn = document.getElementById('stopGenerationBtn');
+    if (stopGenerationBtn) {
+        stopGenerationBtn.addEventListener('click', stopGeneration);
+    }
+
     // Menu button
     if (menuBtn) {
         menuBtn.addEventListener('click', () => {
@@ -566,7 +655,15 @@ function setupEventListeners() {
             overlay.classList.add('active');
         });
     }
-    
+
+    // Search toggle button
+    const searchToggleBtn = document.getElementById('searchToggleBtn');
+    if (searchToggleBtn) {
+        searchToggleBtn.addEventListener('click', () => {
+            toggleConversationSearch();
+        });
+    }
+
     // Close menu
     if (closeMenu) {
         closeMenu.addEventListener('click', () => {
@@ -696,9 +793,24 @@ function setupEventListeners() {
             return;
         }
 
-        // Escape - Close any open panel
+        // Escape - Stop audio or close any open panel
         if (e.key === 'Escape') {
             e.preventDefault();
+
+            // First priority: stop audio if playing
+            if (currentAudio) {
+                stopAudio();
+                return;
+            }
+
+            // Second priority: hide conversation search if visible
+            const searchWrapper = document.getElementById('conversationSearchWrapper');
+            if (searchWrapper && searchWrapper.style.display === 'flex') {
+                hideConversationSearch();
+                return;
+            }
+
+            // Otherwise close panels
             const sideMenu = document.getElementById('sideMenu');
             const settingsPanel = document.getElementById('settingsPanel');
 
@@ -721,6 +833,13 @@ function setupEventListeners() {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
             if (settingsBtn) settingsBtn.click();
+            return;
+        }
+
+        // Ctrl/Cmd + F - Toggle search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            toggleConversationSearch();
             return;
         }
 
@@ -771,7 +890,10 @@ function setupEventListeners() {
 
     // Settings Panel Event Listeners
     setupSettingsListeners();
-    
+
+    // Onboarding Tutorial (Feature 2.5)
+    setupTutorial();
+
     // TTS engine selector (if it exists - not in simplified UI)
     // TTS engine selector removed - not in simplified UI
     
@@ -784,14 +906,9 @@ function setupEventListeners() {
                 const requestData = { model: model };
                 logRequest('change_model', requestData);
                 socket.emit('change_model', requestData);
-                currentModel = model;
-                localStorage.setItem('selectedModel', model);
 
-                // Immediately update model indicator
-                const modelIndicator = document.getElementById('modelIndicator');
-                if (modelIndicator) {
-                    modelIndicator.textContent = model;
-                }
+                // Update all displays using central function
+                updateModelDisplay(model);
             }
         });
     }
@@ -1118,10 +1235,19 @@ function setupEventListeners() {
 function setupSettingsListeners() {
     // Server Configuration
     setupServerSettings();
-    
+
     // AI Model Settings
     setupAIModelSettings();
-    
+
+    // Progressive Settings Disclosure
+    setupProgressiveSettings();
+
+    // Conversation Search Feature
+    setupConversationSearch();
+
+    // Export Conversation Feature
+    setupExportFeature();
+
     // Theme buttons
     const themeButtons = document.querySelectorAll('.theme-btn');
     themeButtons.forEach(btn => {
@@ -1471,12 +1597,15 @@ async function startRecording() {
         // Start recording
         mediaRecorder.start();
         isRecording = true;
-        
+
+        // Initialize audio visualization (Feature 2.1)
+        initAudioVisualization(audioStream);
+
         // Update UI for new simplified interface
         const voiceBtn = document.getElementById('voiceBtn');
         const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
         const micIcon = voiceBtn?.querySelector('.mic-icon');
-        
+
         if (voiceBtn) {
             voiceBtn.classList.add('recording');
             document.body.classList.add('recording'); // Add visual feedback to body
@@ -1502,19 +1631,22 @@ function stopRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
     }
-    
+
     if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());
         audioStream = null;
     }
-    
+
     isRecording = false;
-    
+
+    // Stop audio visualization (Feature 2.1)
+    stopAudioVisualization();
+
     // Update UI for new simplified interface
     const voiceBtn = document.getElementById('voiceBtn');
     const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
     const micIcon = voiceBtn?.querySelector('.mic-icon');
-    
+
     if (voiceBtn) {
         voiceBtn.classList.remove('recording');
         document.body.classList.remove('recording'); // Remove visual feedback from body
@@ -1541,6 +1673,39 @@ function replayMessage(text) {
 }
 
 /**
+ * Stop currently playing audio
+ */
+function stopAudio() {
+    // Stop current audio if playing
+    if (currentAudio) {
+        console.log('Stopping audio playback');
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
+    }
+
+    // Clear any pending audio
+    if (window.pendingAudio) {
+        window.pendingAudio = null;
+    }
+
+    // Clear audio queue (future-proof)
+    audioQueue = [];
+    isPlayingAudio = false;
+
+    // Remove speaking class from all messages
+    document.querySelectorAll('.message.speaking').forEach(msg => {
+        msg.classList.remove('speaking');
+    });
+
+    // Update status
+    updateStatus('Ready', 'ready');
+
+    // Show toast notification
+    showToast('Audio playback stopped', 'info', 1500);
+}
+
+/**
  * Play audio data received from server - simplified version
  */
 function playAudioData(audioDataUrl) {
@@ -1564,14 +1729,33 @@ function playAudioData(audioDataUrl) {
 
         // Create and play audio directly - simple approach that works
         const audio = new Audio(audioDataUrl);
-        audio.volume = 1.0;
+
+        // Mark as TTS audio for mini-player
+        audio.dataset = audio.dataset || {};
+        audio.dataset.ttsAudio = 'true';
+
+        // Apply voice volume from settings
+        const savedVolume = parseInt(localStorage.getItem('voiceVolume') || '100');
+        audio.volume = savedVolume / 100;
+
         currentAudio = audio; // Track this audio element
+
+        // Show mini-player
+        if (typeof showMiniPlayer === 'function') {
+            showMiniPlayer(audio, '');
+        }
 
         // Clear reference when audio finishes
         audio.addEventListener('ended', () => {
             console.log('Audio playback ended');
             if (currentAudio === audio) {
                 currentAudio = null;
+                updateStatus('Ready', 'ready');
+
+                // Hide mini-player
+                if (typeof hideMiniPlayer === 'function') {
+                    hideMiniPlayer();
+                }
             }
         });
 
@@ -1580,12 +1764,19 @@ function playAudioData(audioDataUrl) {
             console.error('Audio error:', e);
             if (currentAudio === audio) {
                 currentAudio = null;
+                updateStatus('Ready', 'ready');
+
+                // Hide mini-player
+                if (typeof hideMiniPlayer === 'function') {
+                    hideMiniPlayer();
+                }
             }
         });
 
         // Play the audio immediately
         audio.play().then(() => {
             console.log('Audio playing successfully');
+            updateStatus('Playing audio...', 'ready');
         }).catch(err => {
             console.error('Audio playback error:', err);
             // Clear reference if play failed
@@ -1756,8 +1947,9 @@ function updateSpeakerButtons() {
     messages.forEach(timestampDiv => {
         const existingBtn = timestampDiv.querySelector('.message-speaker-btn');
         const messageContent = timestampDiv.parentElement.querySelector('.message-content');
-        const text = messageContent ? messageContent.textContent : '';
-        
+        // Read original text from data attribute first, fallback to textContent
+        const text = messageContent?.getAttribute('data-original-text') || messageContent?.textContent || '';
+
         // Always show speaker button for assistant messages with text
         // Speaker button should work regardless of TTS settings
         if (!existingBtn && text) {
@@ -1922,7 +2114,8 @@ function addMessage(role, text) {
     
     // Add content wrapper
     const contentWrapper = document.createElement('div');
-    
+    contentWrapper.className = 'message-wrapper';
+
     // Add message content
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
@@ -1930,18 +2123,76 @@ function addMessage(role, text) {
     // Render markdown for assistant messages, plain text for user messages
     if (role === 'assistant') {
         contentDiv.innerHTML = renderMarkdown(text);
+        // Add copy buttons to code blocks after rendering
+        setTimeout(() => addCopyButtonsToCodeBlocks(contentDiv), 0);
     } else {
         contentDiv.textContent = text;
     }
-    
+
+    // Store original text for replay functionality
+    contentDiv.setAttribute('data-original-text', text);
+
+    // Add action buttons for assistant messages
+    if (role === 'assistant') {
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'message-actions';
+        actionButtons.innerHTML = `
+            <button class="message-action-btn copy-btn" title="Copy message" aria-label="Copy message">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            </button>
+            <button class="message-action-btn regenerate-btn" title="Regenerate response" aria-label="Regenerate response">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <polyline points="23 20 23 14 17 14"/>
+                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+            </button>
+        `;
+
+        // Add event listeners
+        const copyBtn = actionButtons.querySelector('.copy-btn');
+        const regenerateBtn = actionButtons.querySelector('.regenerate-btn');
+
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Message copied to clipboard!', 'success');
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                showToast('Failed to copy message', 'error');
+            }
+        });
+
+        regenerateBtn.addEventListener('click', () => {
+            // Find the previous user message
+            const messages = Array.from(document.querySelectorAll('.message.user'));
+            if (messages.length > 0) {
+                const lastUserMessage = messages[messages.length - 1];
+                const userText = lastUserMessage.querySelector('.message-content').textContent;
+
+                // Send the message again
+                if (socket) {
+                    showToast('Regenerating response...', 'info');
+                    const requestData = { text: userText, enable_tts: ttsEnabled };
+                    socket.emit('process_text', requestData);
+                }
+            }
+        });
+
+        contentWrapper.appendChild(actionButtons);
+    }
+
     // Add timestamp
     const timestampDiv = document.createElement('div');
     timestampDiv.className = 'message-time';
     const now = new Date();
     timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
+
     // Add speaker button for assistant messages
-    if (role === 'assistant' && ttsEnabled) {
+    if (role === 'assistant') {
         const speakerBtn = document.createElement('button');
         speakerBtn.className = 'message-speaker-btn';
         speakerBtn.innerHTML = `
@@ -1964,14 +2215,32 @@ function addMessage(role, text) {
     // Append to messages container
     if (messages) {
         messages.appendChild(messageDiv);
-        
+
+        // Add reactions to assistant messages (Phase 3 Feature 3.5)
+        if (role === 'assistant') {
+            const messageId = 'msg-' + Date.now() + '-' + Math.random();
+            messageDiv.dataset.messageId = messageId;
+
+            // Add reactions after a short delay to ensure DOM is ready
+            setTimeout(() => {
+                if (typeof addReactionButtons === 'function') {
+                    addReactionButtons(messageDiv, messageId);
+                }
+
+                // Observe for virtual scrolling (Phase 3 Feature 3.3)
+                if (typeof observeNewMessage === 'function') {
+                    observeNewMessage(messageDiv);
+                }
+            }, 50);
+        }
+
         // Play sound effect if enabled
         // Commented out: Sound effects not implemented, playSound function doesn't exist
         // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
         // if (soundEnabled) {
         //     playSound(role === 'user' ? 'send' : 'receive');
         // }
-        
+
         // Scroll to bottom if enabled
         if (typeof window.scrollToBottomIfEnabled === 'function') {
             setTimeout(() => window.scrollToBottomIfEnabled(), 100);
@@ -2092,8 +2361,11 @@ function appendToCurrentResponse(text) {
     }
     
     currentResponse += text;
-    currentResponseDiv.textContent = currentResponse;
-    
+    currentResponseDiv.innerHTML = renderMarkdown(currentResponse);
+
+    // Add copy buttons to any new code blocks
+    addCopyButtonsToCodeBlocks(currentResponseDiv);
+
     // Scroll to bottom
     const chatContainer = document.getElementById('chatContainer');
     if (chatContainer) {
@@ -2122,6 +2394,12 @@ function completeResponse(fullText) {
         // Render the complete response as markdown
         currentResponseDiv.innerHTML = renderMarkdown(fullText);
 
+        // Add copy buttons to code blocks
+        addCopyButtonsToCodeBlocks(currentResponseDiv);
+
+        // Store original text for replay functionality
+        currentResponseDiv.setAttribute('data-original-text', fullText);
+
         // Play sound effect if enabled
         // Commented out: Sound effects not implemented, playSound function doesn't exist
         // const soundEnabled = localStorage.getItem('soundEffects') === 'true';
@@ -2145,15 +2423,15 @@ function completeResponse(fullText) {
                 const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 const totalSec = (totalTime / 1000).toFixed(1);
                 const firstSec = (firstTokenDelay / 1000).toFixed(2);
-                
+
                 timestampDiv.innerHTML = `
-                    ${timeStr} • ${currentModel || 'llama3.2:3b'}<br>
+                    ${timeStr} • ${currentModel}<br>
                     <span style="font-size: 11px; opacity: 0.7;">${totalSec}s total • ${firstSec}s first • ${tokensPerSecond} tokens/s</span>
                 `;
             } else {
                 const now = new Date();
                 timestampDiv.innerHTML = `
-                    ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel || 'llama3.2:3b'}
+                    ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${currentModel}
                 `;
             }
             
@@ -2241,18 +2519,222 @@ function attemptReconnection() {
 }
 
 /**
- * Show error message
+ * Enhanced error templates with actionable steps
+ */
+const errorTemplates = {
+    microphone: {
+        title: 'Microphone Access Denied',
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>`,
+        getMessage: (details) => `Unable to access your microphone. ${details || 'Permission was denied.'}`,
+        actions: [
+            { label: 'Grant Permission', action: 'retry' },
+            { label: 'Check Browser Settings', action: 'help', url: 'https://support.google.com/chrome/answer/2693767' }
+        ]
+    },
+    model: {
+        title: 'Model Error',
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+        </svg>`,
+        getMessage: (details) => `Failed to load or switch the AI model. ${details || 'The model may be unavailable.'}`,
+        actions: [
+            { label: 'Try Again', action: 'retry' },
+            { label: 'Choose Different Model', action: 'openSettings' }
+        ]
+    },
+    connection: {
+        title: 'Connection Lost',
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <line x1="12" y1="20" x2="12.01" y2="20"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>`,
+        getMessage: (details) => `Lost connection to the server. ${details || 'Attempting to reconnect...'}`,
+        actions: [
+            { label: 'Reconnect Now', action: 'reconnect' },
+            { label: 'Check Server Status', action: 'checkServer' }
+        ]
+    },
+    server: {
+        title: 'Server Error',
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            <line x1="6" y1="6" x2="6.01" y2="6"/>
+            <line x1="6" y1="18" x2="6.01" y2="18"/>
+            <path d="M12 8l4 4-4 4"/>
+        </svg>`,
+        getMessage: (details) => `The server encountered an error. ${details || 'Please try again.'}`,
+        actions: [
+            { label: 'Retry Request', action: 'retry' },
+            { label: 'Clear Conversation', action: 'clearChat' }
+        ]
+    },
+    general: {
+        title: 'Error',
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`,
+        getMessage: (details) => details || 'An unexpected error occurred.',
+        actions: [
+            { label: 'Try Again', action: 'retry' }
+        ]
+    }
+};
+
+/**
+ * Show enhanced error message with actionable steps
+ * @param {string} message - Error message or details
+ * @param {string} type - Error type: 'microphone', 'model', 'connection', 'server', 'general'
+ * @param {Function} retryCallback - Optional callback for retry action
+ */
+function showEnhancedError(message, type = 'general', retryCallback = null) {
+    const template = errorTemplates[type] || errorTemplates.general;
+    const messages = document.getElementById('messages');
+
+    if (!messages) return;
+
+    // Hide welcome if showing
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'none';
+    messages.classList.add('active');
+
+    // Create error card
+    const errorCard = document.createElement('div');
+    errorCard.className = 'error-card';
+
+    const actionsHTML = template.actions.map(action => {
+        return `<button class="error-action-btn" data-action="${action.action}" ${action.url ? `data-url="${action.url}"` : ''}>${action.label}</button>`;
+    }).join('');
+
+    errorCard.innerHTML = `
+        <div class="error-icon">${template.icon}</div>
+        <div class="error-content">
+            <h3 class="error-title">${template.title}</h3>
+            <p class="error-message">${template.getMessage(message)}</p>
+            <div class="error-actions">
+                ${actionsHTML}
+            </div>
+        </div>
+    `;
+
+    // Add event listeners to action buttons
+    errorCard.querySelectorAll('.error-action-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const action = btn.dataset.action;
+            const url = btn.dataset.url;
+
+            switch(action) {
+                case 'retry':
+                    if (retryCallback) retryCallback();
+                    errorCard.remove();
+                    break;
+                case 'reconnect':
+                    if (socket) {
+                        socket.disconnect();
+                        setTimeout(() => initializeWebSocket(), 500);
+                    }
+                    errorCard.remove();
+                    break;
+                case 'openSettings':
+                    document.getElementById('settingsBtn')?.click();
+                    errorCard.remove();
+                    break;
+                case 'clearChat':
+                    if (confirm('Clear conversation history?')) {
+                        clearChatDisplay();
+                        errorCard.remove();
+                    }
+                    break;
+                case 'checkServer':
+                    showToast('Check if LM Studio or Ollama is running', 'info', 3000);
+                    break;
+                case 'help':
+                    if (url) window.open(url, '_blank');
+                    break;
+            }
+        });
+    });
+
+    messages.appendChild(errorCard);
+
+    // Scroll to show error
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Also show toast for quick notification
+    showToast(template.title, 'error', 3000);
+}
+
+/**
+ * Show simple error message (legacy compatibility)
  */
 function showError(message) {
-    updateStatus(message, 'error');
-    
-    // Also add to chat
-    const chatContainer = document.getElementById('chatContainer');
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'message error-message';
-    errorDiv.textContent = `Error: ${message}`;
-    chatContainer.appendChild(errorDiv);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    // Detect error type from message
+    let type = 'general';
+    if (message.toLowerCase().includes('microphone') || message.toLowerCase().includes('recording')) {
+        type = 'microphone';
+    } else if (message.toLowerCase().includes('model')) {
+        type = 'model';
+    } else if (message.toLowerCase().includes('connection') || message.toLowerCase().includes('disconnect')) {
+        type = 'connection';
+    } else if (message.toLowerCase().includes('server')) {
+        type = 'server';
+    }
+
+    showEnhancedError(message, type);
+}
+
+/**
+ * Show stop generation button
+ */
+function showStopGenerationButton() {
+    const stopBtn = document.getElementById('stopGenerationBtn');
+    if (stopBtn) {
+        stopBtn.classList.add('show');
+    }
+}
+
+/**
+ * Hide stop generation button
+ */
+function hideStopGenerationButton() {
+    const stopBtn = document.getElementById('stopGenerationBtn');
+    if (stopBtn) {
+        stopBtn.classList.remove('show');
+    }
+}
+
+/**
+ * Stop LLM response generation
+ */
+function stopGeneration() {
+    if (socket && isGenerating) {
+        socket.emit('stop_generation', {});
+        isGenerating = false;
+        hideStopGenerationButton();
+        showToast('Stopped generation', 'info');
+
+        // Complete whatever response we have so far
+        if (currentResponse) {
+            completeResponse(currentResponse);
+        }
+    }
 }
 
 /**
@@ -2363,8 +2845,17 @@ function loadConversation() {
             // Add message content
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = msg.content;
-            
+
+            // Render markdown for assistant messages, plain text for user messages
+            if (msg.role === 'assistant') {
+                contentDiv.innerHTML = renderMarkdown(msg.content);
+            } else {
+                contentDiv.textContent = msg.content;
+            }
+
+            // Store original text for replay functionality
+            contentDiv.setAttribute('data-original-text', msg.content);
+
             // Add timestamp/metadata
             const timestampDiv = document.createElement('div');
             timestampDiv.className = 'message-time';
@@ -2441,51 +2932,59 @@ async function fetchConfig() {
 }
 
 /**
+ * Update model display in all locations
+ * Ensures main page footer and settings dropdown stay synchronized
+ * @param {string} modelName - The model name to display
+ */
+function updateModelDisplay(modelName) {
+    if (!modelName) return;
+
+    // Update JavaScript variable
+    currentModel = modelName;
+
+    // Update main page footer indicator
+    const modelIndicator = document.getElementById('modelIndicator');
+    if (modelIndicator) {
+        modelIndicator.textContent = modelName;
+    }
+
+    // Update settings dropdown
+    const modelSelect = document.getElementById('modelSelect');
+    if (modelSelect) {
+        modelSelect.value = modelName;
+    }
+
+    // Save to localStorage
+    localStorage.setItem('selectedModel', modelName);
+
+    console.log('Model display updated to:', modelName);
+}
+
+/**
  * Load available models
  */
 async function loadModels() {
     try {
         const response = await fetch('/api/models');
         const data = await response.json();
-        
-        const modelSelect = document.getElementById('modelSelect');
-        const savedModel = localStorage.getItem('selectedModel');
-        
-        modelSelect.innerHTML = '';
-        let modelFound = false;
 
+        const modelSelect = document.getElementById('modelSelect');
+        modelSelect.innerHTML = '';
+
+        // Populate dropdown with available models
         data.models.forEach(model => {
             const option = document.createElement('option');
             option.value = model;
             option.textContent = model;
-            if (model === data.current || model === savedModel) {
-                option.selected = true;
-                currentModel = model;  // Set current model
-                modelFound = true;
-
-                // Update model indicator when loading
-                const modelIndicator = document.getElementById('modelIndicator');
-                if (modelIndicator) {
-                    modelIndicator.textContent = model;
-                }
-            }
             modelSelect.appendChild(option);
         });
 
-        // Fallback: If no model was matched, use first available model
-        if (!modelFound && data.models.length > 0) {
-            const firstModel = data.models[0];
-            currentModel = firstModel;
+        // Use backend's current model as single source of truth
+        const actualCurrentModel = data.current || (data.models.length > 0 ? data.models[0] : null);
 
-            // Select first model in dropdown
-            modelSelect.value = firstModel;
-
-            // Update model indicator
-            const modelIndicator = document.getElementById('modelIndicator');
-            if (modelIndicator) {
-                modelIndicator.textContent = firstModel;
-                logResponse('loadModels', { fallbackUsed: true, model: firstModel });
-            }
+        if (actualCurrentModel) {
+            // Update all displays using central function
+            updateModelDisplay(actualCurrentModel);
         }
     } catch (err) {
         // console.error('Failed to load models:', err);
@@ -3068,6 +3567,44 @@ function setupServerSettings() {
 }
 
 /**
+ * Sync AI settings from localStorage to backend on connect
+ * Ensures user's customized settings persist across page reloads and model switches
+ */
+function syncAISettingsToBackend() {
+    if (!socket || !socket.connected) {
+        console.log('Cannot sync AI settings: socket not connected');
+        return;
+    }
+
+    console.log('Syncing AI settings from localStorage to backend...');
+
+    // Send temperature
+    const temp = localStorage.getItem('aiTemperature');
+    if (temp) {
+        const temperature = parseFloat(temp);
+        socket.emit('update_temperature', { temperature });
+        console.log(`Synced temperature: ${temperature}`);
+    }
+
+    // Send max tokens
+    const maxTokens = localStorage.getItem('aiMaxTokens');
+    if (maxTokens) {
+        const max_tokens = parseInt(maxTokens);
+        socket.emit('update_max_tokens', { max_tokens });
+        console.log(`Synced max tokens: ${max_tokens}`);
+    }
+
+    // Send system prompt (CRITICAL: This fixes system prompt not persisting)
+    const systemPrompt = localStorage.getItem('aiSystemPrompt');
+    if (systemPrompt) {
+        socket.emit('update_system_prompt', { system_prompt: systemPrompt });
+        console.log(`Synced system prompt (${systemPrompt.length} chars)`);
+    }
+
+    console.log('AI settings sync complete');
+}
+
+/**
  * Setup AI Model Settings (temperature, max tokens, system prompt)
  */
 function setupAIModelSettings() {
@@ -3213,6 +3750,614 @@ function setupAIModelSettings() {
     }
 }
 
+// ============================================
+// AUDIO LEVEL VISUALIZATION (Feature 2.1)
+// ============================================
+
+/**
+ * Initialize audio visualization
+ */
+function initAudioVisualization(stream) {
+    try {
+        // Create AudioContext (with fallback for older browsers)
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            console.warn('AudioContext not supported');
+            return;
+        }
+
+        audioContext = new AudioContextClass();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 64; // Small FFT for better performance
+        analyser.smoothingTimeConstant = 0.8;
+
+        // Connect microphone stream to analyser
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        // Get audio bar elements
+        const visualizer = document.getElementById('audioVisualizer');
+        if (visualizer) {
+            audioBars = Array.from(visualizer.querySelectorAll('.audio-bar'));
+            visualizer.style.display = 'flex';
+        }
+
+        // Start animation
+        animateAudioBars();
+
+    } catch (error) {
+        console.error('Error initializing audio visualization:', error);
+    }
+}
+
+/**
+ * Animate audio bars based on frequency data
+ */
+function animateAudioBars() {
+    if (!analyser || audioBars.length === 0) return;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+
+    // Update each bar based on frequency data
+    audioBars.forEach((bar, index) => {
+        // Sample different frequency ranges for each bar
+        const dataIndex = Math.floor((index / audioBars.length) * dataArray.length);
+        const value = dataArray[dataIndex];
+
+        // Scale value to height (6px to 24px)
+        const height = Math.max(6, (value / 255) * 24);
+        bar.style.height = `${height}px`;
+
+        // Adjust opacity based on volume
+        const opacity = 0.4 + (value / 255) * 0.6;
+        bar.style.opacity = opacity;
+    });
+
+    // Continue animation at 60fps
+    animationFrameId = requestAnimationFrame(animateAudioBars);
+}
+
+/**
+ * Stop audio visualization
+ */
+function stopAudioVisualization() {
+    // Cancel animation
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+
+    // Close audio context
+    if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+        analyser = null;
+    }
+
+    // Hide visualizer
+    const visualizer = document.getElementById('audioVisualizer');
+    if (visualizer) {
+        visualizer.style.display = 'none';
+    }
+
+    // Reset bars
+    audioBars = [];
+}
+
+// ============================================
+// PROGRESSIVE SETTINGS DISCLOSURE (Feature 2.4)
+// ============================================
+
+/**
+ * Setup progressive settings disclosure
+ */
+function setupProgressiveSettings() {
+    const basicModeBtn = document.getElementById('basicModeBtn');
+    const advancedModeBtn = document.getElementById('advancedModeBtn');
+    const settingsContent = document.querySelector('.settings-content');
+
+    if (!basicModeBtn || !advancedModeBtn || !settingsContent) return;
+
+    // One-time migration: upgrade users from basic to advanced mode
+    if (localStorage.getItem('settingsMode') === 'basic') {
+        localStorage.setItem('settingsMode', 'advanced');
+    }
+
+    // Load saved mode preference
+    const savedMode = localStorage.getItem('settingsMode') || 'advanced';
+
+    // Apply saved mode
+    if (savedMode === 'advanced') {
+        basicModeBtn.classList.remove('active');
+        advancedModeBtn.classList.add('active');
+        settingsContent.classList.add('show-advanced');
+    } else {
+        basicModeBtn.classList.add('active');
+        advancedModeBtn.classList.remove('active');
+        settingsContent.classList.remove('show-advanced');
+    }
+
+    // Basic mode button
+    basicModeBtn.addEventListener('click', () => {
+        basicModeBtn.classList.add('active');
+        advancedModeBtn.classList.remove('active');
+        settingsContent.classList.remove('show-advanced');
+        localStorage.setItem('settingsMode', 'basic');
+        showToast('Basic mode enabled', 'info');
+    });
+
+    // Advanced mode button
+    advancedModeBtn.addEventListener('click', () => {
+        basicModeBtn.classList.remove('active');
+        advancedModeBtn.classList.add('active');
+        settingsContent.classList.add('show-advanced');
+        localStorage.setItem('settingsMode', 'advanced');
+        showToast('Advanced mode enabled', 'info');
+    });
+}
+
+// ============================================
+// CONVERSATION SEARCH FEATURE (Feature 2.2)
+// ============================================
+
+let searchDebounceTimeout = null;
+
+/**
+ * Perform search in conversation
+ */
+function performConversationSearch(query) {
+    const messageElements = document.querySelectorAll('#messages .message');
+    const searchWrapper = document.getElementById('conversationSearchWrapper');
+    const clearBtn = document.getElementById('clearSearchBtn');
+
+    // Clear previous highlights
+    messageElements.forEach(msgEl => {
+        const contentEl = msgEl.querySelector('.message-content');
+        if (contentEl) {
+            // Remove existing highlights
+            const highlightedElements = contentEl.querySelectorAll('mark.search-highlight');
+            highlightedElements.forEach(mark => {
+                const parent = mark.parentNode;
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize();
+            });
+        }
+        msgEl.style.display = '';
+    });
+
+    // If query is empty, show all messages
+    if (!query || query.trim() === '') {
+        if (clearBtn) clearBtn.style.display = 'none';
+        return;
+    }
+
+    // Show clear button
+    if (clearBtn) clearBtn.style.display = 'flex';
+
+    const queryLower = query.toLowerCase();
+    let matchCount = 0;
+
+    messageElements.forEach(msgEl => {
+        const contentEl = msgEl.querySelector('.message-content');
+        if (!contentEl) return;
+
+        const originalText = contentEl.textContent;
+        const textLower = originalText.toLowerCase();
+
+        if (textLower.includes(queryLower)) {
+            matchCount++;
+            msgEl.style.display = '';
+
+            // Highlight matches (case-insensitive)
+            const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+            highlightText(contentEl, regex);
+        } else {
+            // Hide non-matching messages
+            msgEl.style.display = 'none';
+        }
+    });
+
+    // Show toast with match count
+    if (matchCount > 0) {
+        showToast(`Found ${matchCount} message${matchCount !== 1 ? 's' : ''}`, 'info');
+    } else {
+        showToast('No matches found', 'warning');
+    }
+}
+
+/**
+ * Escape special regex characters
+ */
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Highlight text in element
+ */
+function highlightText(element, regex) {
+    const walk = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+
+    const nodesToReplace = [];
+    let node;
+
+    while (node = walk.nextNode()) {
+        if (node.nodeValue && regex.test(node.nodeValue)) {
+            nodesToReplace.push(node);
+        }
+    }
+
+    nodesToReplace.forEach(textNode => {
+        const fragment = document.createDocumentFragment();
+        const text = textNode.nodeValue;
+        let lastIndex = 0;
+        let match;
+
+        // Reset regex
+        regex.lastIndex = 0;
+
+        while ((match = regex.exec(text)) !== null) {
+            // Add text before match
+            if (match.index > lastIndex) {
+                fragment.appendChild(
+                    document.createTextNode(text.substring(lastIndex, match.index))
+                );
+            }
+
+            // Add highlighted match
+            const mark = document.createElement('mark');
+            mark.className = 'search-highlight';
+            mark.textContent = match[0];
+            fragment.appendChild(mark);
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text
+        if (lastIndex < text.length) {
+            fragment.appendChild(
+                document.createTextNode(text.substring(lastIndex))
+            );
+        }
+
+        textNode.parentNode.replaceChild(fragment, textNode);
+    });
+}
+
+/**
+ * Clear conversation search
+ */
+function clearConversationSearch() {
+    const searchInput = document.getElementById('conversationSearch');
+    const clearBtn = document.getElementById('clearSearchBtn');
+
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    if (clearBtn) {
+        clearBtn.style.display = 'none';
+    }
+
+    // Clear all highlights and show all messages
+    performConversationSearch('');
+}
+
+/**
+ * Hide conversation search wrapper
+ */
+function hideConversationSearch() {
+    const searchWrapper = document.getElementById('conversationSearchWrapper');
+    if (searchWrapper) {
+        searchWrapper.style.display = 'none';
+    }
+    // Also clear the search
+    clearConversationSearch();
+}
+
+/**
+ * Toggle conversation search visibility
+ */
+function toggleConversationSearch() {
+    const searchWrapper = document.getElementById('conversationSearchWrapper');
+    const searchInput = document.getElementById('conversationSearch');
+
+    if (!searchWrapper) return;
+
+    if (searchWrapper.style.display === 'none' || !searchWrapper.style.display) {
+        // Show search
+        searchWrapper.style.display = 'flex';
+        // Focus the search input
+        if (searchInput) {
+            setTimeout(() => searchInput.focus(), 100);
+        }
+    } else {
+        // Hide search
+        hideConversationSearch();
+    }
+}
+
+/**
+ * Setup conversation search feature
+ */
+function setupConversationSearch() {
+    const searchInput = document.getElementById('conversationSearch');
+    const clearBtn = document.getElementById('clearSearchBtn');
+    const searchWrapper = document.getElementById('conversationSearchWrapper');
+
+    if (!searchInput || !searchWrapper) return;
+
+    // Search box is hidden by default, shown via toggle button
+    // (Auto-show MutationObserver removed - now manual activation only)
+
+    // Search input with debounce
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value;
+
+        // Debounce search (300ms)
+        clearTimeout(searchDebounceTimeout);
+        searchDebounceTimeout = setTimeout(() => {
+            performConversationSearch(query);
+        }, 300);
+    });
+
+    // Clear button
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearConversationSearch);
+    }
+
+    // Close button - hides the entire search wrapper
+    const closeBtn = document.getElementById('closeSearchBtn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideConversationSearch);
+    }
+
+    // Hide search wrapper on Escape key
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            hideConversationSearch();
+        }
+    });
+}
+
+// ============================================
+// EXPORT CONVERSATION FEATURE (Feature 2.3)
+// ============================================
+
+/**
+ * Get all messages for export
+ */
+function getMessagesForExport() {
+    const messages = [];
+    const messageElements = document.querySelectorAll('#messages .message');
+
+    messageElements.forEach(msgEl => {
+        const role = msgEl.classList.contains('user') ? 'user' : 'assistant';
+        const contentEl = msgEl.querySelector('.message-content');
+        const timestampEl = msgEl.querySelector('.message-time');
+
+        if (contentEl) {
+            messages.push({
+                role: role,
+                content: contentEl.textContent.trim(),
+                timestamp: timestampEl ? timestampEl.textContent : new Date().toLocaleTimeString()
+            });
+        }
+    });
+
+    return messages;
+}
+
+/**
+ * Generate filename with timestamp
+ */
+function generateFilename(extension) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+
+    return `conversation-${year}-${month}-${day}-${hours}${minutes}.${extension}`;
+}
+
+/**
+ * Download file using Blob API
+ */
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Export conversation as Markdown
+ */
+function exportAsMarkdown() {
+    const messages = getMessagesForExport();
+
+    if (messages.length === 0) {
+        showToast('No messages to export', 'warning');
+        return;
+    }
+
+    let markdown = `# AssistedVoice Conversation\n\n`;
+    markdown += `**Exported:** ${new Date().toLocaleString()}\n\n`;
+    markdown += `**Model:** ${currentModel || 'Unknown'}\n\n`;
+    markdown += `---\n\n`;
+
+    messages.forEach((msg, index) => {
+        const roleLabel = msg.role === 'user' ? 'You' : 'Assistant';
+        markdown += `## ${roleLabel} (${msg.timestamp})\n\n`;
+        markdown += `${msg.content}\n\n`;
+
+        if (index < messages.length - 1) {
+            markdown += `---\n\n`;
+        }
+    });
+
+    const filename = generateFilename('md');
+    downloadFile(markdown, filename, 'text/markdown');
+    showToast(`Exported ${messages.length} messages as Markdown`, 'success');
+    closeExportModal();
+}
+
+/**
+ * Export conversation as JSON
+ */
+function exportAsJSON() {
+    const messages = getMessagesForExport();
+
+    if (messages.length === 0) {
+        showToast('No messages to export', 'warning');
+        return;
+    }
+
+    const exportData = {
+        metadata: {
+            exportDate: new Date().toISOString(),
+            model: currentModel || 'Unknown',
+            messageCount: messages.length
+        },
+        messages: messages
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const filename = generateFilename('json');
+    downloadFile(json, filename, 'application/json');
+    showToast(`Exported ${messages.length} messages as JSON`, 'success');
+    closeExportModal();
+}
+
+/**
+ * Export conversation as Plain Text
+ */
+function exportAsPlainText() {
+    const messages = getMessagesForExport();
+
+    if (messages.length === 0) {
+        showToast('No messages to export', 'warning');
+        return;
+    }
+
+    let text = `AssistedVoice Conversation\n`;
+    text += `Exported: ${new Date().toLocaleString()}\n`;
+    text += `Model: ${currentModel || 'Unknown'}\n`;
+    text += `\n${'='.repeat(60)}\n\n`;
+
+    messages.forEach((msg, index) => {
+        const roleLabel = msg.role === 'user' ? 'YOU' : 'ASSISTANT';
+        text += `[${roleLabel}] ${msg.timestamp}\n`;
+        text += `${msg.content}\n`;
+
+        if (index < messages.length - 1) {
+            text += `\n${'-'.repeat(60)}\n\n`;
+        }
+    });
+
+    const filename = generateFilename('txt');
+    downloadFile(text, filename, 'text/plain');
+    showToast(`Exported ${messages.length} messages as Plain Text`, 'success');
+    closeExportModal();
+}
+
+/**
+ * Open export modal
+ */
+function openExportModal() {
+    const modal = document.getElementById('exportModal');
+    const overlay = document.getElementById('overlay');
+
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+    if (overlay) {
+        overlay.classList.add('show');
+    }
+}
+
+/**
+ * Close export modal
+ */
+function closeExportModal() {
+    const modal = document.getElementById('exportModal');
+    const overlay = document.getElementById('overlay');
+
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    if (overlay) {
+        overlay.classList.remove('show');
+    }
+}
+
+/**
+ * Setup export conversation feature
+ */
+function setupExportFeature() {
+    // Export button in menu
+    const exportBtn = document.getElementById('exportChatBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            openExportModal();
+        });
+    }
+
+    // Close modal button
+    const closeBtn = document.getElementById('closeExportModal');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeExportModal);
+    }
+
+    // Export format buttons
+    const markdownBtn = document.getElementById('exportMarkdownBtn');
+    const jsonBtn = document.getElementById('exportJSONBtn');
+    const plainTextBtn = document.getElementById('exportPlainTextBtn');
+
+    if (markdownBtn) {
+        markdownBtn.addEventListener('click', exportAsMarkdown);
+    }
+    if (jsonBtn) {
+        jsonBtn.addEventListener('click', exportAsJSON);
+    }
+    if (plainTextBtn) {
+        plainTextBtn.addEventListener('click', exportAsPlainText);
+    }
+
+    // Close modal when clicking overlay (only if export modal is open)
+    const overlay = document.getElementById('overlay');
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            const exportModal = document.getElementById('exportModal');
+            if (exportModal && exportModal.style.display === 'flex') {
+                closeExportModal();
+            }
+        });
+    }
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('exportModal');
+            if (modal && modal.style.display === 'flex') {
+                closeExportModal();
+            }
+        }
+    });
+}
+
 /**
  * Show toast notification
  */
@@ -3237,4 +4382,962 @@ function showToast(message, type = 'info') {
             document.body.removeChild(toast);
         }, 300);
     }, 3000);
+}
+// ============================================
+// PHASE 3: Advanced Features Implementation
+// ============================================
+
+// ============================================
+// Feature 3.5: Message Reactions/Ratings
+// ============================================
+
+/**
+ * Initialize message reactions system
+ */
+function initializeMessageReactions() {
+    // Load reactions from localStorage
+    const reactions = JSON.parse(localStorage.getItem('messageReactions') || '{}');
+    return reactions;
+}
+
+/**
+ * Save reaction to localStorage
+ */
+function saveReaction(messageId, reactionType) {
+    const reactions = initializeMessageReactions();
+
+    if (!reactions[messageId]) {
+        reactions[messageId] = { thumbsUp: 0, thumbsDown: 0 };
+    }
+
+    // Toggle reaction
+    if (reactionType === 'thumbsUp') {
+        reactions[messageId].thumbsUp = reactions[messageId].thumbsUp === 1 ? 0 : 1;
+        reactions[messageId].thumbsDown = 0; // Clear opposite reaction
+    } else if (reactionType === 'thumbsDown') {
+        reactions[messageId].thumbsDown = reactions[messageId].thumbsDown === 1 ? 0 : 1;
+        reactions[messageId].thumbsUp = 0; // Clear opposite reaction
+    }
+
+    localStorage.setItem('messageReactions', JSON.stringify(reactions));
+    return reactions[messageId];
+}
+
+/**
+ * Add reaction buttons to assistant messages
+ */
+function addReactionButtons(messageElement, messageId) {
+    // Only add to assistant messages
+    if (!messageElement.classList.contains('assistant')) {
+        return;
+    }
+
+    // Check if reactions already exist
+    if (messageElement.querySelector('.message-reactions')) {
+        return;
+    }
+
+    const reactions = initializeMessageReactions();
+    const messageReaction = reactions[messageId] || { thumbsUp: 0, thumbsDown: 0 };
+
+    const reactionContainer = document.createElement('div');
+    reactionContainer.className = 'message-reactions';
+    reactionContainer.innerHTML = `
+        <button class="reaction-btn thumbs-up ` + (messageReaction.thumbsUp ? 'active' : '') + `" data-reaction="thumbsUp" title="Helpful">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+            </svg>
+            ` + (messageReaction.thumbsUp > 0 ? `<span class="reaction-count">` + messageReaction.thumbsUp + `</span>` : '') + `
+        </button>
+        <button class="reaction-btn thumbs-down ` + (messageReaction.thumbsDown ? 'active' : '') + `" data-reaction="thumbsDown" title="Not helpful">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+            </svg>
+            ` + (messageReaction.thumbsDown > 0 ? `<span class="reaction-count">` + messageReaction.thumbsDown + `</span>` : '') + `
+        </button>
+    `;
+
+    // Add click handlers
+    const thumbsUpBtn = reactionContainer.querySelector('.thumbs-up');
+    const thumbsDownBtn = reactionContainer.querySelector('.thumbs-down');
+
+    thumbsUpBtn.addEventListener('click', () => handleReactionClick(messageId, 'thumbsUp', thumbsUpBtn, thumbsDownBtn));
+    thumbsDownBtn.addEventListener('click', () => handleReactionClick(messageId, 'thumbsDown', thumbsUpBtn, thumbsDownBtn));
+
+    // Insert before message-time
+    const messageContent = messageElement.querySelector('.message-content');
+    if (messageContent) {
+        messageContent.appendChild(reactionContainer);
+    }
+}
+
+/**
+ * Handle reaction button click
+ */
+function handleReactionClick(messageId, reactionType, thumbsUpBtn, thumbsDownBtn) {
+    const newReaction = saveReaction(messageId, reactionType);
+
+    // Update UI with animation
+    const clickedBtn = reactionType === 'thumbsUp' ? thumbsUpBtn : thumbsDownBtn;
+    const otherBtn = reactionType === 'thumbsUp' ? thumbsDownBtn : thumbsUpBtn;
+
+    // Animate click
+    clickedBtn.style.transform = 'scale(1.2)';
+    setTimeout(() => {
+        clickedBtn.style.transform = 'scale(1)';
+    }, 200);
+
+    // Update active states
+    if (newReaction.thumbsUp === 1) {
+        thumbsUpBtn.classList.add('active');
+        thumbsDownBtn.classList.remove('active');
+    } else if (newReaction.thumbsDown === 1) {
+        thumbsDownBtn.classList.add('active');
+        thumbsUpBtn.classList.remove('active');
+    } else {
+        thumbsUpBtn.classList.remove('active');
+        thumbsDownBtn.classList.remove('active');
+    }
+
+    // Update counts
+    updateReactionCount(thumbsUpBtn, newReaction.thumbsUp);
+    updateReactionCount(thumbsDownBtn, newReaction.thumbsDown);
+
+    // Optional: Send analytics to backend (future enhancement)
+    console.log('Reaction saved: ' + messageId + ' - ' + reactionType, newReaction);
+}
+
+/**
+ * Update reaction count display
+ */
+function updateReactionCount(button, count) {
+    let countSpan = button.querySelector('.reaction-count');
+
+    if (count > 0) {
+        if (!countSpan) {
+            countSpan = document.createElement('span');
+            countSpan.className = 'reaction-count';
+            button.appendChild(countSpan);
+        }
+        countSpan.textContent = count;
+    } else {
+        if (countSpan) {
+            countSpan.remove();
+        }
+    }
+}
+
+// ============================================
+// Feature 3.4: Mobile Swipe Gestures
+// ============================================
+
+let swipeIndicator = null;
+
+/**
+ * Initialize swipe gestures for mobile
+ */
+function initializeSwipeGestures() {
+    const messagesContainer = document.getElementById('messages');
+    if (!messagesContainer) return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    let currentTouchedElement = null;
+    let longPressTimeout = null;
+
+    messagesContainer.addEventListener('touchstart', (e) => {
+        const messageElement = e.target.closest('.message');
+        if (!messageElement) return;
+
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchStartTime = Date.now();
+        currentTouchedElement = messageElement;
+
+        // Long-press detection
+        longPressTimeout = setTimeout(() => {
+            showMessageContextMenu(messageElement, e.touches[0].clientX, e.touches[0].clientY);
+            vibrate(50);
+        }, 500);
+    });
+
+    messagesContainer.addEventListener('touchmove', (e) => {
+        if (!currentTouchedElement) return;
+
+        clearTimeout(longPressTimeout);
+
+        const touchX = e.touches[0].clientX;
+        const touchY = e.touches[0].clientY;
+        const deltaX = touchX - touchStartX;
+        const deltaY = touchY - touchStartY;
+
+        // Ignore vertical scrolling
+        if (Math.abs(deltaY) > Math.abs(deltaX)) {
+            return;
+        }
+
+        // Prevent page scroll during horizontal swipe
+        if (Math.abs(deltaX) > 10) {
+            e.preventDefault();
+        }
+
+        // Show swipe indicator
+        if (Math.abs(deltaX) > 30) {
+            showSwipeIndicator(currentTouchedElement, deltaX);
+        }
+
+        // Apply transform
+        currentTouchedElement.style.transform = 'translateX(' + deltaX + 'px)';
+        currentTouchedElement.style.transition = 'none';
+    });
+
+    messagesContainer.addEventListener('touchend', (e) => {
+        clearTimeout(longPressTimeout);
+
+        if (!currentTouchedElement) return;
+
+        const touchX = e.changedTouches[0].clientX;
+        const deltaX = touchX - touchStartX;
+        const touchDuration = Date.now() - touchStartTime;
+
+        // Reset transform with animation
+        currentTouchedElement.style.transition = 'transform 0.3s ease';
+        currentTouchedElement.style.transform = 'translateX(0)';
+
+        // Handle swipe actions
+        if (Math.abs(deltaX) > 100 && touchDuration < 500) {
+            if (deltaX < 0) {
+                // Swipe left: Delete confirmation
+                handleSwipeDelete(currentTouchedElement);
+                vibrate(10);
+            } else {
+                // Swipe right: Copy to clipboard
+                handleSwipeCopy(currentTouchedElement);
+                vibrate(10);
+            }
+        }
+
+        // Hide swipe indicator
+        hideSwipeIndicator();
+
+        setTimeout(() => {
+            if (currentTouchedElement) {
+                currentTouchedElement.style.transition = '';
+            }
+        }, 300);
+
+        currentTouchedElement = null;
+    });
+
+    messagesContainer.addEventListener('touchcancel', () => {
+        clearTimeout(longPressTimeout);
+        hideSwipeIndicator();
+        if (currentTouchedElement) {
+            currentTouchedElement.style.transition = 'transform 0.3s ease';
+            currentTouchedElement.style.transform = 'translateX(0)';
+            currentTouchedElement = null;
+        }
+    });
+}
+
+/**
+ * Show swipe indicator
+ */
+function showSwipeIndicator(messageElement, deltaX) {
+    if (!swipeIndicator) {
+        swipeIndicator = document.createElement('div');
+        swipeIndicator.className = 'swipe-indicator';
+        document.body.appendChild(swipeIndicator);
+    }
+
+    const rect = messageElement.getBoundingClientRect();
+    swipeIndicator.style.top = (rect.top + rect.height / 2 - 20) + 'px';
+
+    if (deltaX < 0) {
+        // Left swipe - delete
+        swipeIndicator.style.left = (rect.right - 60) + 'px';
+        swipeIndicator.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+        swipeIndicator.style.background = 'rgba(255, 59, 48, 0.2)';
+    } else {
+        // Right swipe - copy
+        swipeIndicator.style.left = (rect.left + 20) + 'px';
+        swipeIndicator.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        swipeIndicator.style.background = 'rgba(0, 122, 255, 0.2)';
+    }
+
+    swipeIndicator.classList.add('show');
+}
+
+/**
+ * Hide swipe indicator
+ */
+function hideSwipeIndicator() {
+    if (swipeIndicator) {
+        swipeIndicator.classList.remove('show');
+    }
+}
+
+/**
+ * Handle swipe delete action
+ */
+function handleSwipeDelete(messageElement) {
+    const messageText = messageElement.querySelector('.message-content')?.textContent || '';
+    const preview = messageText.substring(0, 50) + (messageText.length > 50 ? '...' : '');
+
+    if (confirm('Delete message: "' + preview + '"?')) {
+        messageElement.style.opacity = '0';
+        messageElement.style.transform = 'translateX(-100%)';
+        setTimeout(() => {
+            messageElement.remove();
+            showToast('Message deleted', 'success');
+        }, 300);
+    }
+}
+
+/**
+ * Handle swipe copy action
+ */
+function handleSwipeCopy(messageElement) {
+    const messageText = messageElement.querySelector('.message-content')?.textContent || '';
+
+    navigator.clipboard.writeText(messageText).then(() => {
+        showToast('Copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy', 'error');
+    });
+}
+
+/**
+ * Show context menu for message
+ */
+function showMessageContextMenu(messageElement, x, y) {
+    const messageText = messageElement.querySelector('.message-content')?.textContent || '';
+
+    // Remove existing context menu
+    const existingMenu = document.querySelector('.message-context-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'message-context-menu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="copy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy
+        </button>
+        <button class="context-menu-item" data-action="delete">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Delete
+        </button>
+    `;
+
+    document.body.appendChild(menu);
+
+    // Position adjustment to keep on screen
+    setTimeout(() => {
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+        }
+        if (rect.bottom > window.innerHeight) {
+            menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+        }
+    }, 0);
+
+    // Handle menu actions
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = e.currentTarget.dataset.action;
+
+            if (action === 'copy') {
+                navigator.clipboard.writeText(messageText).then(() => {
+                    showToast('Copied to clipboard', 'success');
+                });
+            } else if (action === 'delete') {
+                handleSwipeDelete(messageElement);
+            }
+
+            menu.remove();
+        });
+    });
+
+    // Close menu on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 100);
+}
+
+/**
+ * Vibrate device (if supported)
+ */
+function vibrate(duration) {
+    if (navigator.vibrate) {
+        navigator.vibrate(duration);
+    }
+}
+
+// ============================================
+// Feature 3.2: Advanced Audio Controls
+// ============================================
+
+let miniPlayerVisible = false;
+let miniPlayerAudio = null;
+let playbackSpeed = 1.0;
+
+/**
+ * Show mini-player during TTS playback
+ */
+function showMiniPlayer(audioElement, messageText) {
+    miniPlayerAudio = audioElement;
+
+    let miniPlayer = document.getElementById('miniPlayer');
+
+    if (!miniPlayer) {
+        miniPlayer = document.createElement('div');
+        miniPlayer.id = 'miniPlayer';
+        miniPlayer.className = 'mini-player';
+        miniPlayer.innerHTML = `
+            <div class="mini-player-header">
+                <span class="mini-player-title">Now Playing</span>
+                <button class="mini-player-close" title="Close">✕</button>
+            </div>
+            <div class="mini-player-controls">
+                <button class="mini-player-btn skip-backward" title="Skip backward 5s">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 19 2 12 11 5 11 19"/>
+                        <polygon points="22 19 13 12 22 5 22 19"/>
+                    </svg>
+                    <span class="skip-label">5s</span>
+                </button>
+                <button class="mini-player-btn play-pause" title="Play/Pause">
+                    <svg class="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    <svg class="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                        <rect x="6" y="4" width="4" height="16"/>
+                        <rect x="14" y="4" width="4" height="16"/>
+                    </svg>
+                </button>
+                <button class="mini-player-btn skip-forward" title="Skip forward 5s">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 19 22 12 13 5 13 19"/>
+                        <polygon points="2 19 11 12 2 5 2 19"/>
+                    </svg>
+                    <span class="skip-label">5s</span>
+                </button>
+                <select class="mini-player-speed" title="Playback speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                </select>
+            </div>
+            <div class="mini-player-progress-container">
+                <input type="range" class="mini-player-progress" min="0" max="100" value="0" step="0.1">
+                <div class="mini-player-time">
+                    <span class="current-time">0:00</span>
+                    <span class="duration">0:00</span>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(miniPlayer);
+
+        // Event listeners
+        setupMiniPlayerControls(miniPlayer);
+    }
+
+    // Reset and show
+    miniPlayer.querySelector('.mini-player-progress').value = 0;
+    miniPlayer.querySelector('.current-time').textContent = '0:00';
+    miniPlayer.classList.add('show');
+    miniPlayerVisible = true;
+
+    // Update duration when metadata loads
+    audioElement.addEventListener('loadedmetadata', () => {
+        const duration = formatTime(audioElement.duration);
+        miniPlayer.querySelector('.duration').textContent = duration;
+        miniPlayer.querySelector('.mini-player-progress').max = audioElement.duration;
+    });
+
+    // Update progress
+    audioElement.addEventListener('timeupdate', () => {
+        if (!miniPlayerVisible) return;
+
+        const currentTime = audioElement.currentTime;
+        const duration = audioElement.duration;
+
+        miniPlayer.querySelector('.mini-player-progress').value = currentTime;
+        miniPlayer.querySelector('.current-time').textContent = formatTime(currentTime);
+
+        // Update play/pause icon
+        const playIcon = miniPlayer.querySelector('.play-icon');
+        const pauseIcon = miniPlayer.querySelector('.pause-icon');
+        if (audioElement.paused) {
+            playIcon.style.display = 'block';
+            pauseIcon.style.display = 'none';
+        } else {
+            playIcon.style.display = 'none';
+            pauseIcon.style.display = 'block';
+        }
+    });
+
+    // Hide when ended
+    audioElement.addEventListener('ended', () => {
+        hideMiniPlayer();
+    });
+}
+
+/**
+ * Hide mini-player
+ */
+function hideMiniPlayer() {
+    const miniPlayer = document.getElementById('miniPlayer');
+    if (miniPlayer) {
+        miniPlayer.classList.remove('show');
+    }
+    miniPlayerVisible = false;
+    miniPlayerAudio = null;
+}
+
+/**
+ * Setup mini-player controls
+ */
+function setupMiniPlayerControls(miniPlayer) {
+    // Play/Pause
+    miniPlayer.querySelector('.play-pause').addEventListener('click', () => {
+        if (miniPlayerAudio) {
+            if (miniPlayerAudio.paused) {
+                miniPlayerAudio.play();
+            } else {
+                miniPlayerAudio.pause();
+            }
+        }
+    });
+
+    // Skip backward
+    miniPlayer.querySelector('.skip-backward').addEventListener('click', () => {
+        if (miniPlayerAudio) {
+            miniPlayerAudio.currentTime = Math.max(0, miniPlayerAudio.currentTime - 5);
+        }
+    });
+
+    // Skip forward
+    miniPlayer.querySelector('.skip-forward').addEventListener('click', () => {
+        if (miniPlayerAudio) {
+            miniPlayerAudio.currentTime = Math.min(miniPlayerAudio.duration, miniPlayerAudio.currentTime + 5);
+        }
+    });
+
+    // Playback speed
+    miniPlayer.querySelector('.mini-player-speed').addEventListener('change', (e) => {
+        playbackSpeed = parseFloat(e.target.value);
+        if (miniPlayerAudio) {
+            miniPlayerAudio.playbackRate = playbackSpeed;
+        }
+    });
+
+    // Progress bar
+    miniPlayer.querySelector('.mini-player-progress').addEventListener('input', (e) => {
+        if (miniPlayerAudio) {
+            miniPlayerAudio.currentTime = parseFloat(e.target.value);
+        }
+    });
+
+    // Close button
+    miniPlayer.querySelector('.mini-player-close').addEventListener('click', () => {
+        if (miniPlayerAudio) {
+            miniPlayerAudio.pause();
+        }
+        hideMiniPlayer();
+    });
+}
+
+/**
+ * Format time in mm:ss
+ */
+function formatTime(seconds) {
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return mins + ':' + secs.toString().padStart(2, '0');
+}
+
+// ============================================
+// Feature 3.1: VAD Visualization
+// ============================================
+
+/**
+ * Initialize VAD status indicator
+ */
+function initializeVADVisualization() {
+    const voiceBtn = document.getElementById('voiceBtn');
+    if (!voiceBtn) return;
+
+    // Create VAD status badge
+    const vadBadge = document.createElement('div');
+    vadBadge.id = 'vadStatusBadge';
+    vadBadge.className = 'vad-status-badge';
+    vadBadge.innerHTML = '<span class="vad-dot"></span>';
+    voiceBtn.parentElement.insertBefore(vadBadge, voiceBtn);
+
+    // Listen for VAD events from backend
+    if (socket) {
+        socket.on('vad_listening', () => {
+            updateVADStatus('listening');
+        });
+
+        socket.on('vad_speech_detected', () => {
+            updateVADStatus('speech');
+        });
+
+        socket.on('vad_silence_detected', () => {
+            updateVADStatus('silence');
+        });
+    }
+}
+
+/**
+ * Update VAD status display
+ */
+function updateVADStatus(status) {
+    const vadBadge = document.getElementById('vadStatusBadge');
+    if (!vadBadge) return;
+
+    // Remove all status classes
+    vadBadge.classList.remove('listening', 'speech', 'silence');
+
+    // Add new status
+    vadBadge.classList.add(status);
+
+    // Update tooltip
+    const tooltips = {
+        listening: 'Listening...',
+        speech: 'Speech detected',
+        silence: 'Silence detected'
+    };
+    vadBadge.title = tooltips[status] || '';
+}
+
+// ============================================
+// Feature 3.3: Virtual Scrolling
+// ============================================
+
+let virtualScrollEnabled = false;
+let visibleMessages = new Set();
+let intersectionObserver = null;
+
+/**
+ * Initialize virtual scrolling for performance
+ */
+function initializeVirtualScrolling() {
+    const messagesContainer = document.getElementById('messages');
+    if (!messagesContainer) return;
+
+    // Check if we need virtual scrolling (50+ messages)
+    const checkVirtualScrollNeed = () => {
+        const messageCount = messagesContainer.children.length;
+        if (messageCount >= 50 && !virtualScrollEnabled) {
+            enableVirtualScrolling();
+        } else if (messageCount < 50 && virtualScrollEnabled) {
+            disableVirtualScrolling();
+        }
+    };
+
+    // Create intersection observer
+    intersectionObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const messageId = entry.target.dataset.messageId;
+
+            if (entry.isIntersecting) {
+                visibleMessages.add(messageId);
+                renderMessage(entry.target);
+            } else {
+                visibleMessages.delete(messageId);
+                unrenderMessage(entry.target);
+            }
+        });
+    }, {
+        root: messagesContainer.parentElement, // chat-container
+        rootMargin: '400px 0px', // Buffer zone
+        threshold: 0
+    });
+
+    // Check on message additions
+    const observer = new MutationObserver(() => {
+        checkVirtualScrollNeed();
+    });
+
+    observer.observe(messagesContainer, { childList: true });
+
+    // Initial check
+    checkVirtualScrollNeed();
+}
+
+/**
+ * Enable virtual scrolling
+ */
+function enableVirtualScrolling() {
+    virtualScrollEnabled = true;
+    console.log('Virtual scrolling enabled');
+
+    const messagesContainer = document.getElementById('messages');
+    if (!messagesContainer) return;
+
+    // Observe all messages
+    Array.from(messagesContainer.children).forEach((message, index) => {
+        if (!message.dataset.messageId) {
+            message.dataset.messageId = 'msg-' + Date.now() + '-' + index;
+        }
+
+        // Store original content
+        if (!message.dataset.originalContent) {
+            message.dataset.originalContent = message.innerHTML;
+        }
+
+        intersectionObserver.observe(message);
+    });
+}
+
+/**
+ * Disable virtual scrolling
+ */
+function disableVirtualScrolling() {
+    virtualScrollEnabled = false;
+    console.log('Virtual scrolling disabled');
+
+    const messagesContainer = document.getElementById('messages');
+    if (!messagesContainer || !intersectionObserver) return;
+
+    // Restore all messages
+    Array.from(messagesContainer.children).forEach(message => {
+        intersectionObserver.unobserve(message);
+        renderMessage(message);
+    });
+}
+
+/**
+ * Render message content
+ */
+function renderMessage(messageElement) {
+    if (!messageElement.dataset.originalContent) return;
+
+    // Only restore if currently showing placeholder
+    if (messageElement.classList.contains('virtual-placeholder')) {
+        messageElement.innerHTML = messageElement.dataset.originalContent;
+        messageElement.classList.remove('virtual-placeholder');
+    }
+}
+
+/**
+ * Unrender message (replace with placeholder)
+ */
+function unrenderMessage(messageElement) {
+    if (!virtualScrollEnabled) return;
+
+    // Store content if not already stored
+    if (!messageElement.dataset.originalContent) {
+        messageElement.dataset.originalContent = messageElement.innerHTML;
+    }
+
+    // Get message height
+    const height = messageElement.offsetHeight;
+
+    // Replace with placeholder
+    messageElement.innerHTML = '<div style="height: ' + height + 'px;"></div>';
+    messageElement.classList.add('virtual-placeholder');
+}
+
+/**
+ * Observe new message for virtual scrolling
+ */
+function observeNewMessage(messageElement) {
+    if (!virtualScrollEnabled || !intersectionObserver) return;
+
+    // Assign ID if not present
+    if (!messageElement.dataset.messageId) {
+        messageElement.dataset.messageId = 'msg-' + Date.now() + '-' + Math.random();
+    }
+
+    // Store original content
+    messageElement.dataset.originalContent = messageElement.innerHTML;
+
+    // Observe
+    intersectionObserver.observe(messageElement);
+}
+
+// ============================================
+// Initialization on DOM ready
+// ============================================
+
+// Wait for DOM to be ready before initializing Phase 3 features
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializePhase3Features);
+} else {
+    // DOM already loaded
+    initializePhase3Features();
+}
+
+function initializePhase3Features() {
+    console.log('Initializing Phase 3 Advanced Features...');
+
+    // Feature 3.5: Message Reactions
+    initializeMessageReactions();
+
+    // Feature 3.4: Mobile Swipe Gestures
+    initializeSwipeGestures();
+
+    // Feature 3.2: Advanced Audio Controls (initialized when audio plays)
+
+    // Feature 3.1: VAD Visualization
+    setTimeout(() => {
+        initializeVADVisualization();
+    }, 500); // Wait for socket to be ready
+
+    // Feature 3.3: Virtual Scrolling
+    initializeVirtualScrolling();
+
+    console.log('Phase 3 Advanced Features initialized');
+}
+
+// ============================================
+// ONBOARDING TUTORIAL (Feature 2.5)
+// ============================================
+
+const tutorialSteps = [
+    {
+        title: 'Welcome to AssistedVoice!',
+        description: 'This quick tour will show you how to use your AI voice assistant.',
+        target: null
+    },
+    {
+        title: 'Voice Button',
+        description: 'Click and hold this button to record your voice. Release to send your message to the AI.',
+        target: '#voiceBtn'
+    },
+    {
+        title: 'Text Input',
+        description: 'You can also type messages here if you prefer. Press Enter or click the send button.',
+        target: '#textInput'
+    },
+    {
+        title: 'Settings',
+        description: 'Click here to access settings where you can change models, voice options, and more.',
+        target: '#settingsBtn'
+    },
+    {
+        title: 'Model Selection',
+        description: 'Choose from different AI models on the welcome screen. Each has different capabilities!',
+        target: '.model-grid'
+    },
+    {
+        title: 'All Set!',
+        description: 'You\'re ready to start! Select a model to begin your conversation. You can replay this tutorial anytime from settings.',
+        target: null
+    }
+];
+
+let currentTutorialStep = 0;
+
+function startTutorial() {
+    currentTutorialStep = 0;
+    showTutorialStep(0);
+}
+
+function showTutorialStep(stepIndex) {
+    const overlay = document.getElementById('tutorialOverlay');
+    const spotlight = document.getElementById('tutorialSpotlight');
+    const content = document.getElementById('tutorialContent');
+    const stepCounter = document.getElementById('tutorialStepCounter');
+    const title = document.getElementById('tutorialTitle');
+    const description = document.getElementById('tutorialDescription');
+    const nextBtn = document.getElementById('tutorialNext');
+
+    if (!overlay || stepIndex >= tutorialSteps.length) {
+        closeTutorial();
+        return;
+    }
+
+    const step = tutorialSteps[stepIndex];
+    currentTutorialStep = stepIndex;
+
+    stepCounter.textContent = `Step ${stepIndex + 1} of ${tutorialSteps.length}`;
+    title.textContent = step.title;
+    description.textContent = step.description;
+
+    if (stepIndex === tutorialSteps.length - 1) {
+        nextBtn.textContent = 'Get Started';
+    } else {
+        nextBtn.textContent = 'Next';
+    }
+
+    overlay.style.display = 'block';
+
+    if (step.target) {
+        const targetElement = document.querySelector(step.target);
+        if (targetElement) {
+            const rect = targetElement.getBoundingClientRect();
+            spotlight.style.top = `${rect.top - 8}px`;
+            spotlight.style.left = `${rect.left - 8}px`;
+            spotlight.style.width = `${rect.width + 16}px`;
+            spotlight.style.height = `${rect.height + 16}px`;
+            spotlight.style.display = 'block';
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } else {
+        spotlight.style.display = 'none';
+    }
+}
+
+function nextTutorialStep() {
+    if (currentTutorialStep < tutorialSteps.length - 1) {
+        showTutorialStep(currentTutorialStep + 1);
+    } else {
+        closeTutorial();
+    }
+}
+
+function closeTutorial() {
+    const overlay = document.getElementById('tutorialOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+    localStorage.setItem('hasSeenTutorial', 'true');
+}
+
+function setupTutorial() {
+    const nextBtn = document.getElementById('tutorialNext');
+    const skipBtn = document.getElementById('tutorialSkip');
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', nextTutorialStep);
+    }
+
+    if (skipBtn) {
+        skipBtn.addEventListener('click', closeTutorial);
+    }
+
+    const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+    if (!hasSeenTutorial) {
+        setTimeout(() => {
+            startTutorial();
+        }, 1000);
+    }
 }

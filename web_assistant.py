@@ -12,12 +12,6 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import socketio
 
-# Load environment variables
-load_dotenv()
-
-# Add modules to path
-sys.path.insert(0, str(Path(__file__).parent))
-
 # FastAPI imports
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +27,12 @@ from routers.api import register_api_routes
 from services.model_service import ModelService
 from services.chat_service import ChatService
 from services.audio_service import AudioService
+
+# Load environment variables
+load_dotenv()
+
+# Add modules to path
+sys.path.insert(0, str(Path(__file__).parent))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

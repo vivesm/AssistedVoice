@@ -88,7 +88,7 @@ class ChatService:
         """
         try:
             self.llm.system_prompt = system_prompt
-            logger.info(f"System prompt updated")
+            logger.info("System prompt updated")
         except Exception as e:
             logger.error(f"Error updating system prompt: {e}")
             raise

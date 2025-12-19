@@ -142,12 +142,13 @@ class VoiceAssistant:
     
     def run_vad_mode(self):
         """Run with Voice Activity Detection"""
-        self.ui.display_info(f"Voice Activity Detection mode. Press ENTER to start recording.")
+        self.ui.display_info("Voice Activity Detection mode. Press ENTER to start recording.")
         
         while self.running:
             try:
                 # Wait for user input
-                input_key = input()
+                # Wait for user input
+                input()
                 
                 if not self.running:
                     break

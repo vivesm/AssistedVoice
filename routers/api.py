@@ -2,14 +2,13 @@
 FastAPI REST API route handlers
 """
 import logging
-from fastapi import APIRouter, HTTPException, status
+from fastapi import HTTPException, status
 from models.schemas import (
     ConfigResponse,
     ModelListResponse,
     ConnectionTestResponse,
     TTSEngineRequest,
     SuccessResponse,
-    ErrorResponse,
     TranscriptionResponse
 )
 

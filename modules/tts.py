@@ -48,6 +48,7 @@ class MacOSTTS(TTSEngine):
         self.voice = config['tts'].get('voice', 'Samantha')
         self.rate = config['tts'].get('rate', 180)
         self.current_process = None
+        logger.info(f"macOS TTS initialized with voice: {self.voice}, rate: {self.rate}")
         
     def speak(self, text: str):
         """Speak text using macOS say command"""
@@ -79,7 +80,88 @@ class MacOSTTS(TTSEngine):
         thread = Thread(target=self.speak, args=(text,))
         thread.daemon = True
         thread.start()
-    
+
+    def generate_audio_base64(self, text: str) -> Optional[str]:
+        """Generate speech and return as base64-encoded audio data"""
+        try:
+            # Clean text for speech
+            cleaned_text = self._clean_text(text)
+
+            if not cleaned_text or not cleaned_text.strip():
+                logger.warning("Empty text after cleaning, skipping TTS")
+                return None
+
+            logger.debug(f"Generating macOS TTS for text: {cleaned_text[:100]}...")
+
+            # Create temporary audio files
+            # macOS 'say' command prefers .aiff
+            with tempfile.NamedTemporaryFile(suffix='.aiff', delete=False) as tmp_aiff_file:
+                tmp_aiff_path = tmp_aiff_file.name
+            
+            # Browser prefers .wav
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav_file:
+                tmp_wav_path = tmp_wav_file.name
+
+            try:
+                # Generate speech using macOS say command
+                cmd = ['say', '-o', tmp_aiff_path]
+                if self.voice:
+                    cmd.extend(['-v', self.voice])
+                if self.rate:
+                    cmd.extend(['-r', str(self.rate)])
+                cmd.append(cleaned_text)
+
+                logger.debug(f"Running command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+                if result.returncode != 0:
+                    logger.error(f"macOS say command failed: {result.stderr}")
+                    return None
+
+                # Check if AIFF file was created and has content
+                if not os.path.exists(tmp_aiff_path) or os.path.getsize(tmp_aiff_path) == 0:
+                    logger.error("macOS say did not create valid output file")
+                    return None
+
+                # Convert to WAV using ffmpeg
+                ffmpeg_cmd = ['ffmpeg', '-i', tmp_aiff_path, '-y', tmp_wav_path]
+                logger.debug(f"Converting to WAV: {' '.join(ffmpeg_cmd)}")
+                
+                ffmpeg_result = subprocess.run(
+                    ffmpeg_cmd, 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                if ffmpeg_result.returncode != 0:
+                    logger.error(f"ffmpeg conversion failed: {ffmpeg_result.stderr}")
+                    # Fallback to AIFF if conversion fails, though browsers might not play it
+                    final_path = tmp_aiff_path
+                    mime_type = "audio/x-aiff"
+                else:
+                    final_path = tmp_wav_path
+                    mime_type = "audio/wav"
+
+                # Read audio file and encode to base64
+                with open(final_path, 'rb') as audio_file:
+                    audio_data = audio_file.read()
+                    base64_audio = base64.b64encode(audio_data).decode('utf-8')
+
+                logger.info(f"Successfully generated {len(base64_audio)} chars of base64 audio ({mime_type})")
+                return f"data:{mime_type};base64,{base64_audio}"
+
+            finally:
+                # Clean up temporary files
+                if os.path.exists(tmp_aiff_path):
+                    os.unlink(tmp_aiff_path)
+                if os.path.exists(tmp_wav_path):
+                    os.unlink(tmp_wav_path)
+
+        except Exception as e:
+            logger.error(f"macOS TTS base64 generation error: {e}", exc_info=True)
+            return None
+
     def stop(self):
         """Stop current speech"""
         if self.current_process:
@@ -127,7 +209,7 @@ class MacOSTTS(TTSEngine):
                         voice_name = parts[0]
                         voices.append(voice_name)
             return voices
-        except:
+        except Exception:
             return []
 
 
@@ -252,27 +334,49 @@ class EdgeTTS(TTSEngine):
         """Generate speech and return as base64-encoded audio data"""
         try:
             # Clean text for speech
-            text = self._clean_text(text)
-            
+            cleaned_text = self._clean_text(text)
+
+            if not cleaned_text or not cleaned_text.strip():
+                logger.warning("Empty text after cleaning, skipping TTS")
+                return None
+
+            logger.debug(f"Generating TTS for text: {cleaned_text[:100]}...")
+            logger.debug(f"TTS parameters - voice: {self.voice}, rate: {self.rate}, volume: {self.volume}, pitch: {self.pitch}")
+
             # Create temporary audio file
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
-            
+
             # Generate speech using edge-tts
-            asyncio.run(self._generate_speech(text, tmp_path))
-            
+            logger.debug(f"Calling edge-tts with temp file: {tmp_path}")
+            asyncio.run(self._generate_speech(cleaned_text, tmp_path))
+
+            # Check if file was created and has content
+            if not os.path.exists(tmp_path):
+                logger.error(f"Edge TTS did not create output file: {tmp_path}")
+                return None
+
+            file_size = os.path.getsize(tmp_path)
+            if file_size == 0:
+                logger.error(f"Edge TTS created empty file (0 bytes)")
+                os.unlink(tmp_path)
+                return None
+
+            logger.debug(f"Edge TTS generated {file_size} bytes")
+
             # Read audio file and encode to base64
             with open(tmp_path, 'rb') as audio_file:
                 audio_data = audio_file.read()
                 base64_audio = base64.b64encode(audio_data).decode('utf-8')
-            
+
             # Clean up
             os.unlink(tmp_path)
-            
-            return f"data:audio/mp3;base64,{base64_audio}"
-            
+
+            logger.info(f"Successfully generated {len(base64_audio)} chars of base64 audio")
+            return f"data:audio/mpeg;base64,{base64_audio}"
+
         except Exception as e:
-            logger.error(f"Edge TTS base64 generation error: {e}")
+            logger.error(f"Edge TTS base64 generation error: {e}", exc_info=True)
             return None
     
     async def _generate_speech(self, text: str, output_path: str):
@@ -412,7 +516,7 @@ class StreamingTTS:
         while not self.text_queue.empty():
             try:
                 self.text_queue.get_nowait()
-            except:
+            except Exception:
                 pass
         
         # Stop engine

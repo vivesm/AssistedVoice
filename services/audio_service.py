@@ -4,8 +4,6 @@ Handles speech-to-text and text-to-speech operations
 """
 import logging
 import base64
-import tempfile
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +49,7 @@ class AudioService:
             return_base64: If True, return base64-encoded audio data
 
         Returns:
-            Base64-encoded audio data if return_base64=True, otherwise file path
+            Base64-encoded audio data if return_base64=True, otherwise None (current engines favor base64)
         """
         try:
             if self.tts is None:
@@ -60,17 +58,22 @@ class AudioService:
 
             logger.info(f"Generating speech for: {text[:50]}...")
 
-            # Generate speech
-            audio_file = self.tts.synthesize(text)
-
-            if return_base64:
-                # Read and convert to base64
-                with open(audio_file, 'rb') as f:
-                    audio_data = base64.b64encode(f.read()).decode('utf-8')
-                logger.info(f"Audio data generated, length: {len(audio_data)}")
-                return audio_data
+            # Use generate_audio_base64 which is implemented by all modern engines
+            if hasattr(self.tts, 'generate_audio_base64'):
+                audio_data = self.tts.generate_audio_base64(text)
+                
+                if return_base64:
+                    # Logic in TTS engines now returns data URI (data:audio/mpeg;base64,...)
+                    # or raw base64. audio.js handles both.
+                    return audio_data
+                else:
+                    # If we specifically need a file, we could implement that, 
+                    # but current use cases are all for browser playback.
+                    logger.warning("File path requested but generate_speech now favors base64 data URIs")
+                    return None
             else:
-                return audio_file
+                logger.error(f"TTS engine {type(self.tts).__name__} does not implement generate_audio_base64")
+                return None
 
         except Exception as e:
             logger.error(f"TTS error: {e}")

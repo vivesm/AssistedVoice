@@ -96,7 +96,7 @@ def detect_server_type(base_url: str) -> str:
         if response.status_code == 200:
             logger.info("Detected Ollama server")
             return 'ollama'
-    except:
+    except Exception:
         pass
     
     # Check for LM Studio (OpenAI-compatible)
@@ -105,7 +105,7 @@ def detect_server_type(base_url: str) -> str:
         if response.status_code == 200:
             logger.info("Detected LM Studio server")
             return 'lm-studio'
-    except:
+    except Exception:
         pass
     
     # Check if base URL already includes /v1 (common for OpenAI-compatible)
@@ -115,7 +115,7 @@ def detect_server_type(base_url: str) -> str:
             if response.status_code == 200:
                 logger.info("Detected OpenAI-compatible server (likely LM Studio)")
                 return 'lm-studio'
-        except:
+        except Exception:
             pass
     
     logger.warning("Could not detect server type")

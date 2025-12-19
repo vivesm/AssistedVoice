@@ -4,97 +4,30 @@ Language Model interface using Ollama
 import time
 import logging
 from typing import Optional, Generator, List, Dict, Any
-import ollama
 from ollama import Client
-from dataclasses import dataclass
-from datetime import datetime
+from .llm_base import BaseLLM
 from .config_helper import get_server_config
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class Message:
-    """Conversation message"""
-    role: str  # 'user' or 'assistant'
-    content: str
-    timestamp: datetime = None
-    
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
-
-
-class ConversationManager:
-    """Manage conversation history and context"""
-    
-    def __init__(self, max_history: int = 10, max_tokens: int = 4096):
-        self.messages: List[Message] = []
-        self.max_history = max_history
-        self.max_tokens = max_tokens
-        
-    def add_message(self, role: str, content: str):
-        """Add a message to the conversation"""
-        message = Message(role=role, content=content)
-        self.messages.append(message)
-        
-        # Trim history if needed
-        if len(self.messages) > self.max_history * 2:  # Keep pairs
-            self.messages = self.messages[-self.max_history * 2:]
-        
-        return message
-    
-    def get_context(self, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
-        """Get conversation context for LLM"""
-        context = []
-        
-        # Add system prompt if provided
-        if system_prompt:
-            context.append({"role": "system", "content": system_prompt})
-        
-        # Add conversation history
-        for msg in self.messages:
-            context.append({"role": msg.role, "content": msg.content})
-        
-        return context
-    
-    def clear(self):
-        """Clear conversation history"""
-        self.messages = []
-        logger.info("Conversation history cleared")
-    
-    def get_summary(self) -> str:
-        """Get a summary of the conversation"""
-        if not self.messages:
-            return "No conversation yet"
-        
-        summary = f"Conversation ({len(self.messages)} messages):\n"
-        for msg in self.messages[-6:]:  # Last 3 exchanges
-            role = "You" if msg.role == "user" else "Assistant"
-            summary += f"{role}: {msg.content[:100]}...\n"
-        
-        return summary
-
-
-class OllamaLLM:
+class OllamaLLM(BaseLLM):
     """Ollama Language Model interface"""
     
     def __init__(self, config: dict):
-        self.config = config
+        super().__init__(config)
         self.server_config = get_server_config(config)
         self.client = None
         self.model = config['ollama']['model']
         self.fallback_model = config['ollama'].get('fallback_model')
-        self.conversation = ConversationManager(
-            max_tokens=config['ollama'].get('context_window', 4096)
-        )
+        # Conversation manager is initialized in BaseLLM
         self.setup()
     
     def setup(self):
         """Initialize Ollama client with custom host configuration"""
         try:
             # Use custom host from configuration
-            host = self.server_config['base_url']
+            host = self.server_config.get('base_url', 'http://localhost:11434')
             logger.info(f"Connecting to Ollama at {host}")
             
             # Try configured host first
@@ -114,19 +47,9 @@ class OllamaLLM:
                     logger.info("Connected to fallback server at localhost:11434")
                 else:
                     raise  # Re-raise if already using default
+            
             # Handle different response formats
-            available_models = []
-            if hasattr(models, 'models'):
-                # New ollama API format
-                for m in models.models:
-                    if hasattr(m, 'name'):
-                        available_models.append(m.name)
-                    elif hasattr(m, 'model'):
-                        available_models.append(m.model)
-            elif isinstance(models, dict) and 'models' in models:
-                available_models = [m.get('name', m.get('model', str(m))) for m in models['models']]
-            elif isinstance(models, list):
-                available_models = [m.get('name', m.get('model', str(m))) for m in models]
+            available_models = self._parse_models(models)
             
             logger.info(f"Connected to Ollama. Available models: {available_models}")
             
@@ -156,13 +79,46 @@ class OllamaLLM:
                         self.model = available_models[0]
                         logger.warning(f"Using first available model: {self.model}")
                     else:
-                        raise ValueError(f"No models available. Please pull a model first.")
+                        raise ValueError("No models available. Please pull a model first.")
         
         except Exception as e:
             logger.error(f"Failed to connect to Ollama: {e}")
             logger.info("Please make sure Ollama is running: 'ollama serve'")
             raise
+
+    def _parse_models(self, models) -> List[str]:
+        """Helper to parse models from different Ollama API response formats"""
+        available_models = []
+        if hasattr(models, 'models'):
+            # New ollama API format
+            for m in models.models:
+                if hasattr(m, 'name'):
+                    available_models.append(m.name)
+                elif hasattr(m, 'model'):
+                    available_models.append(m.model)
+        elif isinstance(models, dict) and 'models' in models:
+            available_models = [m.get('name', m.get('model', str(m))) for m in models['models']]
+        elif isinstance(models, list):
+            available_models = [m.get('name', m.get('model', str(m))) for m in models]
+        return available_models
     
+    def list_models(self) -> List[str]:
+        """List available models from Ollama"""
+        try:
+            models = self.client.list()
+            return self._parse_models(models)
+        except Exception as e:
+            logger.error(f"Error listing models: {e}")
+            return []
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Test connection to Ollama server"""
+        try:
+            self.client.list()
+            return True, "Connected to Ollama"
+        except Exception as e:
+            return False, f"Failed to connect to Ollama: {str(e)}"
+
     def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
         """Generate response from LLM"""
         # Add user message to conversation
@@ -219,20 +175,7 @@ class OllamaLLM:
             logger.error(f"Generation error: {e}")
             yield f"Error: {str(e)}"
     
-    def generate_complete(self, prompt: str) -> str:
-        """Generate complete response (non-streaming)"""
-        response = ""
-        for chunk in self.generate(prompt, stream=False):
-            response += chunk
-        return response
-    
-    def clear_conversation(self):
-        """Clear conversation history"""
-        self.conversation.clear()
-    
-    def get_conversation_summary(self) -> str:
-        """Get conversation summary"""
-        return self.conversation.get_summary()
+    # clear_conversation and get_conversation_summary are inherited from BaseLLM
 
 
 class ResponseCache:

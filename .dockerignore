@@ -1,0 +1,67 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Node modules
+node_modules/
+
+# Test artifacts
+.pytest_cache/
+.ruff_cache/
+coverage/
+test-results/
+playwright-report/
+*.mp3
+test_output*.txt
+
+# Logs (will be mounted as volume)
+logs/
+
+# Models (will be mounted as volume)
+models/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Development files
+.env
+.env.example
+.eslintrc.cjs
+vitest.config.js
+playwright.config.js
+pyproject.toml
+
+# macOS
+.DS_Store
+
+# Docker files (don't need to copy themselves)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Archive
+archive/
+
+# Agent/Claude configs
+.agent/
+.claude/

@@ -3,7 +3,7 @@ LM Studio LLM implementation using OpenAI-compatible API
 """
 import time
 import logging
-from typing import Generator, List, Dict, Any, Optional
+from typing import Generator, List, Dict, Any
 from openai import OpenAI
 import requests
 from .llm_base import BaseLLM, ConversationManagerBase
@@ -98,11 +98,12 @@ class LMStudioLLM(BaseLLM):
             raise
     
     def list_models(self) -> List[str]:
-        """List available models from LM Studio"""
+        """List available LLM models from LM Studio (excludes embedding models)"""
         try:
             # Try to get models list from LM Studio
             models_response = self.client.models.list()
             available_models = []
+            filtered_count = 0
 
             # Parse the response (OpenAI client returns a special object)
             if models_response and hasattr(models_response, 'data'):
@@ -110,7 +111,28 @@ class LMStudioLLM(BaseLLM):
                 if models_response.data:
                     for model in models_response.data:
                         if hasattr(model, 'id'):
-                            available_models.append(model.id)
+                            model_id = model.id
+
+                            # Filter out embedding models based on common patterns
+                            is_embedding = any([
+                                'embedding' in model_id.lower(),
+                                'embed' in model_id.lower(),
+                                model_id.lower().startswith('text-embedding-'),
+                                'nomic-embed' in model_id.lower(),
+                                'bge-' in model_id.lower(),
+                                'e5-' in model_id.lower(),
+                                'gte-' in model_id.lower(),
+                                'instructor-' in model_id.lower()
+                            ])
+
+                            if is_embedding:
+                                filtered_count += 1
+                                logger.debug(f"Filtered out embedding model: {model_id}")
+                            else:
+                                available_models.append(model_id)
+
+            if filtered_count > 0:
+                logger.info(f"Filtered {filtered_count} embedding model(s), {len(available_models)} LLM(s) available")
 
             return available_models
 

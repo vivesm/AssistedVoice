@@ -6,9 +6,7 @@ Flask backend with WebSocket support
 import os
 import sys
 import yaml
-import json
 import base64
-import numpy as np
 import tempfile
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify

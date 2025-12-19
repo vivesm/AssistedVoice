@@ -3,7 +3,7 @@ Configuration helper functions for server settings
 """
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 

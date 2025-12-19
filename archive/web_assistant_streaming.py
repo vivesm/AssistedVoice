@@ -6,9 +6,7 @@ Supports: Continuous, Smart Pause, and Push-to-Talk
 import os
 import sys
 import yaml
-import json
 import base64
-import numpy as np
 import tempfile
 import time
 import threading
@@ -330,7 +328,7 @@ def detect_speech_in_chunk(audio_data):
         # For now, return True to process everything
         # In production, decode WebM to PCM first
         return len(audio_data) > 1000  # Simple size check
-    except:
+    except Exception:
         return False
 
 def process_smart_pause_audio(session):

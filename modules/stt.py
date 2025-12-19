@@ -1,10 +1,8 @@
 """
 Speech-to-Text module using Whisper
 """
-import os
 import time
 import queue
-import threading
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
@@ -85,7 +83,7 @@ class WhisperSTT:
                 if self.vad.is_speech(frame, sample_rate):
                     speech_frames += 1
                 total_frames += 1
-            except:
+            except Exception:
                 continue
         
         # Return True if enough frames contain speech
@@ -121,17 +119,21 @@ class WhisperSTT:
             sd.wait()
             return recording.flatten()
     
-    def _record_with_vad(self) -> np.ndarray:
-        """Record audio using Voice Activity Detection"""
+    def _record_with_vad(self, vad_callback: Optional[Callable] = None) -> np.ndarray:
+        """Record audio using Voice Activity Detection
+
+        Args:
+            vad_callback: Optional callback function for VAD events (listening, speech, silence)
+        """
         sample_rate = self.config['audio']['sample_rate']
         channels = self.config['audio']['channels']
         device = self.config['audio']['input_device']
-        
+
         # Recording parameters
         chunk_duration = self.config['audio']['chunk_duration']
         speech_timeout = self.config['vad']['speech_timeout']
         min_speech_duration = self.config['vad']['min_speech_duration']
-        
+
         # Start audio stream
         stream = sd.InputStream(
             callback=self.audio_callback,
@@ -140,33 +142,45 @@ class WhisperSTT:
             device=device,
             blocksize=int(sample_rate * chunk_duration)
         )
-        
+
         audio_chunks = []
         speech_detected = False
         silence_start = None
         speech_start = None
-        
+
         with stream:
             self.recording = True
             logger.info("Listening... (speak now)")
-            
+
+            # Emit listening event
+            if vad_callback:
+                vad_callback('listening')
+
             while True:
                 try:
                     # Get audio chunk
                     chunk = self.audio_queue.get(timeout=0.1)
                     audio_chunks.append(chunk)
-                    
+
                     # Check for speech
                     if self.detect_speech(chunk):
                         if not speech_detected:
                             speech_detected = True
                             speech_start = time.time()
                             logger.info("Speech detected")
+
+                            # Emit speech detected event
+                            if vad_callback:
+                                vad_callback('speech_detected')
                         silence_start = None
                     else:
                         if speech_detected and silence_start is None:
                             silence_start = time.time()
-                    
+
+                            # Emit silence detected event
+                            if vad_callback:
+                                vad_callback('silence_detected')
+
                     # Check stopping conditions
                     if speech_detected and silence_start:
                         silence_duration = time.time() - silence_start
@@ -181,14 +195,18 @@ class WhisperSTT:
                                 silence_start = None
                                 speech_start = None
                                 audio_chunks = []
-                
+
+                                # Emit listening event (back to listening)
+                                if vad_callback:
+                                    vad_callback('listening')
+
                 except queue.Empty:
                     continue
                 except KeyboardInterrupt:
                     break
-        
+
         self.recording = False
-        
+
         if audio_chunks:
             return np.concatenate(audio_chunks).flatten()
         return np.array([])

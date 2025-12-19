@@ -50,6 +50,7 @@ body {
 
 .menu-btn,
 .search-toggle-btn,
+.live-mode-btn,
 .settings-btn {
     background: none;
     border: none;
@@ -62,6 +63,7 @@ body {
 
 .menu-btn:active,
 .search-toggle-btn:active,
+.live-mode-btn:active,
 .settings-btn:active {
     background: var(--surface-light);
 }
@@ -2978,5 +2980,315 @@ mark.search-highlight {
     to {
         transform: translateY(0);
         opacity: 1;
+    }
+}
+
+/* ============================================
+   Live Assistant Mode Styles
+   ============================================ */
+
+/* Live Mode Button */
+.live-mode-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 59, 48, 0.1);
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.live-mode-btn .live-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--error);
+    transition: all 0.3s ease;
+}
+
+.live-mode-btn .live-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--error);
+    opacity: 0.8;
+}
+
+.live-mode-btn:hover {
+    background: rgba(255, 59, 48, 0.15);
+}
+
+.live-mode-btn.active {
+    background: var(--error);
+    animation: pulse-live 2s infinite;
+}
+
+.live-mode-btn.active .live-icon,
+.live-mode-btn.active .live-badge {
+    color: white;
+}
+
+.live-mode-btn.active .live-icon circle:last-child {
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(255, 59, 48, 0);
+    }
+}
+
+/* Live Assistant Container */
+.live-assistant-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px;
+    height: 100%;
+    overflow: visible;
+}
+
+/* Panels */
+.live-transcript-panel,
+.ai-insights-panel {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--border);
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+}
+
+.panel-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Listening Indicator */
+.listening-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--success);
+    font-weight: 500;
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+/* Live Transcript Content */
+.live-transcript-content {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 8px;
+}
+
+.live-transcript-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.live-transcript-content::-webkit-scrollbar-track {
+    background: var(--surface-light);
+    border-radius: 3px;
+}
+
+.live-transcript-content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.live-transcript-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* Transcript Entry */
+.transcript-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: var(--surface-light);
+    border-radius: 8px;
+    border-left: 3px solid var(--primary);
+    animation: slide-in-left 0.3s ease;
+}
+
+.transcript-time {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.transcript-text {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.5;
+}
+
+@keyframes slide-in-left {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* AI Insights Content */
+.ai-insights-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.ai-insights-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.ai-insights-content::-webkit-scrollbar-track {
+    background: var(--surface-light);
+    border-radius: 3px;
+}
+
+.ai-insights-content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.ai-insights-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* Insight Card */
+.insight-card {
+    padding: 20px;
+    background: linear-gradient(135deg, var(--surface-light) 0%, var(--surface) 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.4s ease;
+}
+
+.insight-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.insight-topic {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 16px;
+    line-height: 1.4;
+}
+
+.insight-points {
+    margin: 0;
+    padding-left: 20px;
+    list-style: none;
+}
+
+.insight-points li {
+    position: relative;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.6;
+    margin-bottom: 10px;
+    padding-left: 8px;
+}
+
+.insight-points li:before {
+    content: "•";
+    position: absolute;
+    left: -12px;
+    color: var(--primary);
+    font-weight: bold;
+}
+
+.insight-points li:last-child {
+    margin-bottom: 0;
+}
+
+/* Placeholder Text */
+.placeholder-text {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    padding: 40px 20px;
+    opacity: 0.6;
+}
+
+/* Responsive Design for Live Mode */
+@media (max-width: 768px) {
+    .live-assistant-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+        height: 100%;
+        gap: 12px;
+        padding: 12px;
+    }
+
+    .live-transcript-panel,
+    .ai-insights-panel {
+        padding: 16px;
+    }
+
+    .panel-header h3 {
+        font-size: 16px;
+    }
+
+    .listening-indicator {
+        font-size: 12px;
+    }
+
+    .live-mode-btn .live-badge {
+        display: none;
+    }
+
+    .live-mode-btn {
+        padding: 6px;
     }
 }

@@ -1,0 +1,1745 @@
+/**
+ * UI handling module for AssistedVoice
+ */
+import { state } from './state.js';
+import {
+    logRequest,
+    renderMarkdown,
+    addCopyButtonsToCodeBlocks,
+    showToast
+} from './utils.js';
+import {
+    startRecording,
+    stopRecording,
+    toggleLiveMode,
+    toggleMute,
+    playAudioData,
+    stopAudio
+} from './audio.js';
+import { emit, initializeWebSocket } from './websocket.js';
+
+// Register UI functions to state for other modules to use
+export function registerUIFunctions() {
+    state.ui = {
+        updateStatus,
+        appendToCurrentResponse,
+        completeResponse,
+        showTypingIndicator,
+        showStopGenerationButton,
+        hideStopGenerationButton,
+        showError,
+        showEnhancedError,
+        updateVADStatus,
+        syncAISettingsToBackend,
+        showMiniPlayer,
+        hideMiniPlayer,
+        clearLiveUI,
+        showAudioPlayingIndicator,
+        showClickToPlayMessage
+    };
+}
+
+/**
+ * Initialize UI and Event Listeners
+ */
+export function initializeUI() {
+    setupEventListeners();
+    setupSettingsListeners();
+    setupTheme();
+    setupModelSelection();
+    setupTTSControls();
+    initializeRouting();
+
+    // Load initial state
+    loadSettings();
+    loadConversation();
+    loadChatHistory();
+
+    // Load available models from backend
+    loadAvailableModels();
+
+    // Initialize advanced features
+    initializePhase3Features();
+
+    // Setup tutorial
+    setupTutorial();
+
+    // Setup export and search
+    setupExportFeature();
+    setupConversationSearch();
+
+    // Setup progressive settings
+    setupProgressiveSettings();
+
+    // Check for mobile
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+}
+
+/**
+ * Setup global event listeners
+ */
+/**
+ * Setup global event listeners
+ */
+function setupEventListeners() {
+    console.log('Setting up event listeners...');
+    // Voice button
+    const voiceBtn = document.getElementById('voiceBtn');
+    if (voiceBtn) {
+        console.log('Voice button found, adding listener');
+        voiceBtn.addEventListener('mousedown', (e) => {
+            if (e.button === 0) { // Left click only
+                if (state.isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            }
+        });
+
+        // Touch support for mobile
+        voiceBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (state.isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+    } else {
+        console.error('Voice button NOT found');
+    }
+
+    // Text input
+    const textInput = document.getElementById('textInput');
+    const sendButton = document.getElementById('sendBtn');
+
+    if (textInput) {
+        console.log('Text input found');
+        textInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendTextMessage();
+            }
+        });
+
+        // Auto-resize textarea
+        textInput.addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if (this.value === '') {
+                this.style.height = '';
+            }
+        });
+    } else {
+        console.error('Text input NOT found');
+    }
+
+    if (sendButton) {
+        console.log('Send button found, adding listener');
+        sendButton.addEventListener('click', sendTextMessage);
+    } else {
+        console.error('Send button NOT found');
+    }
+
+    // Test Audio button
+    const testAudioBtn = document.getElementById('testAudioBtn');
+    if (testAudioBtn) {
+        testAudioBtn.addEventListener('click', () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = 440;
+                gain.gain.value = 0.1;
+                osc.start();
+                osc.stop(ctx.currentTime + 0.3);
+                showToast('Playing test sound...', 'info');
+            } catch (e) {
+                showToast('Browser audio failed: ' + e.message, 'error');
+                console.error('Test audio error:', e);
+            }
+        });
+    }
+
+    // Stop generation button
+    const stopBtn = document.getElementById('stopGenerationBtn');
+    if (stopBtn) {
+        stopBtn.addEventListener('click', stopGeneration);
+    }
+
+    // Mute button
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        muteBtn.addEventListener('click', toggleMute);
+    }
+
+    // Live mode button
+    const liveModeBtn = document.getElementById('liveModeBtn');
+    if (liveModeBtn) {
+        liveModeBtn.addEventListener('click', toggleLiveMode);
+    }
+
+    // New chat button
+    const newChatBtn = document.getElementById('newChatBtn');
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', startNewChat);
+    }
+
+    // Clear conversation button
+    const clearBtn = document.getElementById('clearBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearCurrentConversation);
+    }
+
+    // Mobile menu toggle
+    const menuToggle = document.getElementById('menuBtn');
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.getElementById('overlay');
+    const closeMenuBtn = document.getElementById('closeMenu');
+
+    if (menuToggle) console.log('Menu toggle found');
+    else console.error('Menu toggle NOT found');
+
+    if (menuToggle && sideMenu && overlay) {
+        console.log('Adding menu listeners');
+        menuToggle.addEventListener('click', () => {
+            console.log('Menu clicked');
+            sideMenu.classList.add('open');
+            overlay.classList.add('active');
+        });
+
+        const closeMenu = () => {
+            sideMenu.classList.remove('open');
+            overlay.classList.remove('active');
+        };
+
+        if (closeMenuBtn) closeMenuBtn.addEventListener('click', closeMenu);
+        overlay.addEventListener('click', closeMenu);
+    }
+}
+
+/**
+ * Setup model selection listeners
+ */
+/**
+ * Setup model selection listeners
+ */
+function setupModelSelection() {
+    console.log('Setting up model selection listeners...');
+
+    // Delegate click listener for model buttons (since they might be dynamic)
+    const modelGrid = document.querySelector('.model-grid');
+    if (modelGrid) {
+        modelGrid.addEventListener('click', (e) => {
+            const btn = e.target.closest('.model-btn');
+            if (!btn) return;
+
+            // Remove active class from all
+            const modelBtns = document.querySelectorAll('.model-btn');
+            modelBtns.forEach(b => b.classList.remove('active'));
+
+            // Add active class to current
+            btn.classList.add('active');
+
+            // Get model
+            const model = btn.dataset.model;
+
+            console.log(`Model selected from welcome screen: ${model}`);
+
+            // Emit change event to backend
+            emit('change_model', { model: model });
+
+            // Optimistic UI update
+            state.currentModel = model;
+            updateStatus('Ready', 'ready');
+
+            // Update dropdown if exists
+            const modelSelect = document.getElementById('modelSelect');
+            if (modelSelect) modelSelect.value = model;
+
+            // Show toast
+            const modelName = btn.querySelector('.model-name').textContent;
+            showToast(`Switching to ${modelName}...`, 'info');
+
+            // Hide welcome, show messages
+            const welcome = document.getElementById('welcome');
+            const messages = document.getElementById('messages');
+            if (welcome) welcome.style.display = 'none';
+            if (messages) messages.classList.add('active');
+
+            // Focus input
+            const input = document.getElementById('textInput');
+            if (input) input.focus();
+        });
+    }
+
+    // Setup settings model dropdown change listener
+    const modelSelect = document.getElementById('modelSelect');
+    if (modelSelect) {
+        modelSelect.addEventListener('change', async (e) => {
+            const selectedModel = e.target.value;
+            if (!selectedModel) return;
+
+            console.log(`Switching to model: ${selectedModel}`);
+
+            // Update state
+            state.currentModel = selectedModel;
+
+            // Show loading feedback
+            showToast(`Switching to ${selectedModel}...`, 'info', 2000);
+
+            // Emit model change event to backend
+            emit('change_model', { model: selectedModel });
+        });
+        console.log('Model dropdown listener added');
+    }
+}
+
+/**
+ * Load available models from backend and populate settings dropdown
+ */
+export async function loadAvailableModels() {
+    console.log('Loading available models...');
+    const modelSelect = document.getElementById('modelSelect');
+    const modelGrid = document.querySelector('.model-grid');
+
+    if (!modelSelect) {
+        console.error('Model select dropdown not found');
+        return;
+    }
+
+    try {
+        // Show loading state
+        modelSelect.innerHTML = '<option value="">Loading models...</option>';
+        modelSelect.disabled = true;
+
+        // Fetch models from backend
+        const response = await fetch('/api/models');
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.models || !Array.isArray(data.models)) {
+            throw new Error('Invalid response format from /api/models');
+        }
+
+        // Clear and populate dropdown
+        modelSelect.innerHTML = '';
+
+        // Clear welcome grid if it exists
+        if (modelGrid) {
+            modelGrid.innerHTML = '';
+        }
+
+        if (data.models.length === 0) {
+            modelSelect.innerHTML = '<option value="">No models available</option>';
+            if (modelGrid) modelGrid.innerHTML = '<p class="error-text">No models available</p>';
+            showToast('No models available', 'warning', 3000);
+            return;
+        }
+
+        // Add models to dropdown and welcome grid
+        data.models.forEach(model => {
+            // Add to dropdown
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            modelSelect.appendChild(option);
+
+            // Add to welcome grid (limit to first 6 to avoid overcrowding)
+            if (modelGrid && modelGrid.children.length < 6) {
+                const btn = document.createElement('button');
+                btn.className = 'model-btn';
+                btn.dataset.model = model;
+
+                // Deterministic color/icon based on model name
+                const isDeepSeek = model.toLowerCase().includes('deepseek');
+                const isQwen = model.toLowerCase().includes('qwen');
+                const isLlama = model.toLowerCase().includes('llama');
+                const isMistral = model.toLowerCase().includes('mistral');
+                const isGemma = model.toLowerCase().includes('gemma');
+
+                let icon = '';
+                let desc = 'AI Model';
+
+                if (isDeepSeek) {
+                    desc = 'DeepSeek Model';
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>`;
+                } else if (isQwen) {
+                    desc = 'Qwen Model';
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" /></svg>`;
+                } else if (isLlama) {
+                    desc = 'Meta Llama';
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`;
+                } else {
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>`;
+                }
+
+                btn.innerHTML = `
+                    <div class="model-icon">${icon}</div>
+                    <span class="model-name">${model}</span>
+                    <span class="model-desc">${desc}</span>
+                `;
+
+                modelGrid.appendChild(btn);
+            }
+        });
+
+        // Set current model
+        const currentModel = data.current || data.models[0];
+        if (currentModel) {
+            modelSelect.value = currentModel;
+            state.currentModel = currentModel;
+            console.log(`Current model set to: ${currentModel}`);
+
+            // Highlight in grid if present
+            if (modelGrid) {
+                const activeBtn = modelGrid.querySelector(`[data-model="${currentModel}"]`);
+                if (activeBtn) activeBtn.classList.add('active');
+            }
+        }
+
+        modelSelect.disabled = false;
+        console.log(`Loaded ${data.models.length} models successfully`);
+
+    } catch (error) {
+        console.error('Failed to load models:', error);
+        modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+        modelSelect.disabled = true;
+        if (modelGrid) modelGrid.innerHTML = `<p class="error-text">Failed to load models: ${error.message}</p>`;
+        showToast(`Failed to load models: ${error.message}`, 'error', 5000);
+    }
+}
+
+/**
+ * Send text message
+ */
+function sendTextMessage() {
+    const textInput = document.getElementById('textInput');
+    const text = textInput.value.trim();
+
+    if (!text) return;
+
+    // Clear input
+    textInput.value = '';
+    textInput.style.height = '';
+
+    // Add user message to UI
+    addMessage('user', text);
+
+    // Start performance tracking
+    state.messageStartTime = Date.now();
+    state.firstTokenTime = null;
+    state.tokenCount = 0;
+
+    // Send to backend
+    const requestData = {
+        text: text,
+        enable_tts: state.ttsEnabled
+    };
+    logRequest('process_text', requestData);
+    emit('process_text', requestData);
+}
+
+/**
+ * Add message to UI
+ */
+export function addMessage(role, text, save = true) {
+    const messages = document.getElementById('messages');
+    const welcome = document.getElementById('welcome');
+
+    if (welcome) {
+        welcome.style.display = 'none';
+    }
+
+    if (messages) {
+        messages.classList.add('active');
+    }
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}`;
+
+    // Avatar
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'message-avatar';
+    if (role === 'user') {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+        `;
+    } else {
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
+    }
+
+    // Content Wrapper
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'message-wrapper';
+
+    // Content
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+
+    if (role === 'assistant') {
+        contentDiv.innerHTML = renderMarkdown(text);
+        setTimeout(() => addCopyButtonsToCodeBlocks(contentDiv), 0);
+    } else {
+        contentDiv.textContent = text;
+    }
+
+    contentDiv.setAttribute('data-original-text', text);
+
+    // Action Buttons (Assistant only)
+    if (role === 'assistant') {
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'message-actions';
+        actionButtons.innerHTML = `
+            <button class="message-action-btn copy-btn" title="Copy message">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            </button>
+            <button class="message-action-btn regenerate-btn" title="Regenerate response">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <polyline points="23 20 23 14 17 14"/>
+                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+            </button>
+        `;
+
+        const copyBtn = actionButtons.querySelector('.copy-btn');
+        const regenerateBtn = actionButtons.querySelector('.regenerate-btn');
+
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Message copied!', 'success');
+            } catch (err) {
+                showToast('Failed to copy', 'error');
+            }
+        });
+
+        regenerateBtn.addEventListener('click', () => {
+            const messages = Array.from(document.querySelectorAll('.message.user'));
+            if (messages.length > 0) {
+                const lastUserMessage = messages[messages.length - 1];
+                const userText = lastUserMessage.querySelector('.message-content').textContent;
+                showToast('Regenerating...', 'info');
+                emit('process_text', { text: userText, enable_tts: state.ttsEnabled });
+            }
+        });
+
+        contentWrapper.appendChild(actionButtons);
+    }
+
+    // Timestamp
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'message-time';
+    const now = new Date();
+    timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Speaker Button (Assistant only)
+    if (role === 'assistant') {
+        const speakerBtn = document.createElement('button');
+        speakerBtn.className = 'message-speaker-btn';
+        speakerBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+        `;
+        speakerBtn.onclick = () => {
+            console.log('Speaker button clicked - replaying message:', text.substring(0, 50) + '...');
+            emit('replay_text', { text: text, enable_tts: true });
+        };
+        timestampDiv.appendChild(speakerBtn);
+        console.log('Speaker button added to message (addMessage)');
+    }
+
+    contentWrapper.appendChild(contentDiv);
+    contentWrapper.appendChild(timestampDiv);
+
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentWrapper);
+
+    if (messages) {
+        messages.appendChild(messageDiv);
+
+        // Reactions
+        if (role === 'assistant') {
+            const messageId = 'msg-' + Date.now() + '-' + Math.random();
+            messageDiv.dataset.messageId = messageId;
+            setTimeout(() => {
+                addReactionButtons(messageDiv, messageId);
+                observeNewMessage(messageDiv);
+            }, 50);
+        }
+
+        // Scroll
+        scrollToBottom();
+    }
+
+    if (save) {
+        setTimeout(saveConversation, 100);
+    }
+}
+
+/**
+ * Append text to current response (streaming)
+ */
+export function appendToCurrentResponse(text) {
+    if (!text || text.trim() === '') return;
+
+    // Remove typing indicator
+    const typingIndicator = document.querySelector('.typing-indicator');
+    if (typingIndicator) typingIndicator.remove();
+
+    if (!state.currentResponseDiv) {
+        // Create new message div
+        const messages = document.getElementById('messages');
+        const welcome = document.getElementById('welcome');
+
+        if (welcome) welcome.style.display = 'none';
+        if (messages) messages.classList.add('active');
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant';
+
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'message-avatar';
+        avatarDiv.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"/>
+            </svg>
+        `;
+
+        const contentWrapper = document.createElement('div');
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-time';
+        timestampDiv.innerHTML = `${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${state.currentModel || 'Assistant'}`;
+
+        contentWrapper.appendChild(contentDiv);
+        contentWrapper.appendChild(timestampDiv);
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentWrapper);
+
+        if (messages) messages.appendChild(messageDiv);
+
+        state.currentResponseDiv = contentDiv;
+    }
+
+    state.currentResponseDiv.innerHTML = renderMarkdown(state.currentResponse);
+    addCopyButtonsToCodeBlocks(state.currentResponseDiv);
+    scrollToBottom();
+}
+
+/**
+ * Complete response
+ */
+export function completeResponse(fullText) {
+    const typingIndicator = document.querySelector('.typing-indicator');
+    if (typingIndicator) typingIndicator.remove();
+
+    if (!fullText || fullText.trim() === '') {
+        state.currentResponseDiv = null;
+        return;
+    }
+
+    if (state.currentResponseDiv) {
+        state.currentResponseDiv.innerHTML = renderMarkdown(fullText);
+        addCopyButtonsToCodeBlocks(state.currentResponseDiv);
+        state.currentResponseDiv.setAttribute('data-original-text', fullText);
+
+        // Update timestamp with metrics
+        let timestampDiv = state.currentResponseDiv.parentElement?.querySelector('.message-time');
+        if (timestampDiv) {
+            console.log('Metrics debug:', {
+                startTime: state.messageStartTime,
+                now: Date.now(),
+                tokenCount: state.tokenCount
+            });
+
+            // Update metrics if available
+            if (state.messageStartTime) {
+                const totalTime = Date.now() - state.messageStartTime;
+                const firstTokenDelay = state.firstTokenTime ? state.firstTokenTime - state.messageStartTime : 0;
+                const tokensPerSecond = state.tokenCount > 0 && totalTime > 0 ? (state.tokenCount / (totalTime / 1000)).toFixed(1) : 0;
+
+                timestampDiv.innerHTML = `
+                    ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${state.currentModel}<br>
+                    <span style="font-size: 11px; opacity: 0.7;">${(totalTime / 1000).toFixed(1)}s total • ${(firstTokenDelay / 1000).toFixed(2)}s first • ${tokensPerSecond} t/s</span>
+                `;
+            }
+
+            // Always add speaker button
+            const speakerBtn = document.createElement('button');
+            speakerBtn.className = 'message-speaker-btn';
+            speakerBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+            `;
+            speakerBtn.onclick = () => {
+                console.log('Speaker button clicked - replaying response:', fullText.substring(0, 50) + '...');
+                showToast('Requesting audio replay...', 'info');
+                emit('replay_text', { text: fullText, enable_tts: true });
+            };
+            timestampDiv.appendChild(speakerBtn);
+            console.log('Speaker button added to completed response');
+        }
+    }
+
+    state.currentResponseDiv = null;
+    saveConversation();
+}
+
+/**
+ * Show typing indicator
+ */
+export function showTypingIndicator() {
+    const chatContainer = document.getElementById('chatContainer');
+    const existing = document.querySelector('.typing-indicator');
+    if (existing) existing.remove();
+
+    const welcomeMsg = chatContainer.querySelector('.welcome-message');
+    if (welcomeMsg) welcomeMsg.style.display = 'none';
+
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message assistant-message typing-indicator';
+    typingDiv.innerHTML = `
+        <div class="message-content">
+            <span class="typing-dots">
+                <span></span><span></span><span></span>
+            </span>
+        </div>
+    `;
+
+    chatContainer.appendChild(typingDiv);
+    scrollToBottom();
+}
+
+/**
+ * Update status display
+ */
+export function updateStatus(message, type) {
+    const statusText = document.getElementById('statusText');
+    const modelIndicator = document.getElementById('modelIndicator');
+
+    if (statusText) {
+        statusText.textContent = message;
+        statusText.className = `status-text status-${type}`;
+    }
+
+    if (type === 'ready' && state.currentModel && modelIndicator) {
+        modelIndicator.textContent = state.currentModel;
+    }
+}
+
+/**
+ * Show error message
+ */
+export function showError(message) {
+    showEnhancedError(message, 'general');
+}
+
+/**
+ * Show enhanced error message
+ */
+export function showEnhancedError(message, type = 'general', retryCallback = null) {
+    const messages = document.getElementById('messages');
+    if (!messages) return;
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'none';
+    messages.classList.add('active');
+
+    const errorCard = document.createElement('div');
+    errorCard.className = 'error-card';
+
+    // Simple error card for now
+    errorCard.innerHTML = `
+        <div class="error-content">
+            <h3 class="error-title">Error</h3>
+            <p class="error-message">${message}</p>
+        </div>
+    `;
+
+    messages.appendChild(errorCard);
+    scrollToBottom();
+    showToast(message, 'error');
+}
+
+/**
+ * Stop generation
+ */
+function stopGeneration() {
+    if (state.isGenerating) {
+        emit('stop_generation', {});
+        state.isGenerating = false;
+        hideStopGenerationButton();
+        showToast('Stopped generation', 'info');
+        if (state.currentResponse) {
+            completeResponse(state.currentResponse);
+        }
+    }
+}
+
+export function showStopGenerationButton() {
+    const stopBtn = document.getElementById('stopGenerationBtn');
+    if (stopBtn) stopBtn.classList.add('show');
+}
+
+export function hideStopGenerationButton() {
+    const stopBtn = document.getElementById('stopGenerationBtn');
+    if (stopBtn) stopBtn.classList.remove('show');
+}
+
+/**
+ * Scroll to bottom
+ */
+function scrollToBottom() {
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+/**
+ * Load settings
+ */
+function loadSettings() {
+    // Load TTS Engine
+    const savedEngine = localStorage.getItem('ttsEngine');
+    if (savedEngine) {
+        state.currentTTSEngine = savedEngine;
+        state.ttsEnabled = (savedEngine !== 'none');
+    }
+
+    // Update mute button
+    const muteBtn = document.getElementById('muteBtn');
+    if (muteBtn) {
+        const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
+        const speakerOffIcon = muteBtn.querySelector('.speaker-off-icon');
+
+        if (!state.ttsEnabled) {
+            muteBtn.classList.add('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'none';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'block';
+        } else {
+            muteBtn.classList.remove('muted');
+            if (speakerOnIcon) speakerOnIcon.style.display = 'block';
+            if (speakerOffIcon) speakerOffIcon.style.display = 'none';
+        }
+    }
+}
+
+/**
+ * Load conversation
+ */
+function loadConversation() {
+    try {
+        const saved = localStorage.getItem('assistedVoiceConversation');
+        if (!saved) return;
+
+        const data = JSON.parse(saved);
+
+        const welcome = document.getElementById('welcome');
+        const messages = document.getElementById('messages');
+
+        if (welcome) welcome.style.display = 'none';
+        if (messages) messages.classList.add('active');
+
+        data.messages.forEach(msg => {
+            addMessage(msg.role, msg.content, false);
+        });
+    } catch (err) {
+        console.error('Failed to load conversation', err);
+    }
+}
+
+/**
+ * Save conversation
+ */
+function saveConversation() {
+    const messages = [];
+    const messageElements = document.querySelectorAll('#messages .message');
+
+    messageElements.forEach(elem => {
+        const isUser = elem.classList.contains('user');
+        const content = elem.querySelector('.message-content')?.textContent;
+        if (content) {
+            messages.push({
+                role: isUser ? 'user' : 'assistant',
+                content: content
+            });
+        }
+    });
+
+    if (messages.length > 0) {
+        localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+            version: 3,
+            timestamp: Date.now(),
+            messages: messages
+        }));
+    }
+}
+
+/**
+ * Start new chat
+ */
+function clearCurrentConversation() {
+    console.log('Clearing current conversation...');
+
+    // Clear display
+    const messages = document.getElementById('messages');
+    if (messages) {
+        messages.innerHTML = '';
+        messages.classList.remove('active');
+    }
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'flex';
+
+    // Clear localStorage
+    localStorage.removeItem('assistedVoiceConversation');
+
+    // Clear backend conversation history
+    emit('clear_conversation', {});
+
+    showToast('Conversation cleared', 'success', 1500);
+    console.log('Conversation cleared successfully');
+}
+
+function startNewChat() {
+    // Save current to history
+    const currentConversation = localStorage.getItem('assistedVoiceConversation');
+    if (currentConversation) {
+        const data = JSON.parse(currentConversation);
+        if (data.messages && data.messages.length > 0) {
+            saveChatToHistory(data.messages, state.currentChatId);
+        }
+    }
+
+    // Clear display
+    const messages = document.getElementById('messages');
+    if (messages) {
+        messages.innerHTML = '';
+        messages.classList.remove('active');
+    }
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'flex';
+
+    localStorage.removeItem('assistedVoiceConversation');
+    state.currentChatId = Date.now().toString();
+
+    loadChatHistory();
+}
+
+/**
+ * Chat History
+ */
+function saveChatToHistory(messages, chatId) {
+    if (!messages || messages.length === 0) return;
+
+    const id = chatId || Date.now().toString();
+    const firstMessage = messages.find(msg => msg.role === 'user');
+    const preview = firstMessage ? firstMessage.content.substring(0, 60) : 'New chat';
+
+    const chatData = {
+        id: id,
+        timestamp: new Date().toISOString(),
+        preview: preview,
+        messageCount: messages.length,
+        messages: messages
+    };
+
+    const history = getChatHistory();
+    const existingIndex = history.findIndex(chat => chat.id === id);
+
+    if (existingIndex !== -1) {
+        history[existingIndex] = chatData;
+    } else {
+        history.unshift(chatData);
+    }
+
+    if (history.length > 20) history.splice(20);
+
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(history));
+}
+
+function getChatHistory() {
+    try {
+        const history = localStorage.getItem('assistedVoiceChatHistory');
+        return history ? JSON.parse(history) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function loadChatHistory() {
+    const chatHistoryList = document.getElementById('chatHistoryList');
+    if (!chatHistoryList) return;
+
+    const history = getChatHistory();
+
+    if (history.length === 0) {
+        chatHistoryList.innerHTML = '<div class="history-empty">No previous chats</div>';
+        return;
+    }
+
+    let historyHTML = '';
+    history.forEach(chat => {
+        const date = new Date(chat.timestamp);
+        const dateStr = date.toLocaleDateString();
+        historyHTML += `
+            <div class="history-item" data-chat-id="${chat.id}">
+                <div class="history-item-date">${dateStr}</div>
+                <div class="history-item-preview">${chat.preview}</div>
+            </div>
+        `;
+    });
+
+    chatHistoryList.innerHTML = historyHTML;
+
+    chatHistoryList.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', () => {
+            loadChatFromHistory(item.dataset.chatId);
+        });
+    });
+}
+
+function loadChatFromHistory(chatId) {
+    const history = getChatHistory();
+    const chat = history.find(c => c.id === chatId);
+    if (!chat) return;
+
+    startNewChat(); // Clear current
+    state.currentChatId = chatId;
+
+    const welcome = document.getElementById('welcome');
+    const messages = document.getElementById('messages');
+
+    if (welcome) welcome.style.display = 'none';
+    if (messages) messages.classList.add('active');
+
+    chat.messages.forEach(msg => {
+        addMessage(msg.role, msg.content, false);
+    });
+
+    localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+        messages: chat.messages,
+        timestamp: chat.timestamp
+    }));
+
+    // Close menu
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.getElementById('overlay');
+    if (sideMenu) sideMenu.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+/**
+ * Settings Listeners
+ */
+function setupSettingsListeners() {
+    console.log('Setting up settings listeners...');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const closeSettingsBtn = document.getElementById('closeSettings');
+    const overlay = document.getElementById('overlay');
+
+    if (settingsBtn) console.log('Settings button found');
+    else console.error('Settings button NOT found');
+
+    if (settingsPanel) console.log('Settings panel found');
+    else console.error('Settings panel NOT found');
+
+    if (settingsBtn && settingsPanel && overlay) {
+        console.log('Adding settings listeners');
+        settingsBtn.addEventListener('click', () => {
+            console.log('Settings button clicked');
+            settingsPanel.classList.add('open');
+            overlay.classList.add('active');
+
+            // Load fresh model data when settings panel opens
+            loadAvailableModels();
+        });
+    }
+
+    if (closeSettingsBtn && settingsPanel && overlay) {
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsPanel.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
+
+    // Close on overlay click
+    if (overlay && settingsPanel) {
+        overlay.addEventListener('click', () => {
+            if (settingsPanel.classList.contains('open')) {
+                settingsPanel.classList.remove('open');
+                overlay.classList.remove('active');
+            }
+        });
+    }
+
+    // AI Settings Controls
+    setupAISettingsControls();
+
+    // Server Settings Controls
+    setupServerSettings();
+
+    // TTS Controls
+    setupTTSControls();
+}
+
+/**
+ * Theme Setup
+ */
+function setupTheme() {
+    const themeToggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    if (themeToggle) {
+        themeToggle.checked = savedTheme === 'light';
+        themeToggle.addEventListener('change', () => {
+            const newTheme = themeToggle.checked ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        });
+    }
+}
+
+/**
+ * Routing (Simple)
+ */
+function initializeRouting() {
+    // Handle browser back/forward
+    window.addEventListener('popstate', (event) => {
+        // Simple routing logic if needed
+    });
+}
+
+/**
+ * Check mobile
+ */
+function checkMobile() {
+    state.isMobile = window.innerWidth <= 768;
+}
+
+/**
+ * Setup AI Settings Controls (Temperature, Max Tokens, System Prompt)
+ */
+export function setupAISettingsControls() {
+    console.log('Setting up AI settings controls...');
+
+    // Temperature Slider
+    const temperatureSlider = document.getElementById('temperatureSlider');
+    const temperatureValue = document.getElementById('temperatureValue');
+
+    if (temperatureSlider && temperatureValue) {
+        // Load saved temperature
+        const savedTemp = localStorage.getItem('aiTemperature') || '0.7';
+        temperatureSlider.value = savedTemp;
+        temperatureValue.textContent = savedTemp;
+
+        // Handle temperature changes
+        let tempDebounce;
+        temperatureSlider.addEventListener('input', (e) => {
+            const temp = e.target.value;
+            temperatureValue.textContent = temp;
+            localStorage.setItem('aiTemperature', temp);
+
+            // Send to backend
+            clearTimeout(tempDebounce);
+            tempDebounce = setTimeout(() => {
+                emit('update_temperature', { temperature: parseFloat(temp) });
+                showToast(`Temperature set to ${temp}`, 'success', 1500);
+            }, 300);
+        });
+        console.log('Temperature slider initialized');
+    }
+
+    // Max Tokens Input
+    const maxTokensInput = document.getElementById('maxTokensInput');
+
+    if (maxTokensInput) {
+        // Load saved max tokens
+        const savedMaxTokens = localStorage.getItem('aiMaxTokens') || '500';
+        maxTokensInput.value = savedMaxTokens;
+
+        // Handle max tokens changes
+        maxTokensInput.addEventListener('change', (e) => {
+            let maxTokens = parseInt(e.target.value);
+
+            // Validate range
+            if (maxTokens < 50) maxTokens = 50;
+            if (maxTokens > 2000) maxTokens = 2000;
+            e.target.value = maxTokens;
+
+            localStorage.setItem('aiMaxTokens', maxTokens);
+
+            // Send to backend
+            emit('update_max_tokens', { max_tokens: maxTokens });
+            showToast(`Max tokens set to ${maxTokens}`, 'success', 1500);
+        });
+        console.log('Max tokens input initialized');
+    }
+
+    // System Prompt Textarea
+    const systemPromptTextarea = document.getElementById('systemPromptTextarea');
+    const promptTemplates = document.getElementById('promptTemplates');
+    const resetPromptBtn = document.getElementById('resetPromptBtn');
+
+    const defaultPrompt = 'You are a helpful voice assistant. Keep responses concise and natural for speech. Avoid using markdown, special characters, or formatting that doesn\'t work well when spoken aloud. Be conversational and friendly.';
+
+    const templates = {
+        'default': defaultPrompt,
+        'technical': 'You are a technical expert assistant. Provide detailed technical explanations while keeping responses clear and well-structured for voice output. Focus on accuracy and completeness.',
+        'creative': 'You are a creative writing assistant. Help with storytelling, creative ideas, and imaginative responses. Keep language vivid but natural for speech.',
+        'tutor': 'You are an educational tutor. Explain concepts clearly and patiently, breaking down complex topics into understandable parts. Encourage learning and ask clarifying questions.',
+        'concise': 'You are a concise assistant. Provide brief, direct answers without unnecessary elaboration. Focus on the essential information only.'
+    };
+
+    if (systemPromptTextarea) {
+        // Load saved system prompt
+        const savedPrompt = localStorage.getItem('aiSystemPrompt') || defaultPrompt;
+        systemPromptTextarea.value = savedPrompt;
+
+        // Handle system prompt changes
+        let promptDebounceTimeout = null;
+        systemPromptTextarea.addEventListener('input', (e) => {
+            clearTimeout(promptDebounceTimeout);
+            promptDebounceTimeout = setTimeout(() => {
+                const prompt = e.target.value;
+                localStorage.setItem('aiSystemPrompt', prompt);
+
+                // Send to backend
+                emit('update_system_prompt', { system_prompt: prompt });
+                showToast('System prompt updated', 'success', 1500);
+            }, 500); // Wait 500ms after user stops typing
+        });
+        console.log('System prompt textarea initialized');
+    }
+
+    // Prompt templates dropdown
+    if (promptTemplates && systemPromptTextarea) {
+        promptTemplates.addEventListener('change', (e) => {
+            const templateKey = e.target.value;
+            if (templateKey && templates[templateKey]) {
+                systemPromptTextarea.value = templates[templateKey];
+                localStorage.setItem('aiSystemPrompt', templates[templateKey]);
+
+                // Send to backend
+                emit('update_system_prompt', { system_prompt: templates[templateKey] });
+                showToast('System prompt updated', 'success', 1500);
+
+                // Reset dropdown to placeholder
+                promptTemplates.value = '';
+            }
+        });
+        console.log('Prompt templates dropdown initialized');
+    }
+
+    // Reset prompt button
+    if (resetPromptBtn && systemPromptTextarea) {
+        resetPromptBtn.addEventListener('click', () => {
+            systemPromptTextarea.value = defaultPrompt;
+            localStorage.setItem('aiSystemPrompt', defaultPrompt);
+
+            // Send to backend
+            emit('update_system_prompt', { system_prompt: defaultPrompt });
+            showToast('System prompt reset to default', 'success', 1500);
+        });
+        console.log('Reset prompt button initialized');
+    }
+}
+
+/**
+ * Setup TTS and Voice Controls
+ */
+export function setupTTSControls() {
+    console.log('Setting up TTS controls...');
+
+    const voiceSelect = document.getElementById('voiceSelect');
+    const edgeVoiceSelect = document.getElementById('edgeVoiceSelect');
+    const speechRateSlider = document.getElementById('speechRateSlider');
+    const speechRateValue = document.getElementById('speechRateValue');
+    const voicePitchSlider = document.getElementById('voicePitchSlider');
+    const voicePitchValue = document.getElementById('voicePitchValue');
+    const voiceVolumeSlider = document.getElementById('voiceVolumeSlider');
+    const voiceVolumeValue = document.getElementById('voiceVolumeValue');
+    const voicePreviewBtn = document.getElementById('voicePreviewBtn');
+    const voiceSearchInput = document.getElementById('voiceSearchInput');
+
+    // Engine Selection
+    if (voiceSelect) {
+        const savedEngine = localStorage.getItem('ttsEngine') || 'edge-tts';
+        voiceSelect.value = savedEngine;
+        state.currentTTSEngine = savedEngine;
+        state.ttsEnabled = savedEngine !== 'none';
+
+        voiceSelect.addEventListener('change', (e) => {
+            const engine = e.target.value;
+            state.currentTTSEngine = engine;
+            state.ttsEnabled = engine !== 'none';
+            localStorage.setItem('ttsEngine', engine);
+
+            // Emit change to backend
+            const voice = engine === 'edge-tts' ?
+                (localStorage.getItem('edgeVoice') || 'en-US-JennyNeural') :
+                (localStorage.getItem('macosVoice') || 'Samantha');
+
+            emit('change_tts', { engine, voice });
+            showToast(`TTS Engine changed to ${engine}`, 'success', 1500);
+
+            // Toggle visibility of specific voice settings
+            const edgeVoiceItem = document.getElementById('edgeVoiceSettingItem');
+            const pitchItem = document.getElementById('voicePitchSettingItem');
+            if (edgeVoiceItem) edgeVoiceItem.style.display = engine === 'edge-tts' ? 'block' : 'none';
+            if (pitchItem) pitchItem.style.display = engine === 'edge-tts' ? 'block' : 'none';
+        });
+
+        // Trigger initial visibility
+        setTimeout(() => voiceSelect.dispatchEvent(new Event('change')), 100);
+    }
+
+    // Edge Voice Selection
+    if (edgeVoiceSelect) {
+        const savedVoice = localStorage.getItem('edgeVoice') || 'en-US-JennyNeural';
+        edgeVoiceSelect.value = savedVoice;
+
+        edgeVoiceSelect.addEventListener('change', (e) => {
+            const voice = e.target.value;
+            localStorage.setItem('edgeVoice', voice);
+            emit('update_voice', { voice });
+            showToast(`Voice set to ${voice}`, 'success', 1000);
+        });
+    }
+
+    // Voice Search
+    if (voiceSearchInput && edgeVoiceSelect) {
+        voiceSearchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const options = edgeVoiceSelect.querySelectorAll('option');
+            const groups = edgeVoiceSelect.querySelectorAll('optgroup');
+
+            options.forEach(opt => {
+                const text = opt.textContent.toLowerCase();
+                const val = opt.value.toLowerCase();
+                const isMatch = text.includes(query) || val.includes(query);
+                opt.style.display = isMatch ? '' : 'none';
+            });
+
+            // Hide empty optgroups
+            groups.forEach(group => {
+                const visibleOptions = group.querySelectorAll('option:not([style*="display: none"])');
+                group.style.display = visibleOptions.length > 0 ? '' : 'none';
+            });
+        });
+    }
+
+    // Speech Rate
+    if (speechRateSlider && speechRateValue) {
+        const savedRate = localStorage.getItem('ttsRate') || '1.0';
+        speechRateSlider.value = savedRate;
+        speechRateValue.textContent = `${savedRate}x`;
+
+        speechRateSlider.addEventListener('input', (e) => {
+            const rate = e.target.value;
+            speechRateValue.textContent = `${rate}x`;
+            localStorage.setItem('ttsRate', rate);
+
+            // Convert to edge-tts format ("+0%", "+50%", etc.)
+            const percent = Math.round((parseFloat(rate) - 1.0) * 100);
+            const formattedRate = (percent >= 0 ? '+' : '') + percent + '%';
+            emit('update_speech_rate', { rate: formattedRate });
+        });
+    }
+
+    // Voice Pitch
+    if (voicePitchSlider && voicePitchValue) {
+        const savedPitch = localStorage.getItem('ttsPitch') || '0';
+        voicePitchSlider.value = savedPitch;
+        voicePitchValue.textContent = (parseInt(savedPitch) >= 0 ? '+' : '') + savedPitch + 'Hz';
+
+        voicePitchSlider.addEventListener('input', (e) => {
+            const pitch = e.target.value;
+            voicePitchValue.textContent = (parseInt(pitch) >= 0 ? '+' : '') + pitch + 'Hz';
+            localStorage.setItem('ttsPitch', pitch);
+            emit('update_voice_pitch', { pitch: voicePitchValue.textContent });
+        });
+    }
+
+    // Voice Volume
+    if (voiceVolumeSlider && voiceVolumeValue) {
+        const savedVol = localStorage.getItem('voiceVolume') || '100';
+        voiceVolumeSlider.value = savedVol;
+        voiceVolumeValue.textContent = `${savedVol}%`;
+
+        voiceVolumeSlider.addEventListener('input', (e) => {
+            const vol = e.target.value;
+            voiceVolumeValue.textContent = `${vol}%`;
+            localStorage.setItem('voiceVolume', vol);
+            // Volume is used client-side, but we can emit it too
+            emit('update_voice_volume', { volume: vol });
+        });
+    }
+
+    // Voice Preview
+    if (voicePreviewBtn) {
+        voicePreviewBtn.addEventListener('click', () => {
+            const voice = edgeVoiceSelect ? edgeVoiceSelect.value : 'en-US-JennyNeural';
+            const text = "Hello! This is a preview of the selected voice.";
+            showToast(`Previewing ${voice}...`, 'info', 2000);
+            emit('preview_voice', { voice, text });
+        });
+    }
+}
+
+
+/**
+ * Setup server configuration controls
+ */
+export function setupServerSettings() {
+    console.log('Setting up server settings controls...');
+
+    const serverTypeSelect = document.getElementById('serverTypeSelect');
+    const serverHost = document.getElementById('serverHost');
+    const serverPort = document.getElementById('serverPort');
+    const testConnectionBtn = document.getElementById('testConnectionBtn');
+    const connectionStatus = document.getElementById('connectionStatus');
+
+    // Server type dropdown
+    if (serverTypeSelect) {
+        const savedServerType = localStorage.getItem('serverType') || 'lm-studio';
+        serverTypeSelect.value = savedServerType;
+
+        serverTypeSelect.addEventListener('change', (e) => {
+            const serverType = e.target.value;
+            localStorage.setItem('serverType', serverType);
+            showToast(`Server type will change to ${serverType} on restart`, 'info', 3000);
+        });
+        console.log('Server type dropdown initialized');
+    }
+
+    // Server host input
+    if (serverHost) {
+        const savedHost = localStorage.getItem('serverHost') || 'localhost';
+        serverHost.value = savedHost;
+
+        serverHost.addEventListener('change', (e) => {
+            const host = e.target.value;
+            localStorage.setItem('serverHost', host);
+            showToast('Server host updated (restart required)', 'info', 2000);
+        });
+    }
+
+    // Server port input
+    if (serverPort) {
+        const savedPort = localStorage.getItem('serverPort') || '1234';
+        serverPort.value = savedPort;
+
+        serverPort.addEventListener('change', (e) => {
+            const port = e.target.value;
+            localStorage.setItem('serverPort', port);
+            showToast('Server port updated (restart required)', 'info', 2000);
+        });
+    }
+
+    // Test connection button
+    if (testConnectionBtn && connectionStatus) {
+        testConnectionBtn.addEventListener('click', async () => {
+            console.log('Testing connection...');
+            connectionStatus.textContent = 'Testing...';
+            connectionStatus.className = 'connection-status testing';
+            testConnectionBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    connectionStatus.textContent = `✓ ${data.message}`;
+                    connectionStatus.className = 'connection-status success';
+                    showToast('Connection successful!', 'success', 2000);
+                } else {
+                    connectionStatus.textContent = `✗ ${data.error}`;
+                    connectionStatus.className = 'connection-status error';
+                    showToast('Connection failed', 'error', 2000);
+                }
+            } catch (error) {
+                console.error('Connection test error:', error);
+                connectionStatus.textContent = '✗ Connection failed';
+                connectionStatus.className = 'connection-status error';
+                showToast('Connection test failed', 'error', 2000);
+            } finally {
+                testConnectionBtn.disabled = false;
+            }
+        });
+        console.log('Test connection button initialized');
+    }
+}
+
+/**
+ * Placeholder functions for features not fully implemented in this refactor
+ * but required for completeness based on app.js analysis
+ */
+function initializePhase3Features() {
+    // Reactions, Swipe, VAD, Virtual Scroll would go here
+    // For now, we keep it simple
+}
+
+function setupTutorial() {
+    // Tutorial logic
+}
+
+function setupExportFeature() {
+    const modal = document.getElementById('exportModal');
+    const openBtn = document.getElementById('exportChatBtn');
+    const closeBtn = document.getElementById('closeExportModal');
+
+    // Export format buttons
+    const btnMarkdown = document.getElementById('exportMarkdownBtn');
+    const btnJSON = document.getElementById('exportJSONBtn');
+    const btnText = document.getElementById('exportPlainTextBtn');
+
+    if (!modal || !openBtn) return;
+
+    openBtn.addEventListener('click', () => {
+        modal.style.display = 'flex';
+        // Hide sidebar on mobile if needed, or close menu
+        const sideMenu = document.getElementById('sideMenu');
+        const overlay = document.getElementById('overlay');
+        if (sideMenu) sideMenu.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+    });
+
+    const closeModal = () => {
+        modal.style.display = 'none';
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    function getMessages() {
+        const elements = document.querySelectorAll('#messages .message');
+        return Array.from(elements).map(el => {
+            const role = el.classList.contains('user') ? 'user' : 'assistant';
+            // Use original text derived from markdown if possible, but innerText is fine for now
+            const content = el.querySelector('.message-content')?.innerText || '';
+            // Clean up content (remove copy buttons text if any)
+            const time = el.querySelector('.message-time')?.innerText.split('•')[0].trim() || '';
+            return { role, content, time };
+        });
+    }
+
+    function downloadFile(content, filename, contentType) {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast(`Exported to ${filename}`, 'success');
+    }
+
+    if (btnMarkdown) {
+        btnMarkdown.addEventListener('click', () => {
+            const msgs = getMessages();
+            if (msgs.length === 0) {
+                showToast('No messages to export', 'warning');
+                return;
+            }
+            const text = msgs.map(m => `### ${m.role === 'user' ? 'User' : 'Assistant'} (${m.time})\n\n${m.content}\n`).join('\n---\n\n');
+            downloadFile(text, 'chat-export.md', 'text/markdown');
+            closeModal();
+        });
+    }
+
+    if (btnJSON) {
+        btnJSON.addEventListener('click', () => {
+            const msgs = getMessages();
+            if (msgs.length === 0) {
+                showToast('No messages to export', 'warning');
+                return;
+            }
+            downloadFile(JSON.stringify(msgs, null, 2), 'chat-export.json', 'application/json');
+            closeModal();
+        });
+    }
+
+    if (btnText) {
+        btnText.addEventListener('click', () => {
+            const msgs = getMessages();
+            if (msgs.length === 0) {
+                showToast('No messages to export', 'warning');
+                return;
+            }
+            const text = msgs.map(m => `[${m.role.toUpperCase()} ${m.time}]: ${m.content}`).join('\n\n');
+            downloadFile(text, 'chat-export.txt', 'text/plain');
+            closeModal();
+        });
+    }
+}
+
+function setupConversationSearch() {
+    const searchWrapper = document.getElementById('conversationSearchWrapper');
+    const searchInput = document.getElementById('conversationSearch');
+    const toggleBtn = document.getElementById('searchToggleBtn');
+    const closeBtn = document.getElementById('closeSearchBtn');
+    const clearBtn = document.getElementById('clearSearchBtn');
+
+    if (!toggleBtn || !searchWrapper || !searchInput) return;
+
+    // Toggle Search Bar
+    toggleBtn.addEventListener('click', () => {
+        const isVisible = searchWrapper.style.display !== 'none';
+        searchWrapper.style.display = isVisible ? 'none' : 'flex';
+        if (!isVisible) {
+            setTimeout(() => searchInput.focus(), 100);
+        }
+    });
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            searchWrapper.style.display = 'none';
+            searchInput.value = '';
+            filterMessages('');
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            filterMessages('');
+            clearBtn.style.display = 'none';
+            searchInput.focus();
+        });
+    }
+
+    // Input handler
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        filterMessages(query);
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+    });
+
+    function filterMessages(query) {
+        const messages = document.querySelectorAll('#messages .message');
+        messages.forEach(msg => {
+            const content = msg.querySelector('.message-content')?.innerText.toLowerCase() || '';
+            if (query && !content.includes(query)) {
+                msg.style.display = 'none';
+            } else {
+                msg.style.display = 'flex';
+            }
+        });
+    }
+
+    // ESC to close
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            searchWrapper.style.display = 'none';
+            searchInput.value = '';
+            filterMessages('');
+        }
+    });
+}
+
+function setupProgressiveSettings() {
+    // Progressive settings logic
+}
+
+function updateVADStatus(status) {
+    // VAD status update
+}
+
+export function syncAISettingsToBackend() {
+    console.log('Syncing AI settings from localStorage to backend...');
+
+    // Send temperature
+    const temp = localStorage.getItem('aiTemperature');
+    if (temp) {
+        const temperature = parseFloat(temp);
+        emit('update_temperature', { temperature });
+        console.log(`Synced temperature: ${temperature}`);
+    }
+
+    // Send max tokens
+    const maxTokens = localStorage.getItem('aiMaxTokens');
+    if (maxTokens) {
+        const max_tokens = parseInt(maxTokens);
+        emit('update_max_tokens', { max_tokens });
+        console.log(`Synced max tokens: ${max_tokens}`);
+    }
+
+    // Send system prompt (CRITICAL: This fixes system prompt not persisting)
+    const systemPrompt = localStorage.getItem('aiSystemPrompt');
+    if (systemPrompt) {
+        emit('update_system_prompt', { system_prompt: systemPrompt });
+        console.log(`Synced system prompt (${systemPrompt.length} chars)`);
+    }
+
+    console.log('AI settings sync complete');
+}
+
+function showMiniPlayer(audio, text) {
+    // Mini player
+}
+
+function hideMiniPlayer() {
+    // Hide mini player
+}
+
+function clearLiveUI() {
+    // Clear live UI
+}
+
+function showAudioPlayingIndicator() {
+    // Audio indicator
+}
+
+function showClickToPlayMessage() {
+    showToast('Click to play audio', 'info');
+}
+
+// Add reaction buttons (placeholder)
+function addReactionButtons(messageDiv, messageId) {
+    // Add buttons
+}
+
+// Observe new message (placeholder)
+function observeNewMessage(messageDiv) {
+    // Observe
+}

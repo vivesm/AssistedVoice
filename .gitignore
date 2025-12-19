@@ -26,7 +26,7 @@ logs/
 .env
 
 # Test files
-test_*.py
+
 
 # Audio files
 *.wav
@@ -55,3 +55,12 @@ build/
 # Downloaded installers
 *.pkg
 *.dmg
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.pytest_cache/
+.ruff_cache/
+.agent/
+.env
+

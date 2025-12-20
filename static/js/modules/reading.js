@@ -4,15 +4,34 @@
  */
 
 export class ReadingMode {
-    constructor(socket) {
-        this.socket = socket;
+    constructor(state) {
+        this.state = state;
         this.isActive = false;
         this.isPlaying = false;
         this.currentAudio = null;
+        this.socketListenersAttached = false;
 
         this.initElements();
-        this.initEventListeners();
-        this.initSocketListeners();
+        this.initEventListeners();  // UI works immediately
+        
+        // Defer socket listeners until socket is connected
+        this.waitForSocket();
+        
+        console.log('[ReadingMode] Initialized, waiting for socket...');
+    }
+
+    waitForSocket() {
+        const checkSocket = setInterval(() => {
+            if (this.state.socket && this.state.socket.connected && !this.socketListenersAttached) {
+                this.initSocketListeners();
+                this.socketListenersAttached = true;
+                clearInterval(checkSocket);
+                console.log('[ReadingMode] Socket listeners attached');
+            }
+        }, 100);
+        
+        // Stop checking after 10 seconds
+        setTimeout(() => clearInterval(checkSocket), 10000);
     }
 
     initElements() {
@@ -51,12 +70,26 @@ export class ReadingMode {
         this.progressPercentage = document.getElementById('progressPercentage');
         this.progressFill = document.getElementById('readingProgressFill');
         this.readingStatus = document.getElementById('readingStatus');
+        
+        console.log('[ReadingMode] Elements initialized:', {
+            readingModeBtn: !!this.readingModeBtn,
+            readingPanel: !!this.readingPanel,
+            chatContainer: !!this.chatContainer
+        });
     }
 
     initEventListeners() {
         // Toggle reading mode
-        this.readingModeBtn?.addEventListener('click', () => this.toggleReadingMode());
-        this.closeReadingBtn?.addEventListener('click', () => this.closeReadingMode());
+        if (this.readingModeBtn) {
+            this.readingModeBtn.addEventListener('click', () => {
+                console.log('[ReadingMode] Button clicked');
+                this.toggleReadingMode();
+            });
+        }
+        
+        if (this.closeReadingBtn) {
+            this.closeReadingBtn.addEventListener('click', () => this.closeReadingMode());
+        }
 
         // Tab switching
         this.inputTabs.forEach(tab => {
@@ -81,11 +114,19 @@ export class ReadingMode {
         this.shareInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.loadShare();
         });
+        
+        console.log('[ReadingMode] Event listeners attached');
     }
 
     initSocketListeners() {
+        const socket = this.state.socket;
+        if (!socket) {
+            console.warn('[ReadingMode] No socket available for listeners');
+            return;
+        }
+
         // Reading session started
-        this.socket.on('reading_started', (data) => {
+        socket.on('reading_started', (data) => {
             console.log('Reading session started:', data);
             this.showPlayer();
             this.totalChunks.textContent = data.total_chunks;
@@ -93,37 +134,37 @@ export class ReadingMode {
         });
 
         // Progress update
-        this.socket.on('reading_progress', (data) => {
+        socket.on('reading_progress', (data) => {
             this.updateProgress(data);
         });
 
         // Chunk data with text
-        this.socket.on('reading_chunk', (data) => {
+        socket.on('reading_chunk', (data) => {
             this.currentChunkText.textContent = data.text;
             this.updateProgress(data.progress);
         });
 
         // Audio data for playback
-        this.socket.on('reading_audio', (data) => {
+        socket.on('reading_audio', (data) => {
             this.playAudio(data.audio);
         });
 
         // Reading complete
-        this.socket.on('reading_complete', () => {
+        socket.on('reading_complete', () => {
             this.setStatus('Reading complete');
             this.isPlaying = false;
             this.showPlayButton();
         });
 
         // Paused
-        this.socket.on('reading_paused', () => {
+        socket.on('reading_paused', () => {
             this.isPlaying = false;
             this.showPlayButton();
             this.setStatus('Paused');
         });
 
         // Stopped
-        this.socket.on('reading_stopped', () => {
+        socket.on('reading_stopped', () => {
             this.isPlaying = false;
             this.showPlayButton();
             this.setStatus('Stopped');
@@ -134,7 +175,7 @@ export class ReadingMode {
         });
 
         // Errors
-        this.socket.on('reading_error', (data) => {
+        socket.on('reading_error', (data) => {
             console.error('Reading error:', data);
             this.setStatus(`Error: ${data.message}`);
             this.showToast(data.message, 'error');
@@ -142,6 +183,7 @@ export class ReadingMode {
     }
 
     toggleReadingMode() {
+        console.log('[ReadingMode] Toggle called, isActive:', this.isActive);
         if (this.isActive) {
             this.closeReadingMode();
         } else {
@@ -150,9 +192,15 @@ export class ReadingMode {
     }
 
     openReadingMode() {
+        console.log('[ReadingMode] Opening reading mode');
         this.isActive = true;
-        this.readingPanel.style.display = 'block';
-        this.chatContainer.style.display = 'none';
+        
+        if (this.readingPanel) {
+            this.readingPanel.style.display = 'block';
+        }
+        if (this.chatContainer) {
+            this.chatContainer.style.display = 'none';
+        }
         this.readingModeBtn?.classList.add('active');
 
         // Show back button in header
@@ -165,9 +213,15 @@ export class ReadingMode {
     }
 
     closeReadingMode() {
+        console.log('[ReadingMode] Closing reading mode');
         this.isActive = false;
-        this.readingPanel.style.display = 'none';
-        this.chatContainer.style.display = 'flex';
+        
+        if (this.readingPanel) {
+            this.readingPanel.style.display = 'none';
+        }
+        if (this.chatContainer) {
+            this.chatContainer.style.display = 'flex';
+        }
         this.readingModeBtn?.classList.remove('active');
 
         // Hide back button, show menu button
@@ -182,7 +236,10 @@ export class ReadingMode {
         if (this.isPlaying) {
             this.stop();
         }
-        this.socket.emit('end_reading');
+        
+        if (this.state.socket && this.state.socket.connected) {
+            this.state.socket.emit('end_reading');
+        }
     }
 
     switchTab(tabName) {
@@ -220,10 +277,16 @@ export class ReadingMode {
     }
 
     startReading() {
-        const activeTab = document.querySelector('.input-tab.active').dataset.tab;
+        const socket = this.state.socket;
+        if (!socket || !socket.connected) {
+            this.showToast('Not connected to server', 'error');
+            return;
+        }
+        
+        const activeTab = document.querySelector('.input-tab.active')?.dataset.tab || 'text';
 
         if (activeTab === 'text') {
-            const text = this.textInput.value.trim();
+            const text = this.textInput?.value.trim();
             if (!text) {
                 this.showToast('Please enter some text to read', 'error');
                 return;
@@ -235,20 +298,20 @@ export class ReadingMode {
             }
 
             this.setStatus('Starting reading session...');
-            this.socket.emit('start_reading', {
+            socket.emit('start_reading', {
                 mode: 'text',
                 text: text
             });
 
         } else if (activeTab === 'share') {
-            const shareCode = this.shareInput.value.trim();
+            const shareCode = this.shareInput?.value.trim();
             if (!shareCode) {
                 this.showToast('Please enter a share code', 'error');
                 return;
             }
 
             this.setStatus('Loading from share...');
-            this.socket.emit('start_reading', {
+            socket.emit('start_reading', {
                 mode: 'share',
                 share_code: shareCode
             });
@@ -260,19 +323,29 @@ export class ReadingMode {
     }
 
     showPlayer() {
-        this.readingInputSection.style.display = 'none';
-        this.readingPlayer.style.display = 'block';
+        if (this.readingInputSection) {
+            this.readingInputSection.style.display = 'none';
+        }
+        if (this.readingPlayer) {
+            this.readingPlayer.style.display = 'block';
+        }
     }
 
     play() {
-        this.socket.emit('reading_play');
-        this.isPlaying = true;
-        this.showPauseButton();
-        this.setStatus('Playing...');
+        const socket = this.state.socket;
+        if (socket && socket.connected) {
+            socket.emit('reading_play');
+            this.isPlaying = true;
+            this.showPauseButton();
+            this.setStatus('Playing...');
+        }
     }
 
     pause() {
-        this.socket.emit('reading_pause');
+        const socket = this.state.socket;
+        if (socket && socket.connected) {
+            socket.emit('reading_pause');
+        }
         this.isPlaying = false;
         this.showPlayButton();
         if (this.currentAudio) {
@@ -281,7 +354,10 @@ export class ReadingMode {
     }
 
     stop() {
-        this.socket.emit('reading_stop');
+        const socket = this.state.socket;
+        if (socket && socket.connected) {
+            socket.emit('reading_stop');
+        }
         this.isPlaying = false;
         this.showPlayButton();
         if (this.currentAudio) {
@@ -291,28 +367,34 @@ export class ReadingMode {
     }
 
     previous() {
-        this.socket.emit('reading_previous');
+        const socket = this.state.socket;
+        if (socket && socket.connected) {
+            socket.emit('reading_previous');
+        }
     }
 
     next() {
-        this.socket.emit('reading_next');
+        const socket = this.state.socket;
+        if (socket && socket.connected) {
+            socket.emit('reading_next');
+        }
     }
 
     showPlayButton() {
-        this.playBtn.style.display = 'flex';
-        this.pauseBtn.style.display = 'none';
+        if (this.playBtn) this.playBtn.style.display = 'flex';
+        if (this.pauseBtn) this.pauseBtn.style.display = 'none';
     }
 
     showPauseButton() {
-        this.playBtn.style.display = 'none';
-        this.pauseBtn.style.display = 'flex';
+        if (this.playBtn) this.playBtn.style.display = 'none';
+        if (this.pauseBtn) this.pauseBtn.style.display = 'flex';
     }
 
     updateProgress(data) {
-        this.currentChunk.textContent = data.current_chunk + 1; // 0-indexed to 1-indexed
-        this.totalChunks.textContent = data.total_chunks;
-        this.progressPercentage.textContent = `${data.progress_percentage}%`;
-        this.progressFill.style.width = `${data.progress_percentage}%`;
+        if (this.currentChunk) this.currentChunk.textContent = data.current_chunk + 1;
+        if (this.totalChunks) this.totalChunks.textContent = data.total_chunks;
+        if (this.progressPercentage) this.progressPercentage.textContent = `${data.progress_percentage}%`;
+        if (this.progressFill) this.progressFill.style.width = `${data.progress_percentage}%`;
     }
 
     playAudio(audioBase64) {
@@ -333,14 +415,16 @@ export class ReadingMode {
 
         // Auto-advance when audio finishes
         audio.addEventListener('ended', () => {
-            if (this.isPlaying) {
-                this.socket.emit('reading_auto_advance');
+            if (this.isPlaying && this.state.socket && this.state.socket.connected) {
+                this.state.socket.emit('reading_auto_advance');
             }
         });
     }
 
     setStatus(message) {
-        this.readingStatus.textContent = message;
+        if (this.readingStatus) {
+            this.readingStatus.textContent = message;
+        }
     }
 
     showToast(message, type = 'info') {

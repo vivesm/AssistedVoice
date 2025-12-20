@@ -18,11 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize WebSocket connection
     initializeWebSocket();
     
-    // Initialize reading mode
-    if (state.socket) {
-        window.readingMode = new ReadingMode(state.socket);
-        console.log('Reading mode initialized');
-    }
+    // Initialize reading mode - it handles socket availability internally
+    window.readingMode = new ReadingMode(state);
+    console.log('Reading mode initialized');
 
     // Mark initialization as complete after a short delay to allow sync events to finish silently
     setTimeout(() => {

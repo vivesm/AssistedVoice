@@ -85,6 +85,7 @@ body {
     margin: 0 var(--space-md);
 }
 
+/* Mobile Responsiveness - Comprehensive Improvements */
 @media (max-width: 768px) {
     .app {
         height: 100vh;
@@ -92,6 +93,267 @@ body {
         margin: 0;
         border-radius: 0;
         border: none;
+    }
+
+    /* Header - Larger touch targets and better spacing */
+    .header {
+        padding: 0 var(--space-sm);
+        gap: 8px;
+    }
+
+    .menu-btn,
+    .search-toggle-btn,
+    .settings-btn,
+    .back-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px;
+    }
+
+    .app-title {
+        font-size: clamp(1rem, 4vw, 1.25rem);
+        flex: 1;
+        text-align: center;
+    }
+
+    /* Input Bar - Better mobile layout */
+    .input-bar {
+        padding: var(--space-sm);
+    }
+
+    .input-wrapper {
+        padding: 6px;
+        gap: 6px;
+    }
+
+    .text-input {
+        padding: 10px 12px;
+        font-size: 16px;
+        /* Prevents zoom on iOS */
+    }
+
+    .voice-btn,
+    .mute-btn,
+    .send-btn,
+    .live-mode-btn {
+        min-width: 44px;
+        min-height: 44px;
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+    }
+
+    /* Input status - Stack on very small screens */
+    .input-status {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: 0.75rem;
+    }
+
+    /* Sidebars - Full width on mobile */
+    .side-menu,
+    .settings-panel {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* Messages - Better width usage */
+    .message {
+        max-width: 95%;
+    }
+
+    .message-content {
+        padding: 12px 16px;
+        font-size: 0.95rem;
+    }
+
+    /* Chat container - Better padding */
+    .chat-container {
+        padding: var(--space-sm);
+    }
+
+    /* Welcome screen - Better mobile layout */
+    .welcome {
+        padding: 0 var(--space-sm);
+    }
+
+    .model-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-sm);
+    }
+
+    .model-btn {
+        padding: var(--space-md);
+        min-height: 60px;
+    }
+
+    /* Modals - Full screen on mobile */
+    .export-modal-content,
+    .shortcuts-content,
+    .tutorial-content {
+        width: 95%;
+        max-width: 95%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* Search bars - Better mobile layout */
+    .conversation-search-wrapper,
+    .settings-search-wrapper {
+        padding: var(--space-sm);
+    }
+
+    .conversation-search,
+    .settings-search {
+        font-size: 16px;
+        /* Prevents zoom on iOS */
+        padding: 12px 12px 12px 40px;
+    }
+
+    /* Settings sections - Better spacing */
+    .settings-section {
+        padding: var(--space-md);
+    }
+
+    .setting-item {
+        margin-bottom: var(--space-md);
+    }
+
+    /* Buttons - Larger touch targets */
+    .new-chat-btn,
+    .export-chat-btn,
+    .clear-btn,
+    .test-connection-btn {
+        min-height: 48px;
+        font-size: 0.9rem;
+    }
+
+    .export-option-btn {
+        min-height: 60px;
+        padding: 14px;
+    }
+
+    /* Scroll to bottom button - Better positioning */
+    .scroll-to-bottom {
+        bottom: 90px;
+        right: 16px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .scroll-to-bottom.visible {
+        bottom: 110px;
+    }
+
+    /* Live assistant - Stack vertically on mobile */
+    .live-assistant-container {
+        grid-template-columns: 1fr;
+        gap: var(--space-sm);
+    }
+
+    /* Toast notifications - Better mobile positioning */
+    .toast-container {
+        top: 16px;
+        left: var(--space-sm);
+        right: var(--space-sm);
+        transform: none;
+        width: auto;
+    }
+
+    .toast {
+        width: 100%;
+        font-size: 0.9rem;
+    }
+
+    /* History items - Better touch targets */
+    .history-item {
+        padding: 14px;
+        min-height: 60px;
+    }
+
+    /* Settings mode toggle - Better mobile layout */
+    .settings-mode-toggle,
+    .theme-options {
+        gap: 6px;
+        padding: var(--space-sm);
+    }
+
+    .mode-btn,
+    .theme-btn {
+        padding: 12px 16px;
+        min-height: 44px;
+    }
+
+    /* Voice controls - Stack on mobile */
+    .voice-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .voice-preview-btn,
+    .voice-test-btn,
+    .voice-favorite-btn {
+        min-height: 44px;
+        flex: 1;
+        min-width: 100px;
+    }
+
+    /* Shortcuts modal - Better mobile layout */
+    .shortcuts-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-md);
+    }
+
+    /* Tutorial - Better mobile positioning */
+    .tutorial-content {
+        bottom: auto;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 90%;
+        max-width: 90%;
+    }
+}
+
+/* Extra small screens (iPhone SE, etc.) */
+@media (max-width: 375px) {
+    .header {
+        padding: 0 8px;
+        gap: 4px;
+    }
+
+    .app-title {
+        font-size: 0.95rem;
+    }
+
+    .input-wrapper {
+        gap: 4px;
+        padding: 4px;
+    }
+
+    .voice-btn,
+    .mute-btn,
+    .live-mode-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    .send-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    .message {
+        max-width: 98%;
+    }
+
+    .chat-container {
+        padding: 8px;
     }
 }
 
@@ -131,6 +393,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    /* Ensure badges are positioned relative to button */
+    overflow: visible;
+    /* Allow badges to protrude */
 }
 
 .menu-btn:hover,
@@ -332,7 +598,7 @@ body {
     background: transparent;
     border: none;
     color: var(--text);
-    padding: 10px;
+    padding: 12px 16px;
     font-size: 1rem;
     outline: none !important;
     width: 100%;
@@ -352,6 +618,10 @@ body {
     border-radius: 50%;
     color: var(--text-dim);
     cursor: pointer;
+    position: relative;
+    /* Ensure badges are positioned relative to button */
+    overflow: visible;
+    /* Allow badges to protrude */
 }
 
 .voice-btn:hover,
@@ -385,6 +655,8 @@ body {
     z-index: 50;
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
 }
 
 .side-menu {
@@ -403,6 +675,384 @@ body {
 .settings-panel.open {
     transform: translateX(0);
 }
+
+/* Sidebar Headers */
+.menu-header,
+.settings-header {
+    height: var(--header-height);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 var(--space-md);
+    border-bottom: 1px solid var(--border);
+    background: rgba(15, 23, 42, 0.4);
+}
+
+.menu-header h3,
+.settings-header h3 {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--text);
+}
+
+/* Search Wrappers */
+.conversation-search-wrapper,
+.settings-search-wrapper {
+    position: relative;
+    padding: var(--space-sm);
+    background: rgba(15, 23, 42, 0.2);
+    border-bottom: 1px solid var(--border);
+}
+
+.conversation-search,
+.settings-search {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 12px 12px 40px;
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.conversation-search:focus,
+.settings-search:focus {
+    border-color: var(--primary);
+    box-shadow: var(--glow);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.search-icon {
+    position: absolute;
+    left: 28px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    pointer-events: none;
+}
+
+/* Chat History List */
+.chat-history-list {
+    padding: var(--space-md);
+    overflow-y: auto;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.settings-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.history-item {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
+.history-item.active {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.history-item-date {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.history-item-preview {
+    font-size: 0.9rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+/* Buttons in Menus */
+.new-chat-btn,
+.export-chat-btn,
+.clear-btn,
+.test-connection-btn,
+.voice-preview-btn,
+.voice-test-btn,
+.reset-prompt-btn {
+    width: 100%;
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+}
+
+.new-chat-btn,
+.test-connection-btn {
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+.new-chat-btn:hover,
+.test-connection-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+}
+
+.voice-preview-btn,
+.voice-test-btn,
+.reset-prompt-btn {
+    width: auto;
+    display: inline-flex;
+    margin-right: 8px;
+    padding: 12px 20px;
+}
+
+.voice-favorite-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 10px;
+    border-radius: 10px;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.voice-favorite-btn.active {
+    color: #fbbf24;
+    border-color: #fbbf24;
+}
+
+.close-menu,
+.close-settings {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-dim);
+    transition: color 0.2s;
+}
+
+.close-menu:hover,
+.close-settings:hover {
+    color: var(--text);
+}
+
+/* Settings Mode Toggle & Theme Options */
+.settings-mode-toggle,
+.theme-options {
+    display: flex;
+    gap: 8px;
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--border);
+}
+
+.mode-btn,
+.theme-btn {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 12px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.mode-btn.active,
+.theme-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+/* Sections & Items */
+.settings-section {
+    padding: var(--space-lg);
+    border-bottom: 1px solid var(--border);
+}
+
+.section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-md);
+}
+
+.setting-item {
+    margin-bottom: var(--space-lg);
+}
+
+.setting-item label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+}
+
+.setting-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
+/* History Empty State */
+.history-empty {
+    text-align: center;
+    padding: var(--space-xl) var(--space-md);
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    opacity: 0.6;
+}
+
+/* Export Modal */
+.export-modal,
+.shortcuts-modal,
+.tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(12px);
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.export-modal-content,
+.shortcuts-content,
+.tutorial-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5);
+    position: relative;
+    backdrop-filter: blur(24px);
+}
+
+.export-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: var(--space-md);
+}
+
+.export-option-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.export-option-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--primary);
+    transform: translateX(4px);
+}
+
+.export-option-title {
+    display: block;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.export-option-desc {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+/* Live Assistant UI */
+.live-assistant-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+    height: 100%;
+    animation: fadeIn 0.5s ease;
+}
+
+.live-transcript-panel,
+.ai-insights-panel {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--primary);
+}
+
+.live-transcript-content,
+.ai-insights-content {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+
 
 /* Scrollbars */
 ::-webkit-scrollbar {
@@ -493,19 +1143,129 @@ input[type=range]::-webkit-slider-thumb:hover {
 
 .toast-container {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 8px;
-    z-index: 100;
+    z-index: 9999;
 }
+
+.toast {
+    background: var(--surface);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    align-items: center;
+    gap: 12px;
+    animation: slideInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Keyboard Shortcuts */
+kbd {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Tutorial Buttons */
+.tutorial-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: var(--space-md);
+}
+
+.tutorial-btn {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tutorial-skip {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+
+.tutorial-next {
+    background: var(--primary);
+    border: none;
+    color: white;
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+/* Scroll to Bottom */
+.scroll-to-bottom {
+    position: fixed;
+    bottom: 100px;
+    right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+    z-index: 90;
+    backdrop-filter: blur(10px);
+}
+
+.scroll-to-bottom.visible {
+    opacity: 1;
+    visibility: visible;
+    bottom: 120px;
+}
+
 
 /* Missing Functional Styles */
 .live-badge {
     position: absolute;
-    top: -5px;
-    right: -5px;
+    top: -2px;
+    /* Adjusted to prevent cutoff */
+    right: -2px;
+    /* Adjusted to prevent cutoff */
     background: #ef4444;
     color: white;
     font-size: 8px;
@@ -632,4 +1392,65 @@ input[type=range]::-webkit-slider-thumb:hover {
     40% {
         transform: scale(1);
     }
+}
+
+/* Overlay */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 45;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Response Actions */
+.message-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.message:hover .message-actions {
+    opacity: 1;
+}
+
+.message-action-btn,
+.message-speaker-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.message-action-btn:hover,
+.message-speaker-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f8fafc;
+    border-color: #6366f1;
+}
+
+.message-speaker-btn {
+    margin-left: 8px;
+    display: inline-flex;
+    vertical-align: middle;
 }

@@ -4,6 +4,7 @@
 import { state } from './state.js';
 import { logConnectionState, logResponse, showToast } from './utils.js';
 import { playAudioData, stopAudio } from './audio.js';
+import { addMessage } from './ui.js';
 
 // Helper to safely call UI updates
 function updateStatus(message, type) {
@@ -54,11 +55,6 @@ function updateVADStatus(status) {
     }
 }
 
-function syncAISettingsToBackend() {
-    if (state.ui && state.ui.syncAISettingsToBackend) {
-        state.ui.syncAISettingsToBackend();
-    }
-}
 
 /**
  * Initialize WebSocket connection
@@ -92,9 +88,6 @@ function setupSocketListeners() {
         logConnectionState('Connected');
         updateStatus('Ready', 'ready');
         state.reconnectAttempts = 0;
-
-        // Sync settings on reconnect
-        syncAISettingsToBackend();
     });
 
     socket.on('disconnect', (reason) => {
@@ -142,6 +135,11 @@ function setupSocketListeners() {
         hideStopGenerationButton();
         completeResponse(data.text);
         logResponse(data.text);
+    });
+
+    socket.on('transcription', (data) => {
+        console.log('Received transcription:', data.text);
+        addMessage('user', data.text);
     });
 
     // Audio processing events

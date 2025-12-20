@@ -206,89 +206,25 @@ function setupSocketListeners() {
     socket.on('live_transcript', (data) => {
         console.log('[Live Mode] Received transcript:', data.text);
 
-        const liveTranscriptContent = document.getElementById('liveTranscriptContent');
-        if (liveTranscriptContent) {
-            // Remove placeholder if it exists
-            const placeholder = liveTranscriptContent.querySelector('.placeholder-text');
-            if (placeholder) {
-                placeholder.remove();
-            }
-
-            // Add new transcript segment
-            const transcriptSegment = document.createElement('p');
-            transcriptSegment.className = 'transcript-segment';
-            transcriptSegment.textContent = data.text;
-            transcriptSegment.style.marginBottom = '8px';
-            transcriptSegment.style.opacity = '0';
-            transcriptSegment.style.animation = 'fadeIn 0.3s ease-out forwards';
-
-            liveTranscriptContent.appendChild(transcriptSegment);
-
-            // Auto-scroll to bottom
-            liveTranscriptContent.scrollTop = liveTranscriptContent.scrollHeight;
-        }
+        // Add transcript as a live-transcript message in chat history
+        addMessage('live-transcript', data.text, true);
     });
+
 
     socket.on('ai_insight', (data) => {
         console.log('[Live Mode] Received AI insight:', data);
 
-        const aiInsightsContent = document.getElementById('aiInsightsContent');
-        if (aiInsightsContent) {
-            // Remove placeholder if it exists
-            const placeholder = aiInsightsContent.querySelector('.insight-placeholder');
-            if (placeholder) {
-                placeholder.remove();
-            }
+        // Add insight as a live-insight message in chat history with metadata
+        const metadata = {
+            topic: data.topic || 'Insight',
+            keyPoints: data.key_points || [],
+            pinned: false
+        };
 
-            // Create insight card
-            const insightCard = document.createElement('div');
-            insightCard.className = 'insight-card';
-            insightCard.style.cssText = `
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
-                padding: 16px;
-                margin-bottom: 16px;
-                opacity: 0;
-                animation: fadeIn 0.5s ease-out forwards;
-            `;
+        // Create a text representation for the data-original-text attribute
+        const textRepresentation = `${data.topic}\n${(data.key_points || []).map(p => `• ${p}`).join('\n')}`;
 
-            // Topic
-            const topic = document.createElement('h4');
-            topic.textContent = data.topic || 'Insight';
-            topic.style.cssText = `
-                margin: 0 0 12px 0;
-                color: var(--primary);
-                font-size: 1rem;
-                font-weight: 600;
-            `;
-            insightCard.appendChild(topic);
-
-            // Key points
-            if (data.key_points && data.key_points.length > 0) {
-                const pointsList = document.createElement('ul');
-                pointsList.style.cssText = `
-                    margin: 0;
-                    padding-left: 20px;
-                    color: var(--text);
-                    line-height: 1.6;
-                `;
-
-                data.key_points.forEach(point => {
-                    const li = document.createElement('li');
-                    li.textContent = point;
-                    li.style.marginBottom = '8px';
-                    pointsList.appendChild(li);
-                });
-
-                insightCard.appendChild(pointsList);
-            }
-
-            aiInsightsContent.appendChild(insightCard);
-
-            // Auto-scroll to bottom
-            aiInsightsContent.scrollTop = aiInsightsContent.scrollHeight;
-        }
+        addMessage('live-insight', textRepresentation, true, metadata);
     });
 
     // Model events
@@ -298,6 +234,9 @@ function setupSocketListeners() {
 
         // Update state
         state.currentModel = data.model;
+
+        // Save to localStorage for persistence
+        localStorage.setItem('selectedModel', data.model);
 
         // Update status
         updateStatus('Ready', 'ready');

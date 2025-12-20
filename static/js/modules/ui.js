@@ -30,7 +30,6 @@ export function registerUIFunctions() {
         showError,
         showEnhancedError,
         updateVADStatus,
-        syncAISettingsToBackend,
         showMiniPlayer,
         hideMiniPlayer,
         clearLiveUI,
@@ -250,6 +249,10 @@ function setupModelSelection() {
 
             // Optimistic UI update
             state.currentModel = model;
+
+            // Save to localStorage for persistence
+            localStorage.setItem('selectedModel', model);
+
             updateStatus('Ready', 'ready');
 
             // Update dropdown if exists
@@ -283,6 +286,9 @@ function setupModelSelection() {
 
             // Update state
             state.currentModel = selectedModel;
+
+            // Save to localStorage for persistence
+            localStorage.setItem('selectedModel', selectedModel);
 
             // Show loading feedback
             showToast(`Switching to ${selectedModel}...`, 'info', 2000);
@@ -458,7 +464,7 @@ function sendTextMessage() {
 /**
  * Add message to UI
  */
-export function addMessage(role, text, save = true) {
+export function addMessage(role, text, save = true, metadata = {}) {
     const messages = document.getElementById('messages');
     const welcome = document.getElementById('welcome');
 
@@ -471,12 +477,32 @@ export function addMessage(role, text, save = true) {
     }
 
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${role}`;
+    // Support live mode message types
+    const isLiveTranscript = role === 'live-transcript';
+    const isLiveInsight = role === 'live-insight';
+    const isPinned = metadata.pinned || false;
+
+    // Set appropriate classes
+    if (isLiveTranscript) {
+        messageDiv.className = 'message user live-transcript';
+    } else if (isLiveInsight) {
+        messageDiv.className = `message assistant live-insight${isPinned ? ' pinned' : ''}`;
+    } else {
+        messageDiv.className = `message ${role}`;
+    }
+
+    // Store metadata
+    if (isLiveTranscript || isLiveInsight) {
+        messageDiv.dataset.liveMode = 'true';
+        if (isPinned) messageDiv.dataset.pinned = 'true';
+        if (metadata.topic) messageDiv.dataset.topic = metadata.topic;
+        if (metadata.keyPoints) messageDiv.dataset.keyPoints = JSON.stringify(metadata.keyPoints);
+    }
 
     // Avatar
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'message-avatar';
-    if (role === 'user') {
+    if (role === 'user' || isLiveTranscript) {
         avatarDiv.innerHTML = `
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -498,7 +524,24 @@ export function addMessage(role, text, save = true) {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
 
-    if (role === 'assistant') {
+    // Handle live insight formatting
+    if (isLiveInsight && metadata.topic && metadata.keyPoints) {
+        const topic = metadata.topic;
+        const keyPoints = metadata.keyPoints;
+
+        let insightHTML = `<div class="live-insight-content">`;
+        insightHTML += `<h4 class="insight-topic">${topic}</h4>`;
+        if (keyPoints && keyPoints.length > 0) {
+            insightHTML += `<ul class="insight-points">`;
+            keyPoints.forEach(point => {
+                insightHTML += `<li>${point}</li>`;
+            });
+            insightHTML += `</ul>`;
+        }
+        insightHTML += `</div>`;
+
+        contentDiv.innerHTML = insightHTML;
+    } else if (role === 'assistant' && !isLiveInsight) {
         contentDiv.innerHTML = renderMarkdown(text);
         setTimeout(() => addCopyButtonsToCodeBlocks(contentDiv), 0);
     } else {
@@ -507,8 +550,8 @@ export function addMessage(role, text, save = true) {
 
     contentDiv.setAttribute('data-original-text', text);
 
-    // Action Buttons (Assistant only)
-    if (role === 'assistant') {
+    // Action Buttons
+    if (role === 'assistant' && !isLiveInsight) {
         const actionButtons = document.createElement('div');
         actionButtons.className = 'message-actions';
         actionButtons.innerHTML = `
@@ -552,14 +595,45 @@ export function addMessage(role, text, save = true) {
         contentWrapper.appendChild(actionButtons);
     }
 
+    // Pin button for live insights
+    if (isLiveInsight) {
+        const pinButton = document.createElement('button');
+        pinButton.className = `message-action-btn pin-btn${isPinned ? ' pinned' : ''}`;
+        pinButton.title = isPinned ? 'Unpin insight' : 'Pin insight';
+        pinButton.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v6m0 0l4-4m-4 4L8 4m4 4v6m0 0l-3 3m3-3l3 3"/>
+                <path d="M12 17v5"/>
+            </svg>
+        `;
+
+        pinButton.addEventListener('click', () => {
+            togglePinInsight(messageDiv);
+        });
+
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'message-actions';
+        actionButtons.appendChild(pinButton);
+        contentWrapper.appendChild(actionButtons);
+    }
+
     // Timestamp
     const timestampDiv = document.createElement('div');
     timestampDiv.className = 'message-time';
     const now = new Date();
-    timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let timestampText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Speaker Button (Assistant only)
-    if (role === 'assistant') {
+    // Add badge for live mode messages
+    if (isLiveTranscript) {
+        timestampText += ' • Live Transcript';
+    } else if (isLiveInsight) {
+        timestampText += ' • AI Insight';
+    }
+
+    timestampDiv.textContent = timestampText;
+
+    // Speaker Button (Assistant only, not for live insights)
+    if (role === 'assistant' && !isLiveInsight) {
         const speakerBtn = document.createElement('button');
         speakerBtn.className = 'message-speaker-btn';
         speakerBtn.innerHTML = `
@@ -586,7 +660,7 @@ export function addMessage(role, text, save = true) {
         messages.appendChild(messageDiv);
 
         // Reactions
-        if (role === 'assistant') {
+        if (role === 'assistant' && !isLiveInsight) {
             const messageId = 'msg-' + Date.now() + '-' + Math.random();
             messageDiv.dataset.messageId = messageId;
             setTimeout(() => {
@@ -602,6 +676,40 @@ export function addMessage(role, text, save = true) {
     if (save) {
         setTimeout(saveConversation, 100);
     }
+}
+
+/**
+ * Toggle pin status for live insight
+ */
+function togglePinInsight(messageDiv) {
+    const isPinned = messageDiv.classList.contains('pinned');
+
+    if (isPinned) {
+        messageDiv.classList.remove('pinned');
+        messageDiv.dataset.pinned = 'false';
+        const pinBtn = messageDiv.querySelector('.pin-btn');
+        if (pinBtn) {
+            pinBtn.classList.remove('pinned');
+            pinBtn.title = 'Pin insight';
+            const svg = pinBtn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', 'none');
+        }
+        showToast('Insight unpinned', 'info');
+    } else {
+        messageDiv.classList.add('pinned');
+        messageDiv.dataset.pinned = 'true';
+        const pinBtn = messageDiv.querySelector('.pin-btn');
+        if (pinBtn) {
+            pinBtn.classList.add('pinned');
+            pinBtn.title = 'Unpin insight';
+            const svg = pinBtn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', 'currentColor');
+        }
+        showToast('Insight pinned', 'success');
+    }
+
+    // Save conversation to persist pin status
+    saveConversation();
 }
 
 /**
@@ -858,14 +966,19 @@ async function loadSettings() {
         state.ttsEnabled = (engine !== 'none');
         localStorage.setItem('ttsEngine', engine);
 
-        // Sync LLM Model
+        // Sync LLM Model - backend is source of truth
         const serverType = config.server?.type || 'ollama';
         const model = serverType === 'lm-studio' ?
             config.lm_studio?.model : config.ollama?.model;
+
         if (model) {
+            // Update UI to reflect current backend state
             state.currentModel = model;
             const modelSelect = document.getElementById('modelSelect');
             if (modelSelect) modelSelect.value = model;
+
+            // Save current backend state to localStorage for reference
+            localStorage.setItem('selectedModel', model);
         }
 
         // Sync Whisper Model
@@ -887,6 +1000,66 @@ async function loadSettings() {
         }
         if (config.tts?.edge_voice) {
             localStorage.setItem('edgeVoice', config.tts.edge_voice);
+        }
+
+        // Sync AI Parameters
+        const configSection = serverType === 'lm-studio' ? 'lm_studio' : 'ollama';
+        const aiConfig = config[configSection];
+
+        if (aiConfig) {
+            if (aiConfig.temperature !== undefined) {
+                localStorage.setItem('aiTemperature', aiConfig.temperature);
+                const tempSlider = document.getElementById('temperatureSlider');
+                const tempValue = document.getElementById('temperatureValue');
+                if (tempSlider) tempSlider.value = aiConfig.temperature;
+                if (tempValue) tempValue.textContent = aiConfig.temperature;
+            }
+            if (aiConfig.max_tokens !== undefined) {
+                localStorage.setItem('aiMaxTokens', aiConfig.max_tokens);
+                const maxTokensInput = document.getElementById('maxTokensInput');
+                if (maxTokensInput) maxTokensInput.value = aiConfig.max_tokens;
+            }
+            if (aiConfig.system_prompt !== undefined) {
+                localStorage.setItem('aiSystemPrompt', aiConfig.system_prompt);
+                const systemPromptTextarea = document.getElementById('systemPromptTextarea');
+                if (systemPromptTextarea) systemPromptTextarea.value = aiConfig.system_prompt;
+            }
+        }
+
+        // Sync Server Settings
+        if (config.server) {
+            if (config.server.type) localStorage.setItem('serverType', config.server.type);
+            if (config.server.host) localStorage.setItem('serverHost', config.server.host);
+            if (config.server.port) localStorage.setItem('serverPort', config.server.port);
+
+            const serverTypeSelect = document.getElementById('serverTypeSelect');
+            const serverHost = document.getElementById('serverHost');
+            const serverPort = document.getElementById('serverPort');
+
+            if (serverTypeSelect) serverTypeSelect.value = config.server.type || 'ollama';
+            if (serverHost) serverHost.value = config.server.host || 'localhost';
+            if (serverPort) serverPort.value = config.server.port || '11434';
+        }
+
+        // Sync VAD Settings
+        if (config.vad) {
+            const vadEnabled = document.getElementById('vadEnabled');
+            const vadModeSlider = document.getElementById('vadModeSlider');
+            const vadModeValue = document.getElementById('vadModeValue');
+            const vadTimeoutSlider = document.getElementById('vadTimeoutSlider');
+            const vadTimeoutValue = document.getElementById('vadTimeoutValue');
+
+            if (vadEnabled) vadEnabled.checked = config.vad.enabled !== false;
+
+            if (config.vad.mode !== undefined) {
+                if (vadModeSlider) vadModeSlider.value = config.vad.mode;
+                if (vadModeValue) vadModeValue.textContent = config.vad.mode;
+            }
+
+            if (config.vad.speech_timeout !== undefined) {
+                if (vadTimeoutSlider) vadTimeoutSlider.value = config.vad.speech_timeout;
+                if (vadTimeoutValue) vadTimeoutValue.textContent = config.vad.speech_timeout + 's';
+            }
         }
     } else {
         // Fallback to localStorage if backend config fails
@@ -932,7 +1105,8 @@ function loadConversation() {
         if (messages) messages.classList.add('active');
 
         data.messages.forEach(msg => {
-            addMessage(msg.role, msg.content, false);
+            // Pass metadata for live mode messages
+            addMessage(msg.role, msg.content, false, msg.metadata || {});
         });
     } catch (err) {
         console.error('Failed to load conversation', err);
@@ -948,12 +1122,29 @@ function saveConversation() {
 
     messageElements.forEach(elem => {
         const isUser = elem.classList.contains('user');
-        const content = elem.querySelector('.message-content')?.textContent;
+        const isLiveTranscript = elem.classList.contains('live-transcript');
+        const isLiveInsight = elem.classList.contains('live-insight');
+        const content = elem.querySelector('.message-content')?.getAttribute('data-original-text') ||
+            elem.querySelector('.message-content')?.textContent;
+
         if (content) {
-            messages.push({
-                role: isUser ? 'user' : 'assistant',
+            const message = {
+                role: isLiveTranscript ? 'live-transcript' :
+                    isLiveInsight ? 'live-insight' :
+                        isUser ? 'user' : 'assistant',
                 content: content
-            });
+            };
+
+            // Save metadata for live mode messages
+            if (isLiveInsight) {
+                message.metadata = {
+                    topic: elem.dataset.topic || '',
+                    keyPoints: elem.dataset.keyPoints ? JSON.parse(elem.dataset.keyPoints) : [],
+                    pinned: elem.dataset.pinned === 'true'
+                };
+            }
+
+            messages.push(message);
         }
     });
 
@@ -1076,17 +1267,39 @@ function loadChatHistory() {
         const dateStr = date.toLocaleDateString();
         historyHTML += `
             <div class="history-item" data-chat-id="${chat.id}">
-                <div class="history-item-date">${dateStr}</div>
-                <div class="history-item-preview">${chat.preview}</div>
+                <div class="history-item-content">
+                    <div class="history-item-date">${dateStr}</div>
+                    <div class="history-item-preview">${chat.preview}</div>
+                </div>
+                <button class="history-item-delete" data-chat-id="${chat.id}" title="Delete conversation">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
             </div>
         `;
     });
 
     chatHistoryList.innerHTML = historyHTML;
 
+    // Add click listeners for loading chats
     chatHistoryList.querySelectorAll('.history-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
+            // Don't load chat if delete button was clicked
+            if (e.target.closest('.history-item-delete')) {
+                return;
+            }
             loadChatFromHistory(item.dataset.chatId);
+        });
+    });
+
+    // Add click listeners for delete buttons
+    chatHistoryList.querySelectorAll('.history-item-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent triggering the parent click
+            const chatId = btn.dataset.chatId;
+            deleteChatFromHistory(chatId);
         });
     });
 }
@@ -1106,7 +1319,8 @@ function loadChatFromHistory(chatId) {
     if (messages) messages.classList.add('active');
 
     chat.messages.forEach(msg => {
-        addMessage(msg.role, msg.content, false);
+        // Pass metadata for live mode messages
+        addMessage(msg.role, msg.content, false, msg.metadata || {});
     });
 
     localStorage.setItem('assistedVoiceConversation', JSON.stringify({
@@ -1119,6 +1333,18 @@ function loadChatFromHistory(chatId) {
     const overlay = document.getElementById('overlay');
     if (sideMenu) sideMenu.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
+}
+
+function deleteChatFromHistory(chatId) {
+    const history = getChatHistory();
+    const filteredHistory = history.filter(chat => chat.id !== chatId);
+
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(filteredHistory));
+
+    // Reload the chat history display
+    loadChatHistory();
+
+    showToast('Conversation deleted', 'success', 1500);
 }
 
 /**
@@ -1174,6 +1400,9 @@ function setupSettingsListeners() {
 
     // TTS Controls
     setupTTSControls();
+
+    // VAD Controls
+    setupVADSettings();
 }
 
 /**
@@ -1539,32 +1768,29 @@ export function setupServerSettings() {
         serverTypeSelect.addEventListener('change', (e) => {
             const serverType = e.target.value;
             localStorage.setItem('serverType', serverType);
-            showToast(`Server type will change to ${serverType} on restart`, 'info', 3000);
+            emit('update_server_config', { type: serverType });
+            showToast(`Server type changed to ${serverType}`, 'success', 2000);
         });
         console.log('Server type dropdown initialized');
     }
 
     // Server host input
     if (serverHost) {
-        const savedHost = localStorage.getItem('serverHost') || 'localhost';
-        serverHost.value = savedHost;
-
         serverHost.addEventListener('change', (e) => {
             const host = e.target.value;
             localStorage.setItem('serverHost', host);
-            showToast('Server host updated (restart required)', 'info', 2000);
+            emit('update_server_config', { host: host });
+            showToast(`Server host updated to ${host}`, 'success', 2000);
         });
     }
 
     // Server port input
     if (serverPort) {
-        const savedPort = localStorage.getItem('serverPort') || '1234';
-        serverPort.value = savedPort;
-
         serverPort.addEventListener('change', (e) => {
-            const port = e.target.value;
+            const port = parseInt(e.target.value);
             localStorage.setItem('serverPort', port);
-            showToast('Server port updated (restart required)', 'info', 2000);
+            emit('update_server_config', { port: port });
+            showToast(`Server port updated to ${port}`, 'success', 2000);
         });
     }
 
@@ -1603,6 +1829,55 @@ export function setupServerSettings() {
             }
         });
         console.log('Test connection button initialized');
+    }
+}
+
+/**
+ * Setup VAD Settings Controls
+ */
+export function setupVADSettings() {
+    console.log('Setting up VAD settings controls...');
+
+    const vadEnabled = document.getElementById('vadEnabled');
+    const vadModeSlider = document.getElementById('vadModeSlider');
+    const vadModeValue = document.getElementById('vadModeValue');
+    const vadTimeoutSlider = document.getElementById('vadTimeoutSlider');
+    const vadTimeoutValue = document.getElementById('vadTimeoutValue');
+
+    if (vadEnabled) {
+        vadEnabled.addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            emit('update_vad_config', { enabled });
+            showToast(`VAD ${enabled ? 'enabled' : 'disabled'}`, 'success', 1500);
+        });
+    }
+
+    if (vadModeSlider && vadModeValue) {
+        vadModeSlider.addEventListener('input', (e) => {
+            const mode = parseInt(e.target.value);
+            vadModeValue.textContent = mode;
+
+            // Debounce backend update
+            clearTimeout(window.vadModeDebounce);
+            window.vadModeDebounce = setTimeout(() => {
+                emit('update_vad_config', { mode });
+                showToast(`VAD Sensitivity set to ${mode}`, 'success', 1000);
+            }, 300);
+        });
+    }
+
+    if (vadTimeoutSlider && vadTimeoutValue) {
+        vadTimeoutSlider.addEventListener('input', (e) => {
+            const timeout = parseFloat(e.target.value);
+            vadTimeoutValue.textContent = timeout + 's';
+
+            // Debounce backend update
+            clearTimeout(window.vadTimeoutDebounce);
+            window.vadTimeoutDebounce = setTimeout(() => {
+                emit('update_vad_config', { speech_timeout: timeout });
+                showToast(`VAD Timeout set to ${timeout}s`, 'success', 1000);
+            }, 300);
+        });
     }
 }
 
@@ -1871,34 +2146,6 @@ function updateVADStatus(status) {
     // VAD status update
 }
 
-export function syncAISettingsToBackend() {
-    console.log('Syncing AI settings from localStorage to backend...');
-
-    // Send temperature
-    const temp = localStorage.getItem('aiTemperature');
-    if (temp) {
-        const temperature = parseFloat(temp);
-        emit('update_temperature', { temperature });
-        console.log(`Synced temperature: ${temperature}`);
-    }
-
-    // Send max tokens
-    const maxTokens = localStorage.getItem('aiMaxTokens');
-    if (maxTokens) {
-        const max_tokens = parseInt(maxTokens);
-        emit('update_max_tokens', { max_tokens });
-        console.log(`Synced max tokens: ${max_tokens}`);
-    }
-
-    // Send system prompt (CRITICAL: This fixes system prompt not persisting)
-    const systemPrompt = localStorage.getItem('aiSystemPrompt');
-    if (systemPrompt) {
-        emit('update_system_prompt', { system_prompt: systemPrompt });
-        console.log(`Synced system prompt (${systemPrompt.length} chars)`);
-    }
-
-    console.log('AI settings sync complete');
-}
 
 
 // Media player state

@@ -189,6 +189,19 @@ function setupEventListeners() {
         newChatBtn.addEventListener('click', startNewChat);
     }
 
+    // Clear chat button (from menu)
+    const clearChatBtn = document.getElementById('clearChatBtn');
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', () => {
+            clearCurrentConversation();
+            // Close the menu after clearing
+            const sideMenu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('overlay');
+            if (sideMenu) sideMenu.classList.remove('open');
+            if (overlay) overlay.classList.remove('active');
+        });
+    }
+
     // Clear conversation button
     const clearBtn = document.getElementById('clearBtn');
     if (clearBtn) {
@@ -674,7 +687,19 @@ export function addMessage(role, text, save = true, metadata = {}) {
     }
 
     if (save) {
-        setTimeout(saveConversation, 100);
+        setTimeout(() => {
+            saveConversation();
+            // Also save to history if this is a user message
+            if (role === 'user') {
+                const currentConversation = localStorage.getItem('assistedVoiceConversation');
+                if (currentConversation) {
+                    const data = JSON.parse(currentConversation);
+                    if (data.messages && data.messages.length > 0) {
+                        saveChatToHistory(data.messages, state.currentChatId);
+                    }
+                }
+            }
+        }, 100);
     }
 }
 
@@ -1154,6 +1179,9 @@ function saveConversation() {
             timestamp: Date.now(),
             messages: messages
         }));
+
+        // Also update chat history for current chat
+        saveChatToHistory(messages, state.currentChatId);
     }
 }
 
@@ -1171,7 +1199,11 @@ function clearCurrentConversation() {
     }
 
     const welcome = document.getElementById('welcome');
-    if (welcome) welcome.style.display = 'flex';
+    if (welcome) {
+        welcome.style.display = 'flex';
+        // Refresh model grid to ensure it's up to date
+        loadAvailableModels();
+    }
 
     // Clear localStorage
     localStorage.removeItem('assistedVoiceConversation');
@@ -1201,7 +1233,11 @@ function startNewChat() {
     }
 
     const welcome = document.getElementById('welcome');
-    if (welcome) welcome.style.display = 'flex';
+    if (welcome) {
+        welcome.style.display = 'flex';
+        // Refresh model grid to ensure it's up to date
+        loadAvailableModels();
+    }
 
     localStorage.removeItem('assistedVoiceConversation');
     state.currentChatId = Date.now().toString();

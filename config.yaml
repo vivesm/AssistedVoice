@@ -3,7 +3,7 @@
 # Server Configuration
 server:
   type: "ollama"           # Options: ollama, lm-studio, custom
-  host: "sagan.local"         # Server hostname or IP address
+  host: "host.docker.internal"         # Server hostname or IP address (use host.docker.internal for host-resident Ollama)
   port: 11434                  # Server port (11434 for Ollama, 1234 for LM Studio)
   timeout: 30                 # Connection timeout in seconds
   retry_attempts: 3           # Number of retry attempts on failure
@@ -107,3 +107,13 @@ performance:
   cache_responses: true       # Cache common responses
   max_cache_size: 100         # Maximum cached responses
   parallel_processing: true   # Process audio while generating response
+# Reading Mode
+reading_mode:
+  enabled: true
+  max_text_length: 200000        # Maximum characters allowed (hard limit)
+  chunk_size: 500                # Characters per TTS chunk
+  auto_advance: true             # Auto-advance to next chunk after TTS completes
+  
+  # Share integration
+  share_base_url: "https://share.vives.io"  # Base URL for textshare service
+  fetch_timeout: 10              # Seconds to wait for share fetch

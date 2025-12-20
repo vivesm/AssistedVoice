@@ -420,6 +420,10 @@ body {
 
 /* Welcome Screen */
 .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     margin: auto;
     text-align: center;
     max-width: 600px;

@@ -3,7 +3,7 @@
 # Server Configuration
 server:
   type: "lm-studio"           # Options: ollama, lm-studio, custom
-  host: "localhost"           # Server hostname or IP address
+  host: "sagan.local"         # Server hostname or IP address
   port: 1234                  # Server port (11434 for Ollama, 1234 for LM Studio)
   timeout: 30                 # Connection timeout in seconds
   retry_attempts: 3           # Number of retry attempts on failure

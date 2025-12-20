@@ -1,6 +1,8 @@
 # Core dependencies  
 faster-whisper                 # Speech recognition (optimized)
 ollama                         # LLM interface
+openai                         # OpenAI API client (for LM Studio compatibility)
+requests                       # HTTP library
 rich                           # Terminal UI
 sounddevice                    # Audio capture
 numpy                          # Audio processing

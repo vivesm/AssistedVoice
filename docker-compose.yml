@@ -17,6 +17,9 @@ services:
       - ./models:/app/models
       # Mount config for easy editing (optional - remove for production)
       - ./config.yaml:/app/config.yaml:ro
+      # Mount source code for development (Hot Reloading)
+      - ./static:/app/static
+      - ./templates:/app/templates
     environment:
       - HOST=0.0.0.0
       - PORT=5001

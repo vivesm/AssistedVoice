@@ -147,7 +147,7 @@
                 <div class="live-transcript-panel">
                     <div class="panel-header">
                         <h3>Live Transcript</h3>
-                        <span class="listening-indicator">
+                        <span class="listening-indicator" id="liveListeningIndicator">
                             <span class="pulse-dot"></span> Listening...
                         </span>
                     </div>
@@ -177,8 +177,8 @@
         <!-- Input Bar -->
         <footer class="input-bar">
             <div class="input-wrapper">
-                <input type="text" class="text-input" id="textInput" placeholder="Type a message..."
-                    autocomplete="off" />
+                <textarea class="text-input" id="textInput" placeholder="Type a message..." autocomplete="off"
+                    rows="1"></textarea>
 
                 <button class="voice-btn" id="voiceBtn">
                     <svg class="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -201,7 +201,7 @@
                 </button>
 
                 <button class="live-mode-btn" id="liveModeBtn"
-                    title="Toggle live assistant mode (continuous listening)">
+                    title="Toggle live mode: Click to start continuous listening and AI insights. Click again to exit.">
                     <svg class="live-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2">
                         <circle cx="12" cy="12" r="10" />
@@ -351,7 +351,7 @@
                         <option value="small">Small</option>
                         <option value="medium">Medium</option>
                         <option value="large">Large</option>
-                        <option value="turbo" selected>Turbo</option>
+                        <option value="turbo">Turbo</option>
                     </select>
                 </div>
 
@@ -755,6 +755,63 @@
         </svg>
         <span>Stop</span>
     </button>
+
+    <!-- Media Control Modal -->
+    <div class="media-control-modal" id="mediaControlModal" style="display: none;">
+        <div class="media-control-content">
+            <div class="media-control-header">
+                <div class="media-info">
+                    <svg class="media-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                    <span class="media-title">Playing Audio</span>
+                </div>
+                <button class="media-close-btn" id="mediaCloseBtn" title="Stop playback">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="media-progress-container">
+                <div class="media-progress-bar" id="mediaProgressBar">
+                    <div class="media-progress-fill" id="mediaProgressFill"></div>
+                    <div class="media-progress-handle" id="mediaProgressHandle"></div>
+                </div>
+                <div class="media-time-display">
+                    <span class="media-time-current" id="mediaTimeCurrent">0:00</span>
+                    <span class="media-time-total" id="mediaTimeTotal">0:00</span>
+                </div>
+            </div>
+
+            <div class="media-controls">
+                <button class="media-play-pause-btn" id="mediaPlayPauseBtn" title="Play/Pause">
+                    <svg class="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <svg class="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
+                        style="display: none;">
+                        <rect x="6" y="4" width="4" height="16"></rect>
+                        <rect x="14" y="4" width="4" height="16"></rect>
+                    </svg>
+                </button>
+
+                <div class="media-volume-control">
+                    <svg class="volume-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                    <input type="range" class="media-volume-slider" id="mediaVolumeSlider" min="0" max="100"
+                        value="100">
+                    <span class="media-volume-value" id="mediaVolumeValue">100%</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="/static/js/app_entry.js"></script>
 </body>

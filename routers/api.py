@@ -23,25 +23,15 @@ def register_api_routes(app, app_state):
         """Get current configuration"""
         config = app_state['config']
         return {
-            'whisper': {
-                'model': config['whisper']['model']
-            },
-            'ollama': {
-                'model': config.get('ollama', {}).get('model', 'unknown'),
-                'temperature': config.get('ollama', {}).get('temperature', 0.7),
-                'max_tokens': config.get('ollama', {}).get('max_tokens', 500)
-            },
-            'lm_studio': {
-                'model': config.get('lm_studio', {}).get('model', 'unknown'),
-                'temperature': config.get('lm_studio', {}).get('temperature', 0.7),
-                'max_tokens': config.get('lm_studio', {}).get('max_tokens', 500)
-            },
-            'tts': {
-                'engine': config['tts']['engine']
-            },
-            'server': {
-                'type': config.get('server', {}).get('type', 'ollama')
-            }
+            'whisper': config.get('whisper', {}),
+            'ollama': config.get('ollama', {}),
+            'lm_studio': config.get('lm_studio', {}),
+            'tts': config.get('tts', {}),
+            'server': config.get('server', {}),
+            'ui': config.get('ui', {}),
+            'audio': config.get('audio', {}),
+            'vad': config.get('vad', {}),
+            'performance': config.get('performance', {})
         }
 
     @app.get("/api/models", response_model=ModelListResponse, tags=["Models"])

@@ -3,6 +3,8 @@ Configuration helper functions for server settings
 """
 import os
 import logging
+import yaml
+from pathlib import Path
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -136,3 +138,27 @@ def is_ollama(config: dict) -> bool:
     """
     server_config = get_server_config(config)
     return server_config['type'] == 'ollama'
+
+
+def save_config_to_file(config: dict, file_path: str = 'config.yaml'):
+    """
+    Save configuration dictionary to YAML file.
+    
+    Args:
+        config: Configuration dictionary to save
+        file_path: Path to the YAML file
+    """
+    try:
+        # Create a copy to avoid internal state leaking to file
+        config_to_save = config.copy()
+        
+        # Remove volatile or large fields if they exist as a precaution
+        fields_to_remove = ['sio', 'stt', 'tts', 'chat_service', 'audio_service', 'model_service', 'llm']
+        for field in fields_to_remove:
+            if field in config_to_save:
+                del config_to_save[field]
+                
+        with open(file_path, 'w') as f:
+            yaml.dump(config_to_save, f, default_flow_style=False, sort_keys=False)
+        logger.info(f"Configuration saved to {file_path}")
+    except Exception as e:

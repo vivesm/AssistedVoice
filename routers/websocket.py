@@ -10,6 +10,7 @@ import asyncio
 import subprocess
 import numpy as np
 from services.live_assistant_service import LiveAssistantService
+from modules.config_helper import save_config_to_file
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         if 'live_pcm_buffers' in _state and sid in _state['live_pcm_buffers']:
             del _state['live_pcm_buffers'][sid]
             logger.debug(f"Cleaned up PCM buffer for {sid}")
+    
+        # Reset stitching state
+        if f'last_live_text_{sid}' in _state:
+            del _state[f'last_live_text_{sid}']
 
     @sio.event
     async def process_audio(sid, data):
@@ -196,6 +201,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
                 await sio.emit('model_changed', {'model': actual_model}, room=sid)
 
+                # Persist config
+                save_config_to_file(_state['config'])
+
         except Exception as e:
             logger.error(f"Error changing model: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
@@ -224,6 +232,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 await sio.emit('tts_changed', {'engine': engine, 'voice': voice}, room=sid)
                 logger.info(f"TTS engine changed to: {engine}, voice: {voice}")
 
+                # Persist config
+                save_config_to_file(_state['config'])
+
         except Exception as e:
             logger.error(f"Error changing TTS engine: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
@@ -245,6 +256,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                     
                 logger.info(f"TTS voice updated to: {voice} for engine: {engine}")
                 await sio.emit('status', {'message': f'Voice set to {voice}', 'type': 'ready'}, room=sid)
+
+                # Persist config
+                save_config_to_file(_state['config'])
             else:
                 logger.warning(f"Voice update requested but engine {type(_state['tts']).__name__} does not support set_voice or voice missing")
         except Exception as e:
@@ -269,6 +283,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
                 await sio.emit('whisper_model_changed', {'model': model}, room=sid)
                 logger.info(f"Whisper model changed to: {model}")
+
+                # Persist config
+                save_config_to_file(_state['config'])
 
         except Exception as e:
             logger.error(f"Error changing Whisper model: {e}")
@@ -326,6 +343,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
                 await sio.emit('status', {'message': f'Temperature set to {temperature}', 'type': 'ready'}, room=sid)
 
+                # Persist config
+                save_config_to_file(_state['config'])
+
         except Exception as e:
             logger.error(f"Error updating temperature: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
@@ -345,6 +365,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 _state['config'][config_section]['max_tokens'] = max_tokens
 
                 await sio.emit('status', {'message': f'Max tokens set to {max_tokens}', 'type': 'ready'}, room=sid)
+
+                # Persist config
+                save_config_to_file(_state['config'])
 
         except Exception as e:
             logger.error(f"Error updating max tokens: {e}")
@@ -366,6 +389,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
                 await sio.emit('status', {'message': 'System prompt updated', 'type': 'ready'}, room=sid)
 
+                # Persist config
+                save_config_to_file(_state['config'])
+
         except Exception as e:
             logger.error(f"Error updating system prompt: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
@@ -381,6 +407,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 _state['config']['tts']['pitch'] = pitch
                 logger.info(f"Voice pitch updated to {pitch}")
                 await sio.emit('status', {'message': f'Voice pitch updated to {pitch}', 'type': 'ready'}, room=sid)
+                
+                # Persist config
+                save_config_to_file(_state['config'])
             else:
                 logger.warning("Current TTS engine does not support pitch adjustment")
         except Exception as e:
@@ -431,6 +460,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 _state['config']['tts']['rate'] = rate
                 logger.info(f"Speech rate updated to {rate}")
                 await sio.emit('status', {'message': f'Speech rate updated to {rate}', 'type': 'ready'}, room=sid)
+
+                # Persist config
+                save_config_to_file(_state['config'])
         except Exception as e:
             logger.error(f"Error updating speech rate: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
@@ -450,6 +482,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 # Update config
                 _state['config']['tts']['volume'] = vol_str
                 logger.info(f"Voice volume updated to {vol_str}")
+
+                # Persist config
+                save_config_to_file(_state['config'])
         except Exception as e:
             logger.error(f"Error updating voice volume: {e}")
 
@@ -555,7 +590,9 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             # Convert bytes to numpy Float32 array
             pcm_array = np.frombuffer(pcm_bytes, dtype=np.float32)
 
-            logger.info(f"Received live PCM chunk: {len(pcm_array)} samples from {sid}")
+            # Calculate RMS for volume debugging
+            rms = np.sqrt(np.mean(pcm_array**2))
+            logger.info(f"Received live PCM chunk: {len(pcm_array)} samples, RMS: {rms:.6f} from {sid}")
 
             # Get sample rate from client
             sample_rate = data.get('sampleRate', 16000)
@@ -572,8 +609,8 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             # Calculate total samples buffered
             total_samples = sum(len(chunk) for chunk in _state['live_pcm_buffers'][sid])
 
-            # Target: ~2.5 seconds of audio (faster feedback)
-            target_samples = sample_rate * 2.5
+            # Target: ~1.5 seconds of audio (snappy for 'small' model)
+            target_samples = sample_rate * 1.5
 
             logger.info(f"Buffer status: {total_samples}/{target_samples} samples ({total_samples/sample_rate:.2f}s accumulated)")
 
@@ -587,7 +624,7 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                     _state['stt'].model.transcribe,
                     full_audio,
                     language=_state['config']['whisper']['language'],
-                    vad_filter=True,  # Enable VAD to filter silence/noise
+                    vad_filter=False,  # Disable VAD filter for live mode to prevent aggressive cut-offs
                     beam_size=1  # Fast decoding for real-time
                 )
 
@@ -598,38 +635,67 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 # Log transcription result
                 logger.info(f"Transcription result: '{transcription}' (segments: {len(segments_list)}, duration: {info.duration:.2f}s)")
 
-                # Keep last 1 second for context continuity
-                keep_samples = sample_rate * 1
+                # Keep last 0.75 seconds for context continuity
+                keep_samples = int(sample_rate * 0.75)
                 if len(full_audio) > keep_samples:
                     _state['live_pcm_buffers'][sid] = [full_audio[-keep_samples:]]
                 else:
                     _state['live_pcm_buffers'][sid] = []
 
-                # Only emit if we got transcription
                 if transcription:
-                    # Add to live assistant buffer
-                    _state['live_assistant'].add_transcript(transcription)
+                    # Improved stitching: find overlap by words
+                    prev_text = _state.get(f'last_live_text_{sid}', "")
+                    
+                    # Split into words for comparison
+                    prev_words = prev_text.lower().split()
+                    curr_words = transcription.lower().split()
+                    
+                    # Find the longest suffix of prev_words that matches a prefix of curr_words
+                    overlap_count = 0
+                    for i in range(1, min(len(prev_words), len(curr_words)) + 1):
+                        if prev_words[-i:] == curr_words[:i]:
+                            overlap_count = i
+                    
+                    # The 'new' part is everything after the overlap
+                    # Use the original case/punctuation from the current transcription
+                    new_words_count = len(curr_words) - overlap_count
+                    if overlap_count > 0:
+                        # Re-split originally to keep punctuation
+                        original_curr_words = transcription.split()
+                        new_text = " ".join(original_curr_words[overlap_count:]).strip()
+                    else:
+                        new_text = transcription
+                    
+                    if not new_text:
+                        logger.info("No new words in this chunk (overlap only)")
+                    else:
+                        logger.info(f"✅ Live Transcription (New): '{new_text}'")
+                        _state[f'last_live_text_{sid}'] = transcription
 
-                    # Emit transcript immediately
-                    await sio.emit('live_transcript', {
-                        'text': transcription,
-                        'timestamp': data.get('timestamp', 0)
-                    }, room=sid)
+                        # Add to live assistant buffer
+                        _state['live_assistant'].add_transcript(new_text)
 
-                    # Check if should generate AI insight
-                    if _state['live_assistant'].should_generate_insight(interval_chunks=3):
-                        logger.info("Generating AI insight...")
-
-                        # Generate insight (run in thread pool to avoid blocking)
-                        insight = await asyncio.to_thread(_state['live_assistant'].generate_insight)
-
-                        # Emit AI insight
-                        await sio.emit('ai_insight', {
-                            'topic': insight['topic'],
-                            'key_points': insight['key_points']
+                        # Emit transcript immediately
+                        await sio.emit('live_transcript', {
+                            'text': new_text,
+                            'timestamp': data.get('timestamp', 0)
                         }, room=sid)
+
+                        # Check if should generate AI insight
+                        if _state['live_assistant'].should_generate_insight(interval_chunks=3):
+                            logger.info("🤖 Generating AI insight...")
+
+                            # Generate insight (run in thread pool to avoid blocking)
+                            insight = await asyncio.to_thread(_state['live_assistant'].generate_insight)
+                            logger.info(f"✨ AI Insight generated: {insight.get('topic', 'Unknown')}")
+
+                            # Emit AI insight
+                            await sio.emit('ai_insight', {
+                                'topic': insight['topic'],
+                                'key_points': insight['key_points']
+                            }, room=sid)
                 else:
-                    logger.warning(f"Empty transcription from {len(full_audio)} samples - likely silence or low volume")
+                    logger.info(f"🔇 Silent chunk (length: {len(full_audio)}) - no transcription")
 
         except Exception as e:
             logger.error(f"Error processing live PCM chunk: {e}")

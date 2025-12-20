@@ -46,7 +46,10 @@ export const state = {
     // Metrics
     firstTokenTime: null,
     messageStartTime: null,
-    tokenCount: 0
+    tokenCount: 0,
+
+    // Initialization flag to suppress redundant notifications on load
+    isInitializing: true
 };
 
 // Getters and Setters for convenience (optional, but helps with debugging)

@@ -111,6 +111,9 @@ test.describe('Main Interactions', () => {
         // Open settings to check if "Show Performance Metrics" checkbox exists
         await page.click('#settingsBtn');
 
+        // Switch to Advanced mode to see metrics setting
+        await page.click('#advancedModeBtn');
+
         const metricsCheckbox = page.locator('#showMetrics');
         await expect(metricsCheckbox).toBeVisible();
         await expect(metricsCheckbox).toBeChecked(); // Default is checked

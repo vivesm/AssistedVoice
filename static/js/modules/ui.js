@@ -67,6 +67,7 @@ export function initializeUI() {
     // Setup export and search
     setupExportFeature();
     setupConversationSearch();
+    setupShortcutsModal();
 
     // Setup progressive settings
     setupProgressiveSettings();
@@ -222,12 +223,6 @@ function setupEventListeners() {
     }
 }
 
-/**
- * Setup model selection listeners
- */
-/**
- * Setup model selection listeners
- */
 function setupModelSelection() {
     console.log('Setting up model selection listeners...');
 
@@ -296,6 +291,18 @@ function setupModelSelection() {
             emit('change_model', { model: selectedModel });
         });
         console.log('Model dropdown listener added');
+    }
+
+    // Setup Whisper model dropdown change listener
+    const whisperSelect = document.getElementById('whisperSelect');
+    if (whisperSelect) {
+        whisperSelect.addEventListener('change', (e) => {
+            const model = e.target.value;
+            if (!model) return;
+            console.log(`Switching Whisper model to: ${model}`);
+            emit('change_whisper_model', { model: model });
+            showToast(`Switching Whisper model to ${model}...`, 'info', 2000);
+        });
     }
 }
 
@@ -824,15 +831,73 @@ function scrollToBottom() {
 /**
  * Load settings
  */
-function loadSettings() {
-    // Load TTS Engine
-    const savedEngine = localStorage.getItem('ttsEngine');
-    if (savedEngine) {
-        state.currentTTSEngine = savedEngine;
-        state.ttsEnabled = (savedEngine !== 'none');
+/**
+ * Fetch current configuration from backend
+ */
+async function fetchConfig() {
+    try {
+        const response = await fetch('/config');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const config = await response.json();
+        console.log('Fetched backend config:', config);
+        return config;
+    } catch (err) {
+        console.error('Failed to fetch config from backend:', err);
+        return null;
+    }
+}
+
+async function loadSettings() {
+    console.log('Synchronizing settings with backend...');
+    const config = await fetchConfig();
+
+    if (config) {
+        // Sync TTS Engine
+        const engine = config.tts?.engine || 'edge-tts';
+        state.currentTTSEngine = engine;
+        state.ttsEnabled = (engine !== 'none');
+        localStorage.setItem('ttsEngine', engine);
+
+        // Sync LLM Model
+        const serverType = config.server?.type || 'ollama';
+        const model = serverType === 'lm-studio' ?
+            config.lm_studio?.model : config.ollama?.model;
+        if (model) {
+            state.currentModel = model;
+            const modelSelect = document.getElementById('modelSelect');
+            if (modelSelect) modelSelect.value = model;
+        }
+
+        // Sync Whisper Model
+        const whisperModel = config.whisper?.model;
+        if (whisperModel) {
+            const whisperSelect = document.getElementById('whisperSelect');
+            if (whisperSelect) whisperSelect.value = whisperModel;
+        }
+
+        // Sync TTS Parameters
+        if (config.tts?.rate) {
+            const rateStr = config.tts.rate.replace('%', '');
+            const rate = 1.0 + (parseFloat(rateStr) / 100);
+            localStorage.setItem('ttsRate', rate.toFixed(1));
+        }
+        if (config.tts?.pitch) {
+            const pitch = config.tts.pitch.replace('Hz', '').replace('+', '');
+            localStorage.setItem('ttsPitch', pitch);
+        }
+        if (config.tts?.edge_voice) {
+            localStorage.setItem('edgeVoice', config.tts.edge_voice);
+        }
+    } else {
+        // Fallback to localStorage if backend config fails
+        const savedEngine = localStorage.getItem('ttsEngine');
+        if (savedEngine) {
+            state.currentTTSEngine = savedEngine;
+            state.ttsEnabled = (savedEngine !== 'none');
+        }
     }
 
-    // Update mute button
+    // Update mute button UI
     const muteBtn = document.getElementById('muteBtn');
     if (muteBtn) {
         const speakerOnIcon = muteBtn.querySelector('.speaker-on-icon');
@@ -1115,19 +1180,31 @@ function setupSettingsListeners() {
  * Theme Setup
  */
 function setupTheme() {
-    const themeToggle = document.getElementById('themeToggle');
+    const themeButtons = document.querySelectorAll('.theme-btn');
     const savedTheme = localStorage.getItem('theme') || 'dark';
 
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    if (themeToggle) {
-        themeToggle.checked = savedTheme === 'light';
-        themeToggle.addEventListener('change', () => {
-            const newTheme = themeToggle.checked ? 'light' : 'dark';
+    // Initial button state
+    themeButtons.forEach(btn => {
+        if (btn.dataset.theme === savedTheme) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+
+        btn.addEventListener('click', () => {
+            const newTheme = btn.dataset.theme;
             document.documentElement.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
+
+            // Update active state
+            themeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            showToast(`Theme changed to ${newTheme}`, 'info', 1000);
         });
-    }
+    });
 }
 
 /**
@@ -1415,6 +1492,30 @@ export function setupTTSControls() {
             emit('preview_voice', { voice, text });
         });
     }
+
+    // Voice Favorite
+    const voiceFavoriteBtn = document.getElementById('voiceFavoriteBtn');
+    if (voiceFavoriteBtn) {
+        // Initial state
+        const savedFavorite = localStorage.getItem('favoriteVoice') === (edgeVoiceSelect ? edgeVoiceSelect.value : '');
+        if (savedFavorite) voiceFavoriteBtn.classList.add('active');
+
+        voiceFavoriteBtn.addEventListener('click', () => {
+            const currentVoice = edgeVoiceSelect ? edgeVoiceSelect.value : '';
+            if (!currentVoice) return;
+
+            const isFavorite = voiceFavoriteBtn.classList.contains('active');
+            if (isFavorite) {
+                voiceFavoriteBtn.classList.remove('active');
+                localStorage.removeItem('favoriteVoice');
+                showToast('Removed from favorites', 'info', 1000);
+            } else {
+                voiceFavoriteBtn.classList.add('active');
+                localStorage.setItem('favoriteVoice', currentVoice);
+                showToast('Added to favorites!', 'success', 1000);
+            }
+        });
+    }
 }
 
 
@@ -1677,8 +1778,93 @@ function setupConversationSearch() {
     });
 }
 
+function setupShortcutsModal() {
+    const modal = document.getElementById('shortcutsModal');
+    const closeBtn = document.getElementById('closeShortcuts');
+
+    if (!modal) return;
+
+    const openModal = () => {
+        modal.style.display = 'flex';
+    };
+
+    const closeModal = () => {
+        modal.style.display = 'none';
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Toggle shortcuts with '?' (Shift + /)
+        if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            // Don't trigger if user is typing in an input
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+            const isVisible = modal.style.display === 'flex';
+            if (isVisible) closeModal();
+            else openModal();
+        }
+
+        // Close on ESC
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+}
+
 function setupProgressiveSettings() {
-    // Progressive settings logic
+    const basicBtn = document.getElementById('basicModeBtn');
+    const advancedBtn = document.getElementById('advancedModeBtn');
+    const settingsPanel = document.getElementById('settingsPanel');
+
+    if (!basicBtn || !advancedBtn || !settingsPanel) return;
+
+    const setLevel = (level) => {
+        localStorage.setItem('settingsLevel', level);
+
+        // Update buttons
+        if (level === 'basic') {
+            basicBtn.classList.add('active');
+            advancedBtn.classList.remove('active');
+            settingsPanel.classList.add('basic-mode');
+            settingsPanel.classList.remove('advanced-mode');
+        } else {
+            basicBtn.classList.remove('active');
+            advancedBtn.classList.add('active');
+            settingsPanel.classList.add('advanced-mode');
+            settingsPanel.classList.remove('basic-mode');
+        }
+
+        // Filter items
+        const items = settingsPanel.querySelectorAll('.setting-item, .settings-section');
+        items.forEach(item => {
+            const itemLevel = item.dataset.settingsLevel || 'advanced';
+            if (level === 'basic' && itemLevel === 'advanced') {
+                item.style.display = 'none';
+            } else {
+                item.style.display = '';
+            }
+        });
+    };
+
+    basicBtn.addEventListener('click', () => {
+        setLevel('basic');
+        showToast('Switched to Basic Settings', 'info', 1000);
+    });
+
+    advancedBtn.addEventListener('click', () => {
+        setLevel('advanced');
+        showToast('Switched to Advanced Settings', 'info', 1000);
+    });
+
+    // Initial state
+    const savedLevel = localStorage.getItem('settingsLevel') || 'basic';
+    setLevel(savedLevel);
 }
 
 function updateVADStatus(status) {
@@ -1714,13 +1900,169 @@ export function syncAISettingsToBackend() {
     console.log('AI settings sync complete');
 }
 
+
+// Media player state
+let mediaPlayerInterval = null;
+let currentMediaAudio = null;
+
 function showMiniPlayer(audio, text) {
-    // Mini player
+    console.log('showMiniPlayer called');
+
+    const modal = document.getElementById('mediaControlModal');
+    const playPauseBtn = document.getElementById('mediaPlayPauseBtn');
+    const playIcon = playPauseBtn?.querySelector('.play-icon');
+    const pauseIcon = playPauseBtn?.querySelector('.pause-icon');
+    const closeBtn = document.getElementById('mediaCloseBtn');
+    const progressBar = document.getElementById('mediaProgressBar');
+    const progressFill = document.getElementById('mediaProgressFill');
+    const progressHandle = document.getElementById('mediaProgressHandle');
+    const timeCurrent = document.getElementById('mediaTimeCurrent');
+    const timeTotal = document.getElementById('mediaTimeTotal');
+    const volumeSlider = document.getElementById('mediaVolumeSlider');
+    const volumeValue = document.getElementById('mediaVolumeValue');
+
+    if (!modal || !audio) return;
+
+    // Store reference to current audio
+    currentMediaAudio = audio;
+
+    // Show modal
+    modal.style.display = 'block';
+
+    // Format time helper
+    const formatTime = (seconds) => {
+        if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Update progress
+    const updateProgress = () => {
+        if (!audio || audio.paused || audio.ended) return;
+
+        const progress = (audio.currentTime / audio.duration) * 100;
+        if (progressFill) progressFill.style.width = `${progress}%`;
+        if (progressHandle) progressHandle.style.left = `${progress}%`;
+        if (timeCurrent) timeCurrent.textContent = formatTime(audio.currentTime);
+        if (timeTotal) timeTotal.textContent = formatTime(audio.duration);
+    };
+
+    // Set initial volume from slider
+    const savedVolume = parseInt(localStorage.getItem('voiceVolume') || '100');
+    if (volumeSlider) volumeSlider.value = savedVolume;
+    if (volumeValue) volumeValue.textContent = `${savedVolume}%`;
+    audio.volume = savedVolume / 100;
+
+    // Play/Pause button
+    if (playPauseBtn) {
+        playPauseBtn.onclick = () => {
+            if (audio.paused) {
+                audio.play();
+                if (playIcon) playIcon.style.display = 'none';
+                if (pauseIcon) pauseIcon.style.display = 'block';
+            } else {
+                audio.pause();
+                if (playIcon) playIcon.style.display = 'block';
+                if (pauseIcon) pauseIcon.style.display = 'none';
+            }
+        };
+    }
+
+    // Close button
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            audio.pause();
+            audio.currentTime = 0;
+            hideMiniPlayer();
+            if (state.currentAudio === audio) {
+                state.currentAudio = null;
+            }
+        };
+    }
+
+    // Progress bar click to seek
+    if (progressBar) {
+        progressBar.onclick = (e) => {
+            const rect = progressBar.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percentage = clickX / rect.width;
+            audio.currentTime = percentage * audio.duration;
+            updateProgress();
+        };
+    }
+
+    // Volume slider
+    if (volumeSlider) {
+        volumeSlider.oninput = (e) => {
+            const volume = parseInt(e.target.value);
+            audio.volume = volume / 100;
+            if (volumeValue) volumeValue.textContent = `${volume}%`;
+            localStorage.setItem('voiceVolume', volume);
+        };
+    }
+
+    // Audio event listeners
+    audio.addEventListener('loadedmetadata', () => {
+        if (timeTotal) timeTotal.textContent = formatTime(audio.duration);
+    });
+
+    audio.addEventListener('play', () => {
+        if (playIcon) playIcon.style.display = 'none';
+        if (pauseIcon) pauseIcon.style.display = 'block';
+
+        // Start progress update interval
+        if (mediaPlayerInterval) clearInterval(mediaPlayerInterval);
+        mediaPlayerInterval = setInterval(updateProgress, 100);
+    });
+
+    audio.addEventListener('pause', () => {
+        if (playIcon) playIcon.style.display = 'block';
+        if (pauseIcon) pauseIcon.style.display = 'none';
+
+        if (mediaPlayerInterval) {
+            clearInterval(mediaPlayerInterval);
+            mediaPlayerInterval = null;
+        }
+    });
+
+    audio.addEventListener('ended', () => {
+        if (playIcon) playIcon.style.display = 'block';
+        if (pauseIcon) pauseIcon.style.display = 'none';
+
+        if (mediaPlayerInterval) {
+            clearInterval(mediaPlayerInterval);
+            mediaPlayerInterval = null;
+        }
+
+        // Auto-hide after a short delay
+        setTimeout(() => {
+            hideMiniPlayer();
+        }, 1000);
+    });
+
+    // Initial progress update
+    updateProgress();
 }
 
 function hideMiniPlayer() {
-    // Hide mini player
+    console.log('hideMiniPlayer called');
+
+    const modal = document.getElementById('mediaControlModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+
+    // Clear interval
+    if (mediaPlayerInterval) {
+        clearInterval(mediaPlayerInterval);
+        mediaPlayerInterval = null;
+    }
+
+    // Clear audio reference
+    currentMediaAudio = null;
 }
+
 
 function clearLiveUI() {
     // Clear live UI

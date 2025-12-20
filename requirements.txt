@@ -1,34 +1,36 @@
 # Core dependencies  
-faster-whisper                 # Speech recognition (optimized)
-ollama                         # LLM interface
-openai                         # OpenAI API client (for LM Studio compatibility)
-requests                       # HTTP library
-rich                           # Terminal UI
-sounddevice                    # Audio capture
-numpy                          # Audio processing
+faster-whisper==1.0.3          # Speech recognition (optimized)
+ollama==0.4.7                  # LLM interface
+openai==1.63.2                 # OpenAI API client
+requests==2.32.3               # HTTP library
+rich==13.9.4                   # Terminal UI
+sounddevice==0.5.3             # Audio capture
+numpy==2.3.5                  # Audio processing
 
 # Audio processing
-pyaudio                        # Audio I/O
-webrtcvad                      # Voice activity detection
+pyaudio==0.2.14                # Audio I/O
+webrtcvad==2.0.10              # Voice activity detection
 
 # Configuration
-pyyaml                         # Config file parsing
-python-dotenv                  # Environment variables
+pyyaml==6.0.3                  # Config file parsing
+python-dotenv==1.2.1           # Environment variables
+pydantic==2.12.5                # Data validation
 
 # Text-to-Speech
-pyttsx3                        # Fallback TTS engine
-edge-tts                       # Microsoft Edge TTS (realistic voices)
+pyttsx3==2.99                  # Fallback TTS engine
+edge-tts==7.2.7                # Microsoft Edge TTS
 
 # Web interface
-python-socketio[asyncio]       # Socket.IO with async support
-fastapi                        # Modern async web framework
-uvicorn[standard]              # ASGI server with WebSocket support
-jinja2                         # Template engine for FastAPI
-aiofiles                       # Async file I/O
+python-socketio[asyncio]==5.15.1# Socket.IO
+fastapi==0.125.0               # Modern async web framework
+uvicorn[standard]==0.38.0      # ASGI server
+jinja2==3.1.6                 # Template engine
+aiofiles==25.1.0              # Async file I/O
+httpx==0.28.1                  # Async HTTP client
 
 # Utilities
-keyboard                       # Keyboard input detection
+keyboard==0.13.5               # Keyboard input detection
 
 # Testing
-pytest                         # Testing framework
-pytest-cov                     # Coverage reporting
+pytest==9.0.2                  # Testing framework
+pytest-cov==7.0.0              # Coverage reporting

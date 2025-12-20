@@ -7,9 +7,9 @@ class AudioProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
 
-        // Buffer size: ~300ms at 16kHz = 4800 samples
-        // This provides good balance between latency and efficiency
-        this.bufferSize = 4800;
+        // Buffer size: ~250ms at 16kHz = 4000 samples
+        // Balanced for real-time feel vs CPU stability
+        this.bufferSize = 4000;
         this.buffer = [];
 
         console.log('AudioProcessor initialized');

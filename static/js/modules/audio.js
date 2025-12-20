@@ -153,6 +153,7 @@ export function stopRecording() {
 export async function startLiveMode() {
     try {
         console.log('Starting live assistant mode...');
+        showToast('Activating live mode...', 'info');
 
         // Clear old content
         if (state.ui && state.ui.clearLiveUI) state.ui.clearLiveUI();
@@ -177,28 +178,49 @@ export async function startLiveMode() {
         const source = state.liveAudioContext.createMediaStreamSource(state.liveAudioStream);
 
         // Load and create AudioWorklet processor
+        console.log('[Live Mode] Loading audio-processor.js...');
         await state.liveAudioContext.audioWorklet.addModule('/static/audio-processor.js');
         state.liveAudioWorklet = new AudioWorkletNode(state.liveAudioContext, 'audio-processor');
+        console.log('[Live Mode] AudioWorkletNode created');
 
         // Handle PCM data
         state.liveAudioWorklet.port.onmessage = (event) => {
             if (!state.isLiveMode) return;
 
             const pcmFloat32 = event.data;
+
+            // Debug: Check if audio is non-silent
+            let maxVal = 0;
+            for (let i = 0; i < pcmFloat32.length; i++) maxVal = Math.max(maxVal, Math.abs(pcmFloat32[i]));
+
+            if (maxVal > 0.01) {
+                console.log(`[Live Mode] Audio activity detected: max amplitude ${maxVal.toFixed(4)}`);
+            }
+
             const base64PCM = arrayBufferToBase64(pcmFloat32.buffer);
 
-            if (state.socket) {
+            if (state.socket && state.socket.connected) {
                 state.socket.emit('live_pcm_chunk', {
                     audio: base64PCM,
                     sampleRate: 16000,
                     channels: 1,
                     timestamp: Date.now()
                 });
+            } else if (state.socket) {
+                console.warn('[Live Mode] Socket disconnected, cannot send PCM chunk');
+            } else {
+                console.error('[Live Mode] No socket connection!');
             }
         };
 
+
         source.connect(state.liveAudioWorklet);
         state.isLiveMode = true;
+
+        // Start visualization for live mode too
+        initAudioVisualization(state.liveAudioStream);
+
+        console.log('[Live Mode] Audio pipeline connected, listening for PCM chunks...');
 
         // Update UI
         const liveModeBtn = document.getElementById('liveModeBtn');
@@ -210,10 +232,23 @@ export async function startLiveMode() {
         if (liveAssistantContainer) liveAssistantContainer.style.display = 'grid';
 
         updateStatus('Live mode active - continuous listening', 'ready');
+        showToast('Live mode activated! Speak naturally. Click LIVE button again to exit.', 'success', 4000);
 
     } catch (error) {
         console.error('Error starting live mode:', error);
-        showError('Failed to start live mode: ' + error.message);
+
+        // Provide user-friendly error messages
+        let errorMessage = 'Failed to start live mode';
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            errorMessage = 'Microphone access denied. Please allow microphone permissions and try again.';
+        } else if (error.name === 'NotFoundError') {
+            errorMessage = 'No microphone found. Please connect a microphone and try again.';
+        } else if (error.message) {
+            errorMessage += ': ' + error.message;
+        }
+
+        showToast(errorMessage, 'error', 5000);
+        showError(errorMessage);
         stopLiveMode();
     }
 }
@@ -242,6 +277,9 @@ export function stopLiveMode() {
 
     state.isLiveMode = false;
 
+    // Stop visualization
+    stopAudioVisualization();
+
     // Update UI
     const liveModeBtn = document.getElementById('liveModeBtn');
     const messagesContainer = document.getElementById('messages');
@@ -256,6 +294,7 @@ export function stopLiveMode() {
     }
 
     updateStatus('Ready', 'ready');
+    showToast('Live mode deactivated', 'info');
 }
 
 /**

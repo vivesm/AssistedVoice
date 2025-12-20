@@ -1,7 +1,7 @@
 /**
  * Main entry point for AssistedVoice
  */
-console.log('main.js START - Module loaded');
+import { state } from './modules/state.js';
 import { initializeWebSocket } from './modules/websocket.js';
 import { initializeUI, registerUIFunctions } from './modules/ui.js?v=2';
 
@@ -16,6 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize WebSocket connection
     initializeWebSocket();
+
+    // Mark initialization as complete after a short delay to allow sync events to finish silently
+    setTimeout(() => {
+        state.isInitializing = false;
+        console.log('Initialization phase complete, UI notifications enabled');
+    }, 1500);
 
     console.log('AssistedVoice initialized successfully');
 });

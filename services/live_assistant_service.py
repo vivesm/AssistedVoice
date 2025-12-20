@@ -22,7 +22,7 @@ class LiveAssistantService:
         self.transcript_buffer: List[Dict] = []
         self.chunk_count = 0
         self.recent_transcripts: List[Dict] = []  # Track recent transcripts for deduplication
-        self.dedupe_window = 10  # Deduplication window in seconds
+        self.dedupe_window = 3  # Reduced from 10 to prevent dropping quick continuous speech
 
     def add_transcript(self, text: str) -> None:
         """

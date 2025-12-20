@@ -204,7 +204,97 @@ function setupSocketListeners() {
         updateVADStatus('silence');
     });
 
+    // Live mode events
+    socket.on('live_transcript', (data) => {
+        console.log('[Live Mode] Received transcript:', data.text);
+
+        const liveTranscriptContent = document.getElementById('liveTranscriptContent');
+        if (liveTranscriptContent) {
+            // Remove placeholder if it exists
+            const placeholder = liveTranscriptContent.querySelector('.placeholder-text');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            // Add new transcript segment
+            const transcriptSegment = document.createElement('p');
+            transcriptSegment.className = 'transcript-segment';
+            transcriptSegment.textContent = data.text;
+            transcriptSegment.style.marginBottom = '8px';
+            transcriptSegment.style.opacity = '0';
+            transcriptSegment.style.animation = 'fadeIn 0.3s ease-out forwards';
+
+            liveTranscriptContent.appendChild(transcriptSegment);
+
+            // Auto-scroll to bottom
+            liveTranscriptContent.scrollTop = liveTranscriptContent.scrollHeight;
+        }
+    });
+
+    socket.on('ai_insight', (data) => {
+        console.log('[Live Mode] Received AI insight:', data);
+
+        const aiInsightsContent = document.getElementById('aiInsightsContent');
+        if (aiInsightsContent) {
+            // Remove placeholder if it exists
+            const placeholder = aiInsightsContent.querySelector('.insight-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            // Create insight card
+            const insightCard = document.createElement('div');
+            insightCard.className = 'insight-card';
+            insightCard.style.cssText = `
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 16px;
+                opacity: 0;
+                animation: fadeIn 0.5s ease-out forwards;
+            `;
+
+            // Topic
+            const topic = document.createElement('h4');
+            topic.textContent = data.topic || 'Insight';
+            topic.style.cssText = `
+                margin: 0 0 12px 0;
+                color: var(--primary);
+                font-size: 1rem;
+                font-weight: 600;
+            `;
+            insightCard.appendChild(topic);
+
+            // Key points
+            if (data.key_points && data.key_points.length > 0) {
+                const pointsList = document.createElement('ul');
+                pointsList.style.cssText = `
+                    margin: 0;
+                    padding-left: 20px;
+                    color: var(--text);
+                    line-height: 1.6;
+                `;
+
+                data.key_points.forEach(point => {
+                    const li = document.createElement('li');
+                    li.textContent = point;
+                    li.style.marginBottom = '8px';
+                    pointsList.appendChild(li);
+                });
+
+                insightCard.appendChild(pointsList);
+            }
+
+            aiInsightsContent.appendChild(insightCard);
+
+            // Auto-scroll to bottom
+            aiInsightsContent.scrollTop = aiInsightsContent.scrollHeight;
+        }
+    });
+
     // Model events
+
     socket.on('model_changed', (data) => {
         console.log('Model changed event received:', data);
 
@@ -213,7 +303,13 @@ function setupSocketListeners() {
 
         // Update status
         updateStatus('Ready', 'ready');
-        showToast(`Model switched to ${data.model}`, 'success');
+
+        // Suppress model changed toast during initialization
+        if (!state.isInitializing) {
+            showToast(`Model switched to ${data.model}`, 'success');
+        } else {
+            console.log(`[WS] Model sync on load: ${data.model}`);
+        }
 
         // Update dropdown if exists
         const modelSelect = document.getElementById('modelSelect');
@@ -245,6 +341,9 @@ export function emit(event, data) {
     if (state.socket && state.socket.connected) {
         state.socket.emit(event, data);
     } else {
-        showToast('Not connected to server', 'error');
+        // Only show error if not initializing
+        if (!state.isInitializing) {
+            showToast('Not connected to server', 'error');
+        }
     }
 }

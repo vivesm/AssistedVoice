@@ -1,6 +1,4 @@
-/**
- * Utility functions for AssistedVoice
- */
+import { state } from './state.js';
 
 // Request/Response logging
 const REQUEST_LOG_ENABLED = true; // Enable for debugging
@@ -33,7 +31,7 @@ export function renderMarkdown(text) {
     // Configure marked.js with highlight.js integration
     if (typeof marked !== 'undefined') {
         marked.setOptions({
-            highlight: function(code, lang) {
+            highlight: function (code, lang) {
                 if (typeof hljs !== 'undefined') {
                     if (lang && hljs.getLanguage(lang)) {
                         try {
@@ -149,6 +147,12 @@ export function addCopyButtonsToCodeBlocks(container) {
 
 // Toast Notification System
 export function showToast(message, type = 'success', duration = 2000) {
+    // Suppress info and success toasts during initialization
+    if (state.isInitializing && (type === 'success' || type === 'info')) {
+        console.log(`[TOAST SUPPRESSED during init] (${type}): ${message}`);
+        return;
+    }
+
     const container = document.getElementById('toastContainer');
     if (!container) return;
 

@@ -14,9 +14,15 @@ logger = logging.getLogger(__name__)
 class MCPSearchService:
     """Web search service using Brave MCP Server via Docker"""
 
-    def __init__(self):
-        """Initialize MCP search service (API key is configured in Docker)"""
-        self._available = self._check_docker_available()
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize MCP search service
+        
+        Args:
+            api_key: Brave API key. Falls back to BRAVE_API_KEY env var.
+        """
+        self.api_key = api_key or os.getenv("BRAVE_API_KEY")
+        self._docker_available = self._check_docker_available()
     
     def _check_docker_available(self) -> bool:
         """Check if Docker and MCP image are available"""
@@ -32,7 +38,7 @@ class MCPSearchService:
     
     def is_available(self) -> bool:
         """Check if search service is available"""
-        return self._available
+        return self._docker_available and bool(self.api_key)
     
     def _call_mcp_tool(self, tool_name: str, arguments: dict) -> Optional[dict]:
         """
@@ -45,6 +51,10 @@ class MCPSearchService:
         Returns:
             Tool result or None on error
         """
+        if not self.api_key:
+            logger.error("Brave API key not configured")
+            return None
+            
         # JSON-RPC request for MCP
         request = {
             "jsonrpc": "2.0",
@@ -57,13 +67,13 @@ class MCPSearchService:
         }
         
         try:
-            # Run Docker MCP container (API key is pre-configured in Docker)
+            # Use shell with echo pipe - workaround for Docker stdin handling
+            request_json = json.dumps(request).replace("'", "'\\''")  # Escape single quotes
+            cmd = f"echo '{request_json}' | docker run -i --rm -e BRAVE_API_KEY={self.api_key} mcp/brave-search"
+            
             result = subprocess.run(
-                [
-                    "docker", "run", "-i", "--rm",
-                    "mcp/brave-search"
-                ],
-                input=json.dumps(request),
+                cmd,
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -71,6 +81,10 @@ class MCPSearchService:
             
             if result.returncode != 0:
                 logger.error(f"MCP Docker error: {result.stderr}")
+                return None
+            
+            if not result.stdout.strip():
+                logger.error("MCP returned empty response")
                 return None
             
             # Parse JSON-RPC response
@@ -112,24 +126,23 @@ class MCPSearchService:
         if not result:
             return []
         
-        # Parse MCP result content
+        # Parse MCP result content - each item in content is a separate search result
         try:
             content = result.get("content", [])
-            if content and len(content) > 0:
-                # MCP returns content as list of text blocks
-                text_content = content[0].get("text", "")
-                data = json.loads(text_content)
-                
-                results = []
-                for item in data.get("web", {}).get("results", [])[:count]:
+            results = []
+            
+            for item in content[:count]:
+                if item.get("type") == "text":
+                    text = item.get("text", "")
+                    data = json.loads(text)
                     results.append({
-                        "title": item.get("title", ""),
-                        "url": item.get("url", ""),
-                        "description": item.get("description", "")
+                        "title": data.get("title", ""),
+                        "url": data.get("url", ""),
+                        "description": data.get("description", "")
                     })
-                
-                logger.info(f"MCP search for '{query}' returned {len(results)} results")
-                return results
+            
+            logger.info(f"MCP search for '{query}' returned {len(results)} results")
+            return results
         except Exception as e:
             logger.error(f"Failed to parse MCP search results: {e}")
         

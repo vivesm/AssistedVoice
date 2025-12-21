@@ -103,19 +103,27 @@ async def initialize_components():
 
         # Initialize services
         from services.reading_service import ReadingService
-        from services.search_service import get_search_service
+        from services.mcp_service import get_brave_search, get_context7, get_playwright
         
-        search_service = get_search_service()
+        # Collect available MCP services
+        mcp_services = {
+            'search': get_brave_search(),
+            'context7': get_context7(),
+            'playwright': get_playwright(),
+        }
+        
         app_state['model_service'] = ModelService(app_state['llm'], app_state['config'])
-        app_state['chat_service'] = ChatService(app_state['llm'], search_service=search_service)
+        app_state['chat_service'] = ChatService(app_state['llm'], mcp_services=mcp_services)
         app_state['audio_service'] = AudioService(app_state['stt'], app_state['tts'])
         app_state['reading_service'] = ReadingService(app_state['config'])
         app_state['initialized']['services'] = True
         
-        if search_service.is_available():
-            logger.info("✓ Services initialized (web search enabled)")
+        # Log available MCP tools
+        available_tools = [name for name, svc in mcp_services.items() if svc.is_available()]
+        if available_tools:
+            logger.info(f"✓ Services initialized (MCP tools: {', '.join(available_tools)})")
         else:
-            logger.info("✓ Services initialized (web search disabled - set BRAVE_API_KEY)")
+            logger.info("✓ Services initialized (no MCP tools available)")
 
         # Re-register WebSocket handlers if SIO is available
         if app_state['sio']:

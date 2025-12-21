@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AssistedVoice is a local AI voice assistant that runs entirely on macOS, combining Whisper speech recognition with Ollama/LM Studio language models for private, offline AI conversations through a modern web interface.
+AssistedVoice is an intelligent AI bridge and execution engine that runs on macOS, providing high-performance LLM orchestration, multimodal vision handling, and MCP tool integration through a modern web interface and Signal bot integration.
 
-**Architecture**: Modern async FastAPI backend with Socket.IO for real-time communication, modular service layer (chat, audio, models), Pydantic validation, and automatic OpenAPI documentation.
+**Architecture**: Modern async FastAPI backend with Socket.IO for real-time communication. It features a modular service layer with 7 integrated MCP tools (Docker-based), vision-aware model routing, SQLite persistence for conversation history, and optimized caching.
 
 ## Distributed Setup (New)
 
@@ -38,6 +38,16 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2:3b    # Fast, lightweight
 ollama pull deepseek-r1:8b  # Better quality
 ollama pull mistral:7b      # Good balance
+ollama pull qwen2-vl:latest # Recommended for vision
+
+# Pull MCP images (Docker Desktop required)
+docker pull mcp/brave-search
+docker pull mcp/context7
+docker pull mcp/playwright
+docker pull mcp/docker
+docker pull mcp/desktop-commander
+docker pull mcp/memory
+docker pull mcp/sequential-thinking
 ```
 
 ### Running the Application
@@ -73,9 +83,9 @@ uvicorn web_assistant:socket_app --reload --port 5001
 # Run all tests
 pytest tests/
 
-# Run specific test categories
-pytest tests/unit/
-pytest tests/integration/
+# Run specific functional logic tests
+PYTHONPATH=. ./venv/bin/python3 tests/test_mcp_logic.py
+pytest tests/unit/test_database_service.py
 
 # Run with coverage
 pytest --cov=modules tests/
@@ -101,14 +111,23 @@ pytest --cov=modules tests/
 - Automatic device detection (Metal/CUDA/CPU)
 
 **Language Model** (`modules/llm.py` and `modules/llm_factory.py`)
-- Factory pattern (`create_llm()`) supports multiple backends
-- OllamaLLM and OptimizedOllamaLLM (with caching) for Ollama
-- LMStudioLLM (`modules/llm_lmstudio.py`) for LM Studio OpenAI-compatible API
-- BaseLLM (`modules/llm_base.py`) interface for extensibility
-- ConversationManager for context management
-- Automatic fallback to working models
-- Performance metrics tracking (response time, tokens/second)
-- Server type auto-detection
+- Factory pattern (`create_llm()`) supports Ollama, OpenAILLM, GeminiLLM, and NullLLM.
+- All backends implement `BaseLLM` interface for multimodal (`images`) support.
+- OptimizedOllamaLLM (multi-core optimized) with response caching.
+- Vision-aware model names (automatic detection of vision capabilities).
+- Performance metrics tracking (response time, tokens/second).
+
+**MCP Tools Layer** (`services/mcp_service.py` and `services/chat_service.py`)
+- Integration with 7 Docker-based MCP servers:
+  - `search` (Brave Search), `docs` (Context7), `browse` (Playwright)
+  - `docker` (Local Docker), `desktop` (Desktop Commander)
+  - `memory` (Knowledge Graph), `thinking` (Sequential Thinking)
+- Intent detection via regex patterns and prefix commands.
+- Automated prompt augmentation with tool results.
+
+**Database Layer** (`services/database_service.py`)
+- SQLite-backed conversation persistence.
+- Automatic session management and message retrieval.
 
 **Text-to-Speech** (`modules/tts.py`)
 - Multiple engines: Edge TTS (neural voices), macOS (system voices), pyttsx3

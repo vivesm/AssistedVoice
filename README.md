@@ -106,6 +106,21 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - **Conversation Persistence**: Chat history with metadata survives browser refreshes
 - **Model Identification**: Each response shows which model generated it
 
+### 🔧 MCP Tools Integration (NEW)
+Your assistant can automatically use external tools via Docker MCP servers:
+
+| Intent | Trigger Phrases | Tool Used | Capability |
+|--------|----------------|-----------|------------|
+| **Web Search** | "search for...", "what's the latest...", "current news about..." | Brave Search | Real-time web results |
+| **Code Docs** | "docs for...", "how to use...", "documentation..." | Context7 | Up-to-date library docs |
+| **Browse Web** | "open...", "visit...", "browse..." | Playwright | Read page content |
+
+Additional MCP services available for custom integrations:
+- **Docker MCP**: Manage containers, images, logs
+- **Desktop Commander**: File system, terminal commands, process management
+
+**Setup**: Requires Docker Desktop with MCP images pulled. See MCP configuration below.
+
 ### 🚀 Optimized for Apple Silicon
 - Metal Performance Shaders acceleration
 - Whisper models for accurate transcription
@@ -221,6 +236,54 @@ tts:
   rate: 180                   # Words per minute
 ```
 
+### MCP Tools (Docker)
+MCP (Model Context Protocol) tools extend your assistant with external capabilities via Docker containers.
+
+**Prerequisites:**
+- Docker Desktop installed and running
+- MCP Docker images pulled
+
+**Pull the MCP images:**
+```bash
+docker pull mcp/brave-search      # Web search
+docker pull mcp/context7          # Code documentation
+docker pull mcp/playwright        # Browser automation
+docker pull mcp/docker            # Container management
+docker pull mcp/desktop-commander # File system & terminal
+```
+
+**Environment variables (`.env`):**
+```bash
+BRAVE_API_KEY=your-brave-api-key  # Get from https://brave.com/search/api/
+```
+
+**Available MCP Services:**
+| Service | Docker Image | Capabilities |
+|---------|--------------|--------------|
+| Brave Search | `mcp/brave-search` | Web, news, image, video search |
+| Context7 | `mcp/context7` | Library documentation lookup |
+| Playwright | `mcp/playwright` | Browser automation, screenshots |
+| Docker | `mcp/docker` | Container/image management |
+| Desktop Commander | `mcp/desktop-commander` | File CRUD, terminal, processes |
+
+**Usage in code:**
+```python
+from services.mcp_service import (
+    get_brave_search, get_context7, get_playwright,
+    get_docker, get_desktop_commander
+)
+
+# Web search
+results = get_brave_search().search("AI news")
+
+# Get library docs
+docs = get_context7().lookup_docs("fastapi", topic="routing")
+
+# Browse a page
+content = get_playwright().get_page_content("https://example.com")
+```
+
+
 ## Models
 
 ### Recommended Models by Hardware
@@ -260,7 +323,8 @@ AssistedVoice/
 │   ├── pages.py         # Page routes with Jinja2
 │   └── websocket.py     # Async Socket.IO event handlers
 ├── services/            # Business logic layer
-│   ├── chat_service.py  # Chat conversation management
+│   ├── chat_service.py  # Chat with MCP tool integration
+│   ├── mcp_service.py   # Docker MCP client (Brave, Context7, Playwright, Docker, Desktop Commander)
 │   ├── audio_service.py # Audio processing
 │   └── model_service.py # Model switching and management
 ├── modules/             # Core components

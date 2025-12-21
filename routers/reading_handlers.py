@@ -83,16 +83,20 @@ async def reading_play(sid, data=None):
         _state['reading_service'].set_state(sid, 'playing')
         
         # Get current chunk
-        chunk_text = _state['reading_service'].get_current_chunk(sid)
-        if not chunk_text:
+        chunk = _state['reading_service'].get_current_chunk(sid)
+        if not chunk:
             await sio.emit('reading_complete', {}, room=sid)
             _state['reading_service'].set_state(sid, 'stopped')
             return
+        
+        chunk_text = chunk['text']
         
         # Send chunk info
         progress = _state['reading_service'].get_progress(sid)
         await sio.emit('reading_chunk', {
             'text': chunk_text,
+            'start_offset': chunk.get('start', 0),
+            'end_offset': chunk.get('end', 0),
             'progress': progress
         }, room=sid)
         

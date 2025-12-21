@@ -30,7 +30,7 @@ class ReadingService:
         # Session storage: sid -> session data
         self.sessions: Dict[str, Dict] = {}
         
-    def chunk_text(self, text: str, max_chunk_size: int = None) -> List[str]:
+    def chunk_text(self, text: str, max_chunk_size: int = None) -> List[Dict]:
         """
         Split text into manageable chunks for TTS, respecting sentence boundaries
         
@@ -39,53 +39,65 @@ class ReadingService:
             max_chunk_size: Maximum characters per chunk (defaults to config value)
             
         Returns:
-            List of text chunks
+            List of dictionaries with 'text', 'start', and 'end' keys
         """
         if max_chunk_size is None:
             max_chunk_size = self.chunk_size
             
-        # If text is shorter than chunk size, return as single chunk
-        if len(text) <= max_chunk_size:
-            return [text.strip()] if text.strip() else []
+        if not text.strip():
+            return []
         
         chunks = []
-        current_chunk = ""
         
         # Split by sentences (periods, exclamation marks, question marks)
-        # This regex keeps the punctuation with the sentence
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        # Using finditer to keep track of indices
+        sentence_pattern = re.compile(r'(.*?[.!?])(?:\s+|$)', re.DOTALL)
+        matches = list(sentence_pattern.finditer(text))
         
-        for sentence in sentences:
-            # If adding this sentence would exceed chunk size
-            if len(current_chunk) + len(sentence) > max_chunk_size:
-                # If current chunk has content, save it
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                    current_chunk = ""
-                
-                # If single sentence is too long, split by words
-                if len(sentence) > max_chunk_size * 1.5:  # Allow 50% overflow for single sentences
-                    words = sentence.split()
-                    temp_chunk = ""
-                    
-                    for word in words:
-                        if len(temp_chunk) + len(word) + 1 > max_chunk_size:
-                            if temp_chunk.strip():
-                                chunks.append(temp_chunk.strip())
-                            temp_chunk = word
-                        else:
-                            temp_chunk += (" " + word) if temp_chunk else word
-                    
-                    if temp_chunk.strip():
-                        current_chunk = temp_chunk
-                else:
-                    current_chunk = sentence
-            else:
-                current_chunk += (" " + sentence) if current_chunk else sentence
+        if not matches:
+             # Fallback if no sentence boundaries found
+             return [{'text': text.strip(), 'start': 0, 'end': len(text)}]
+
+        current_chunk_text = ""
+        current_start = -1
+        last_match_end = 0
         
-        # Add remaining chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
+        for match in matches:
+            sentence = match.group(0)
+            sentence_start = match.start()
+            
+            # If adding this sentence would exceed chunk size (unless chunk is empty)
+            if current_chunk_text and len(current_chunk_text) + len(sentence) > max_chunk_size:
+                # Save current chunk
+                chunks.append({
+                    'text': current_chunk_text.strip(),
+                    'start': current_start,
+                    'end': current_start + len(current_chunk_text)
+                })
+                # Reset
+                current_chunk_text = ""
+                current_start = -1
+
+            if current_start == -1:
+                current_start = sentence_start
+            
+            current_chunk_text += sentence
+            last_match_end = match.end()
+        
+        # Add remaining text if any
+        remaining = text[last_match_end:].strip()
+        if remaining:
+            if not current_chunk_text:
+                current_start = last_match_end + (text[last_match_end:].find(remaining))
+            current_chunk_text += remaining
+        
+        # Add final chunk
+        if current_chunk_text.strip():
+            chunks.append({
+                'text': current_chunk_text.strip(),
+                'start': current_start,
+                'end': current_start + len(current_chunk_text)
+            })
         
         return chunks
     
@@ -176,8 +188,8 @@ class ReadingService:
             del self.sessions[sid]
             logger.info(f"Deleted reading session for {sid}")
     
-    def get_current_chunk(self, sid: str) -> Optional[str]:
-        """Get current chunk text"""
+    def get_current_chunk(self, sid: str) -> Optional[Dict]:
+        """Get current chunk dictionary"""
         session = self.get_session(sid)
         if not session:
             return None
@@ -189,12 +201,12 @@ class ReadingService:
             return chunks[index]
         return None
     
-    def get_next_chunk(self, sid: str) -> Optional[str]:
+    def get_next_chunk(self, sid: str) -> Optional[Dict]:
         """
         Advance to next chunk and return it
         
         Returns:
-            Next chunk text, or None if at end
+            Next chunk dictionary, or None if at end
         """
         session = self.get_session(sid)
         if not session:
@@ -208,12 +220,12 @@ class ReadingService:
         
         return session['chunks'][session['current_index']]
     
-    def get_previous_chunk(self, sid: str) -> Optional[str]:
+    def get_previous_chunk(self, sid: str) -> Optional[Dict]:
         """
         Go back to previous chunk and return it
         
         Returns:
-            Previous chunk text, or None if at beginning
+            Previous chunk dictionary, or None if at beginning
         """
         session = self.get_session(sid)
         if not session:
@@ -227,7 +239,7 @@ class ReadingService:
         
         return session['chunks'][session['current_index']]
     
-    def seek_to_chunk(self, sid: str, chunk_index: int) -> Optional[str]:
+    def seek_to_chunk(self, sid: str, chunk_index: int) -> Optional[Dict]:
         """
         Seek to specific chunk index
         
@@ -236,7 +248,7 @@ class ReadingService:
             chunk_index: Target chunk index (0-based)
             
         Returns:
-            Chunk text at index, or None if invalid
+            Chunk dictionary at index, or None if invalid
         """
         session = self.get_session(sid)
         if not session:
@@ -287,10 +299,14 @@ class ReadingService:
         else:
             percentage = 0
         
+        current_chunk = self.get_current_chunk(sid) or {}
+        
         return {
             'current_chunk': current_index,
             'total_chunks': total_chunks,
-            'current_text': self.get_current_chunk(sid) or "",
+            'current_text': current_chunk.get('text', ""),
+            'start_offset': current_chunk.get('start', 0),
+            'end_offset': current_chunk.get('end', 0),
             'progress_percentage': round(percentage, 1),
             'state': session['state'],
             'source': session['source']

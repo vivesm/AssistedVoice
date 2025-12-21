@@ -115,3 +115,207 @@ def register_api_routes(app, app_state):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
             )
+
+    # ========== Conversation API Endpoints ==========
+
+    @app.get("/api/conversations", tags=["Conversations"])
+    async def list_conversations(limit: int = 50):
+        """Get all conversations"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            conversations = db.get_all_conversations(limit=limit)
+            return {"conversations": conversations}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error listing conversations: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.get("/api/conversations/{conversation_id}", tags=["Conversations"])
+    async def get_conversation(conversation_id: str):
+        """Get a conversation with all messages"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            conversation = db.get_conversation(conversation_id)
+            if not conversation:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found"
+                )
+            return conversation
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting conversation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.post("/api/conversations", tags=["Conversations"])
+    async def create_conversation(data: dict):
+        """Create a new conversation"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            
+            conversation_id = data.get('id')
+            if not conversation_id:
+                import time
+                conversation_id = str(int(time.time() * 1000))
+            
+            title = data.get('title', 'New Chat')
+            model = data.get('model')
+            messages = data.get('messages', [])
+            
+            if messages:
+                # Save full conversation with messages
+                conversation = db.save_full_conversation(
+                    conversation_id=conversation_id,
+                    messages=messages,
+                    model=model
+                )
+            else:
+                # Create empty conversation
+                conversation = db.create_conversation(
+                    conversation_id=conversation_id,
+                    title=title,
+                    model=model
+                )
+            
+            return conversation
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating conversation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.put("/api/conversations/{conversation_id}", tags=["Conversations"])
+    async def update_conversation(conversation_id: str, data: dict):
+        """Update a conversation"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            
+            # If messages provided, save full conversation
+            messages = data.get('messages')
+            if messages:
+                conversation = db.save_full_conversation(
+                    conversation_id=conversation_id,
+                    messages=messages,
+                    model=data.get('model')
+                )
+                return conversation
+            
+            # Otherwise just update metadata
+            success = db.update_conversation(
+                conversation_id=conversation_id,
+                title=data.get('title'),
+                model=data.get('model')
+            )
+            
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found"
+                )
+            
+            return db.get_conversation(conversation_id)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating conversation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.delete("/api/conversations/{conversation_id}", tags=["Conversations"])
+    async def delete_conversation(conversation_id: str):
+        """Delete a conversation"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            
+            success = db.delete_conversation(conversation_id)
+            
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Conversation not found"
+                )
+            
+            return {"success": True, "message": "Conversation deleted"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error deleting conversation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.post("/api/conversations/{conversation_id}/messages", tags=["Conversations"])
+    async def add_message(conversation_id: str, data: dict):
+        """Add a message to a conversation"""
+        try:
+            db = app_state.get('database_service')
+            if not db:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database service not available"
+                )
+            
+            role = data.get('role')
+            content = data.get('content')
+            
+            if not role or not content:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Message must have role and content"
+                )
+            
+            message = db.add_message(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                metadata=data.get('metadata')
+            )
+            
+            return message
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error adding message: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )

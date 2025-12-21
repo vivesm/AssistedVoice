@@ -617,6 +617,11 @@ body {
     transform: scale(1.05);
 }
 
+.message.user {
+    margin-left: auto;
+    flex-direction: row-reverse;
+}
+
 .message.user .message-avatar {
     background: linear-gradient(135deg, var(--primary), var(--accent));
     border: none;
@@ -1516,9 +1521,12 @@ kbd {
 .message-time {
     font-size: 0.7rem;
     color: var(--text-dim);
-    margin-top: 12px;
+    margin-top: 8px;
     padding: 0 18px;
     opacity: 0.8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .live-badge {
@@ -1719,7 +1727,6 @@ kbd {
 }
 
 .message-speaker-btn {
-    margin-left: 8px;
     display: inline-flex;
     vertical-align: middle;
 }
@@ -1858,7 +1865,27 @@ kbd {
 .media-controls {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
+}
+
+.media-prev-btn,
+.media-next-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.media-prev-btn:hover,
+.media-next-btn:hover {
+    background: var(--surface-light);
+    color: var(--text-primary);
 }
 
 .media-play-pause-btn {

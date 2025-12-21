@@ -2,6 +2,7 @@
  * Reading Mode Module
  * Handles text/share reading functionality with TTS playback
  */
+import { showMiniPlayer, hideMiniPlayer } from './ui.js';
 
 export class ReadingMode {
     constructor(state) {
@@ -168,6 +169,9 @@ export class ReadingMode {
             this.showPlayer();
             this.totalChunks.textContent = data.total_chunks;
             this.setStatus(`Loaded ${data.total_chunks} chunks`);
+
+            // Auto-start playback to show the media player modal immediately
+            this.play();
         });
 
         // Progress update
@@ -177,6 +181,7 @@ export class ReadingMode {
 
         // Chunk data with text
         socket.on('reading_chunk', (data) => {
+            console.log('Reading chunk:', data);
             this.currentChunkText.textContent = data.text;
             this.updateProgress(data.progress);
         });
@@ -191,6 +196,7 @@ export class ReadingMode {
             this.setStatus('Reading complete');
             this.isPlaying = false;
             this.showPlayButton();
+            hideMiniPlayer();
         });
 
         // Paused
@@ -205,10 +211,12 @@ export class ReadingMode {
             this.isPlaying = false;
             this.showPlayButton();
             this.setStatus('Stopped');
+
             if (this.currentAudio) {
                 this.currentAudio.pause();
                 this.currentAudio = null;
             }
+            hideMiniPlayer();
         });
 
         // Errors
@@ -462,6 +470,14 @@ export class ReadingMode {
         // Create and play new audio
         const audio = new Audio(audioBase64);
         this.currentAudio = audio;
+
+        // Use the centralized Media Player Modal
+        console.log('[ReadingMode] Showing central media player modal for chunk');
+        showMiniPlayer(audio, this.currentChunkText.textContent, {
+            onPrev: () => this.previous(),
+            onNext: () => this.next(),
+            onStop: () => this.stop()
+        });
 
         audio.play().catch(err => {
             console.error('Audio playback error:', err);

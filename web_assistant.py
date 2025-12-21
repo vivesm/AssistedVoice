@@ -28,6 +28,7 @@ from services.model_service import ModelService
 from services.chat_service import ChatService
 from services.audio_service import AudioService
 from services.reading_service import ReadingService
+from services.database_service import DatabaseService
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +50,7 @@ app_state = {
     'chat_service': None,
     'audio_service': None,
     'reading_service': None,
+    'database_service': None,
     'sio': None,
     'initialized': {
         'stt': False,
@@ -179,6 +181,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to load config.yaml: {e}")
         # Use default empty config to avoid crashes
         app_state['config'] = {'ui': {}, 'audio': {}, 'whisper': {}, 'tts': {}, 'server': {}, 'ollama': {}, 'performance': {}, 'vad': {}, 'reading_mode': {}}
+
+    # Initialize database service early (synchronous, fast)
+    try:
+        app_state['database_service'] = DatabaseService()
+        logger.info("✓ Database service initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database service: {e}")
 
     # Start initialization in background
     import asyncio

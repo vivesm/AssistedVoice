@@ -584,51 +584,6 @@ export function addMessage(role, text, save = true, metadata = {}) {
 
     contentDiv.setAttribute('data-original-text', text);
 
-    // Action Buttons
-    if (role === 'assistant' && !isLiveInsight) {
-        const actionButtons = document.createElement('div');
-        actionButtons.className = 'message-actions';
-        actionButtons.innerHTML = `
-            <button class="message-action-btn copy-btn" title="Copy message">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-            </button>
-            <button class="message-action-btn regenerate-btn" title="Regenerate response">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="1 4 1 10 7 10"/>
-                    <polyline points="23 20 23 14 17 14"/>
-                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                </svg>
-            </button>
-        `;
-
-        const copyBtn = actionButtons.querySelector('.copy-btn');
-        const regenerateBtn = actionButtons.querySelector('.regenerate-btn');
-
-        copyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(text);
-                showToast('Message copied!', 'success');
-            } catch (err) {
-                showToast('Failed to copy', 'error');
-            }
-        });
-
-        regenerateBtn.addEventListener('click', () => {
-            const messages = Array.from(document.querySelectorAll('.message.user'));
-            if (messages.length > 0) {
-                const lastUserMessage = messages[messages.length - 1];
-                const userText = lastUserMessage.querySelector('.message-content').textContent;
-                showToast('Regenerating...', 'info');
-                emit('process_text', { text: userText, enable_tts: state.ttsEnabled });
-            }
-        });
-
-        contentWrapper.appendChild(actionButtons);
-    }
-
     // Pin button for live insights
     if (isLiveInsight) {
         const pinButton = document.createElement('button');
@@ -666,10 +621,52 @@ export function addMessage(role, text, save = true, metadata = {}) {
 
     timestampDiv.textContent = timestampText;
 
-    // Speaker Button (Assistant only, not for live insights)
+    // Action buttons for assistant messages (copy, regenerate, speaker) - all in timestamp row
     if (role === 'assistant' && !isLiveInsight) {
+        // Copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-action-btn copy-btn';
+        copyBtn.title = 'Copy message';
+        copyBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+        `;
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Message copied!', 'success');
+            } catch (err) {
+                showToast('Failed to copy', 'error');
+            }
+        });
+
+        // Regenerate button
+        const regenerateBtn = document.createElement('button');
+        regenerateBtn.className = 'message-action-btn regenerate-btn';
+        regenerateBtn.title = 'Regenerate response';
+        regenerateBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"/>
+                <polyline points="23 20 23 14 17 14"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+        `;
+        regenerateBtn.addEventListener('click', () => {
+            const messages = Array.from(document.querySelectorAll('.message.user'));
+            if (messages.length > 0) {
+                const lastUserMessage = messages[messages.length - 1];
+                const userText = lastUserMessage.querySelector('.message-content').textContent;
+                showToast('Regenerating...', 'info');
+                emit('process_text', { text: userText, enable_tts: state.ttsEnabled });
+            }
+        });
+
+        // Speaker button
         const speakerBtn = document.createElement('button');
         speakerBtn.className = 'message-speaker-btn';
+        speakerBtn.title = 'Read aloud';
         speakerBtn.innerHTML = `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
@@ -680,8 +677,11 @@ export function addMessage(role, text, save = true, metadata = {}) {
             console.log('Speaker button clicked - replaying message:', text.substring(0, 50) + '...');
             emit('replay_text', { text: text, enable_tts: true });
         };
+
+        // Append all buttons to timestamp row
+        timestampDiv.appendChild(copyBtn);
+        timestampDiv.appendChild(regenerateBtn);
         timestampDiv.appendChild(speakerBtn);
-        console.log('Speaker button added to message (addMessage)');
     }
 
     contentWrapper.appendChild(contentDiv);
@@ -1144,6 +1144,14 @@ function loadConversation() {
 
         const data = JSON.parse(saved);
 
+        // Restore the chat ID to prevent duplicate entries on refresh
+        if (data.chatId) {
+            state.currentChatId = data.chatId;
+        } else if (data.timestamp) {
+            // Fallback: use timestamp as ID for backward compatibility
+            state.currentChatId = data.timestamp.toString();
+        }
+
         const welcome = document.getElementById('welcome');
         const messages = document.getElementById('messages');
 
@@ -1195,14 +1203,56 @@ function saveConversation() {
     });
 
     if (messages.length > 0) {
+        // Ensure we have a chatId
+        if (!state.currentChatId) {
+            state.currentChatId = Date.now().toString();
+        }
+
+        // Save to localStorage (immediate, always works)
         localStorage.setItem('assistedVoiceConversation', JSON.stringify({
             version: 3,
             timestamp: Date.now(),
+            chatId: state.currentChatId,
             messages: messages
         }));
 
-        // Also update chat history for current chat
-        saveChatToHistory(messages, state.currentChatId);
+        // Save to database API (async, persistent)
+        saveConversationToDatabase(state.currentChatId, messages);
+    }
+}
+
+/**
+ * Save conversation to database API
+ */
+async function saveConversationToDatabase(chatId, messages) {
+    try {
+        const response = await fetch(`/api/conversations/${chatId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: messages,
+                model: state.currentModel
+            })
+        });
+
+        if (!response.ok) {
+            // If conversation doesn't exist, create it
+            if (response.status === 404) {
+                await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: chatId,
+                        messages: messages,
+                        model: state.currentModel
+                    })
+                });
+            } else {
+                console.warn('Failed to save conversation to database:', response.status);
+            }
+        }
+    } catch (error) {
+        console.warn('Database save failed, using localStorage only:', error);
     }
 }
 
@@ -1286,38 +1336,13 @@ function startNewChat() {
 }
 
 /**
- * Chat History
+ * Chat History - Now uses database API with localStorage fallback
  */
-function saveChatToHistory(messages, chatId) {
-    if (!messages || messages.length === 0) return;
 
-    const id = chatId || Date.now().toString();
-    const firstMessage = messages.find(msg => msg.role === 'user');
-    const preview = firstMessage ? firstMessage.content.substring(0, 60) : 'New chat';
-
-    const chatData = {
-        id: id,
-        timestamp: new Date().toISOString(),
-        preview: preview,
-        messageCount: messages.length,
-        messages: messages
-    };
-
-    const history = getChatHistory();
-    const existingIndex = history.findIndex(chat => chat.id === id);
-
-    if (existingIndex !== -1) {
-        history[existingIndex] = chatData;
-    } else {
-        history.unshift(chatData);
-    }
-
-    if (history.length > 20) history.splice(20);
-
-    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(history));
-}
-
-function getChatHistory() {
+/**
+ * Get chat history from localStorage (fallback/cache)
+ */
+function getChatHistoryFromLocalStorage() {
     try {
         const history = localStorage.getItem('assistedVoiceChatHistory');
         return history ? JSON.parse(history) : [];
@@ -1326,13 +1351,57 @@ function getChatHistory() {
     }
 }
 
-function loadChatHistory() {
+/**
+ * Load chat history from database API
+ */
+async function loadChatHistory() {
     const chatHistoryList = document.getElementById('chatHistoryList');
     if (!chatHistoryList) return;
 
-    const history = getChatHistory();
+    // Show loading state
+    chatHistoryList.innerHTML = '<div class="history-empty">Loading...</div>';
 
-    if (history.length === 0) {
+    try {
+        // Try database API first
+        const response = await fetch('/api/conversations?limit=50');
+
+        if (response.ok) {
+            const data = await response.json();
+            const conversations = data.conversations || [];
+
+            // Cache to localStorage
+            const historyCache = conversations.map(conv => ({
+                id: conv.id,
+                timestamp: conv.updated_at || conv.created_at,
+                preview: conv.preview || conv.title || 'New chat',
+                messageCount: conv.message_count || 0
+            }));
+            localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(historyCache));
+
+            renderChatHistory(conversations.map(conv => ({
+                id: conv.id,
+                timestamp: conv.updated_at || conv.created_at,
+                preview: conv.preview || conv.title || 'New chat'
+            })));
+            return;
+        }
+    } catch (error) {
+        console.warn('Failed to load from database, using localStorage:', error);
+    }
+
+    // Fallback to localStorage
+    const history = getChatHistoryFromLocalStorage();
+    renderChatHistory(history);
+}
+
+/**
+ * Render chat history to the sidebar
+ */
+function renderChatHistory(history) {
+    const chatHistoryList = document.getElementById('chatHistoryList');
+    if (!chatHistoryList) return;
+
+    if (!history || history.length === 0) {
         chatHistoryList.innerHTML = '<div class="history-empty">No previous chats</div>';
         return;
     }
@@ -1345,7 +1414,7 @@ function loadChatHistory() {
             <div class="history-item" data-chat-id="${chat.id}">
                 <div class="history-item-content">
                     <div class="history-item-date">${dateStr}</div>
-                    <div class="history-item-preview">${chat.preview}</div>
+                    <div class="history-item-preview">${chat.preview || 'New chat'}</div>
                 </div>
                 <button class="history-item-delete" data-chat-id="${chat.id}" title="Delete conversation">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1380,47 +1449,150 @@ function loadChatHistory() {
     });
 }
 
-function loadChatFromHistory(chatId) {
-    const history = getChatHistory();
-    const chat = history.find(c => c.id === chatId);
-    if (!chat) return;
+/**
+ * Load a specific chat from history
+ */
+async function loadChatFromHistory(chatId) {
+    // Clear current chat first
+    const messagesContainer = document.getElementById('messages');
+    if (messagesContainer) {
+        messagesContainer.innerHTML = '';
+        messagesContainer.classList.remove('active');
+    }
 
-    startNewChat(); // Clear current
     state.currentChatId = chatId;
 
-    const welcome = document.getElementById('welcome');
-    const messages = document.getElementById('messages');
+    try {
+        // Try database API first
+        const response = await fetch(`/api/conversations/${chatId}`);
 
+        if (response.ok) {
+            const conversation = await response.json();
+
+            const welcome = document.getElementById('welcome');
+            if (welcome) welcome.style.display = 'none';
+            if (messagesContainer) messagesContainer.classList.add('active');
+
+            // Add messages to UI
+            if (conversation.messages) {
+                conversation.messages.forEach(msg => {
+                    addMessage(msg.role, msg.content, false, msg.metadata || {});
+                });
+            }
+
+            // Update localStorage cache
+            localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+                version: 3,
+                timestamp: Date.now(),
+                chatId: chatId,
+                messages: conversation.messages || []
+            }));
+
+            // Close menu
+            closeSideMenu();
+            return;
+        }
+    } catch (error) {
+        console.warn('Failed to load from database, trying localStorage:', error);
+    }
+
+    // Fallback to localStorage
+    const history = getChatHistoryFromLocalStorage();
+    const chat = history.find(c => c.id === chatId);
+    if (!chat || !chat.messages) {
+        showToast('Conversation not found', 'error');
+        return;
+    }
+
+    const welcome = document.getElementById('welcome');
     if (welcome) welcome.style.display = 'none';
-    if (messages) messages.classList.add('active');
+    if (messagesContainer) messagesContainer.classList.add('active');
 
     chat.messages.forEach(msg => {
-        // Pass metadata for live mode messages
         addMessage(msg.role, msg.content, false, msg.metadata || {});
     });
 
     localStorage.setItem('assistedVoiceConversation', JSON.stringify({
-        messages: chat.messages,
-        timestamp: chat.timestamp
+        version: 3,
+        timestamp: Date.now(),
+        chatId: chatId,
+        messages: chat.messages
     }));
 
-    // Close menu
-    const sideMenu = document.getElementById('sideMenu');
-    const overlay = document.getElementById('overlay');
-    if (sideMenu) sideMenu.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
+    closeSideMenu();
 }
 
-function deleteChatFromHistory(chatId) {
-    const history = getChatHistory();
-    const filteredHistory = history.filter(chat => chat.id !== chatId);
+/**
+ * Delete a chat from history
+ */
+async function deleteChatFromHistory(chatId) {
+    try {
+        // Try database API first
+        const response = await fetch(`/api/conversations/${chatId}`, {
+            method: 'DELETE'
+        });
 
+        if (!response.ok && response.status !== 404) {
+            console.warn('Database delete failed:', response.status);
+        }
+    } catch (error) {
+        console.warn('Database delete failed:', error);
+    }
+
+    // Also remove from localStorage cache
+    const history = getChatHistoryFromLocalStorage();
+    const filteredHistory = history.filter(chat => chat.id !== chatId);
     localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(filteredHistory));
 
     // Reload the chat history display
     loadChatHistory();
 
     showToast('Conversation deleted', 'success', 1500);
+}
+
+/**
+ * Helper to close side menu
+ */
+function closeSideMenu() {
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.getElementById('overlay');
+    if (sideMenu) sideMenu.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Keep getChatHistory for backward compatibility
+function getChatHistory() {
+    return getChatHistoryFromLocalStorage();
+}
+
+// Keep saveChatToHistory for backward compatibility (now just updates localStorage cache)
+function saveChatToHistory(messages, chatId) {
+    if (!messages || messages.length === 0) return;
+
+    const id = chatId || Date.now().toString();
+    const firstMessage = messages.find(msg => msg.role === 'user');
+    const preview = firstMessage ? firstMessage.content.substring(0, 60) : 'New chat';
+
+    const chatData = {
+        id: id,
+        timestamp: new Date().toISOString(),
+        preview: preview,
+        messageCount: messages.length,
+        messages: messages
+    };
+
+    const history = getChatHistoryFromLocalStorage();
+    const existingIndex = history.findIndex(chat => chat.id === id);
+
+    if (existingIndex !== -1) {
+        history[existingIndex] = chatData;
+    } else {
+        history.unshift(chatData);
+    }
+
+    if (history.length > 50) history.splice(50);
+
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(history));
 }
 
 /**
@@ -2224,11 +2396,13 @@ function updateVADStatus(status) {
 
 
 
-// Media player state
+/**
+ * Media player state
+ */
 let mediaPlayerInterval = null;
 let currentMediaAudio = null;
 
-function showMiniPlayer(audio, text) {
+export function showMiniPlayer(audio, text, options = {}) {
     console.log('showMiniPlayer called');
 
     const modal = document.getElementById('mediaControlModal');
@@ -2236,6 +2410,8 @@ function showMiniPlayer(audio, text) {
     const playIcon = playPauseBtn?.querySelector('.play-icon');
     const pauseIcon = playPauseBtn?.querySelector('.pause-icon');
     const closeBtn = document.getElementById('mediaCloseBtn');
+    const prevBtn = document.getElementById('mediaPrevBtn');
+    const nextBtn = document.getElementById('mediaNextBtn');
     const progressBar = document.getElementById('mediaProgressBar');
     const progressFill = document.getElementById('mediaProgressFill');
     const progressHandle = document.getElementById('mediaProgressHandle');
@@ -2251,6 +2427,22 @@ function showMiniPlayer(audio, text) {
 
     // Show modal
     modal.style.display = 'block';
+
+    // Navigation buttons
+    if (prevBtn) {
+        prevBtn.style.display = options.onPrev ? 'flex' : 'none';
+        prevBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (options.onPrev) options.onPrev();
+        };
+    }
+    if (nextBtn) {
+        nextBtn.style.display = options.onNext ? 'flex' : 'none';
+        nextBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (options.onNext) options.onNext();
+        };
+    }
 
     // Format time helper
     const formatTime = (seconds) => {
@@ -2301,6 +2493,7 @@ function showMiniPlayer(audio, text) {
             if (state.currentAudio === audio) {
                 state.currentAudio = null;
             }
+            if (options.onStop) options.onStop();
         };
     }
 
@@ -2326,20 +2519,22 @@ function showMiniPlayer(audio, text) {
     }
 
     // Audio event listeners
-    audio.addEventListener('loadedmetadata', () => {
+    // We use a named function to be able to remove it if needed, 
+    // but here we just re-add as showMiniPlayer is usually called once per audio object
+    audio.onloadedmetadata = () => {
         if (timeTotal) timeTotal.textContent = formatTime(audio.duration);
-    });
+    };
 
-    audio.addEventListener('play', () => {
+    audio.onplay = () => {
         if (playIcon) playIcon.style.display = 'none';
         if (pauseIcon) pauseIcon.style.display = 'block';
 
         // Start progress update interval
         if (mediaPlayerInterval) clearInterval(mediaPlayerInterval);
         mediaPlayerInterval = setInterval(updateProgress, 100);
-    });
+    };
 
-    audio.addEventListener('pause', () => {
+    audio.onpause = () => {
         if (playIcon) playIcon.style.display = 'block';
         if (pauseIcon) pauseIcon.style.display = 'none';
 
@@ -2347,9 +2542,9 @@ function showMiniPlayer(audio, text) {
             clearInterval(mediaPlayerInterval);
             mediaPlayerInterval = null;
         }
-    });
+    };
 
-    audio.addEventListener('ended', () => {
+    audio.onended = () => {
         if (playIcon) playIcon.style.display = 'block';
         if (pauseIcon) pauseIcon.style.display = 'none';
 
@@ -2358,17 +2553,20 @@ function showMiniPlayer(audio, text) {
             mediaPlayerInterval = null;
         }
 
-        // Auto-hide after a short delay
-        setTimeout(() => {
-            hideMiniPlayer();
-        }, 1000);
-    });
+        // Auto-hide after a short delay for normal messages
+        // But for reading mode, we might want to keep it or wait for next chunk
+        if (!options.onNext) {
+            setTimeout(() => {
+                if (audio.ended) hideMiniPlayer();
+            }, 1000);
+        }
+    };
 
     // Initial progress update
     updateProgress();
 }
 
-function hideMiniPlayer() {
+export function hideMiniPlayer() {
     console.log('hideMiniPlayer called');
 
     const modal = document.getElementById('mediaControlModal');

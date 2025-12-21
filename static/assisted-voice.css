@@ -852,6 +852,102 @@ body {
     color: var(--error);
 }
 
+/* Image Upload Button */
+.image-upload-btn {
+    background: transparent;
+    border: none;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.image-upload-btn:hover {
+    color: var(--text);
+    background: var(--surface-light);
+    transform: translateY(-2px);
+}
+
+.image-upload-btn:active {
+    transform: scale(0.95);
+}
+
+/* Image Preview Container */
+.image-preview-container {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    flex-wrap: wrap;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.image-preview-thumbnail {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--surface-light);
+}
+
+.image-preview-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.image-preview-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    font-size: 14px;
+    line-height: 1;
+    transition: all 0.2s;
+}
+
+.image-preview-remove:hover {
+    background: var(--error);
+    transform: scale(1.1);
+}
+
+/* Message Image Display */
+.message-images {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.message-image-thumbnail {
+    max-width: 200px;
+    max-height: 200px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s;
+    border: 1px solid var(--border);
+}
+
+.message-image-thumbnail:hover {
+    transform: scale(1.05);
+}
+
 
 /* Sidebar & Menus (Glass Overlays) */
 .side-menu,

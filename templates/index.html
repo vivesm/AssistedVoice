@@ -276,8 +276,23 @@
         <!-- Input Bar -->
         <footer class="input-bar">
             <div class="input-wrapper">
+                <!-- Image Preview Container -->
+                <div class="image-preview-container" id="imagePreviewContainer" style="display: none;"></div>
+
                 <textarea class="text-input" id="textInput" placeholder="Type a message..." autocomplete="off"
                     rows="1"></textarea>
+
+                <!-- Hidden file input for image upload -->
+                <input type="file" id="imageInput" accept="image/*" multiple hidden>
+
+                <!-- Image upload button -->
+                <button class="image-upload-btn" id="imageUploadBtn" title="Upload image">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                </button>
 
                 <button class="voice-btn" id="voiceBtn">
                     <svg class="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -119,15 +119,39 @@ class OllamaLLM(BaseLLM):
         except Exception as e:
             return False, f"Failed to connect to Ollama: {str(e)}"
 
-    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate(self, prompt: str, images: Optional[List[str]] = None, stream: bool = True) -> Generator[str, None, None]:
         """Generate response from LLM"""
-        # Add user message to conversation
-        self.conversation.add_message("user", prompt)
+        # Add user message to conversation (with images if provided)
+        self.conversation.add_message("user", prompt, images=images)
+        
+        # Log if images are being sent
+        if images:
+            logger.info(f"Sending {len(images)} image(s) to model {self.model}")
         
         # Get conversation context
         messages = self.conversation.get_context(
             system_prompt=self.config['ollama'].get('system_prompt')
         )
+
+        # Process images: Ollama library expects bytes or stripped base64 strings
+        # We'll convert them to bytes for robustness
+        for msg in messages:
+            if 'images' in msg:
+                processed_images = []
+                for img_data in msg['images']:
+                    if isinstance(img_data, str) and img_data.startswith('data:image/'):
+                        # Strip prefix like "data:image/jpeg;base64,"
+                        try:
+                            # Split by comma and take the base64 part
+                            base64_str = img_data.split(',')[1]
+                            import base64
+                            processed_images.append(base64.b64decode(base64_str))
+                        except Exception as e:
+                            logger.error(f"Error processing image data: {e}")
+                            processed_images.append(img_data) # Fallback
+                    else:
+                        processed_images.append(img_data)
+                msg['images'] = processed_images
         
         # Generation parameters
         options = {
@@ -172,8 +196,14 @@ class OllamaLLM(BaseLLM):
             logger.info(f"Generated {tokens} tokens in {total_time:.2f}s ({tokens_per_sec:.1f} t/s)")
             
         except Exception as e:
-            logger.error(f"Generation error: {e}")
-            yield f"Error: {str(e)}"
+            error_msg = str(e)
+            logger.error(f"Generation error: {error_msg}")
+            
+            # Check if it's a vision-related error
+            if images and ("vision" in error_msg.lower() or "image" in error_msg.lower() or "multimodal" in error_msg.lower()):
+                yield f"Error: This model ({self.model}) does not support image inputs. Please select a vision-capable model like llava, bakllava, moondream, or llama3.2-vision."
+            else:
+                yield f"Error: {error_msg}"
     
     # clear_conversation and get_conversation_summary are inherited from BaseLLM
 
@@ -230,10 +260,10 @@ class OptimizedOllamaLLM(OllamaLLM):
             max_size=config['performance'].get('max_cache_size', 100)
         ) if config['performance'].get('cache_responses', True) else None
     
-    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate(self, prompt: str, images: Optional[List[str]] = None, stream: bool = True) -> Generator[str, None, None]:
         """Generate with caching support"""
-        # Check cache first
-        if self.cache and not stream:
+        # Check cache first - only for text-only requests
+        if self.cache and not stream and not images:
             cached = self.cache.get(prompt)
             if cached:
                 yield cached
@@ -241,10 +271,10 @@ class OptimizedOllamaLLM(OllamaLLM):
         
         # Generate response
         full_response = ""
-        for chunk in super().generate(prompt, stream):
+        for chunk in super().generate(prompt, images=images, stream=stream):
             full_response += chunk
             yield chunk
         
-        # Cache the response
-        if self.cache and not stream:
+        # Cache the response - only for text-only requests
+        if self.cache and not stream and not images:
             self.cache.set(prompt, full_response)

@@ -20,12 +20,13 @@ class ChatService:
         """
         self.llm = llm
 
-    def generate_response(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate_response(self, prompt: str, images: list = None, stream: bool = True) -> Generator[str, None, None]:
         """
         Generate response from LLM
 
         Args:
             prompt: User prompt/message
+            images: Optional list of base64-encoded images
             stream: Whether to stream the response
 
         Yields:
@@ -34,8 +35,8 @@ class ChatService:
         try:
             logger.info(f"Generating response for: {prompt[:50]}...")
 
-            # Generate response using LLM
-            for chunk in self.llm.generate(prompt, stream=stream):
+            # Generate response using LLM (with images if provided)
+            for chunk in self.llm.generate(prompt, images=images, stream=stream):
                 yield chunk
 
         except Exception as e:

@@ -233,6 +233,18 @@ function setupEventListeners() {
         if (closeMenuBtn) closeMenuBtn.addEventListener('click', closeMenu);
         overlay.addEventListener('click', closeMenu);
     }
+
+    // Image upload button
+    const imageUploadBtn = document.getElementById('imageUploadBtn');
+    const imageInput = document.getElementById('imageInput');
+
+    if (imageUploadBtn && imageInput) {
+        imageUploadBtn.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        imageInput.addEventListener('change', handleImageUpload);
+    }
 }
 
 function setupModelSelection() {
@@ -472,14 +484,14 @@ function sendTextMessage() {
     const textInput = document.getElementById('textInput');
     const text = textInput.value.trim();
 
-    if (!text) return;
+    if (!text && state.pendingImages.length === 0) return;
 
     // Clear input
     textInput.value = '';
     textInput.style.height = '';
 
-    // Add user message to UI
-    addMessage('user', text);
+    // Add user message to UI (with images if present)
+    addMessage('user', text || 'Describe this image', true, { images: state.pendingImages });
 
     // Start performance tracking
     state.messageStartTime = Date.now();
@@ -488,12 +500,95 @@ function sendTextMessage() {
 
     // Send to backend
     const requestData = {
-        text: text,
+        text: text || 'Describe this image',
+        images: state.pendingImages,
         enable_tts: state.ttsEnabled
     };
     logRequest('process_text', requestData);
     emit('process_text', requestData);
+
+    // Clear pending images
+    state.pendingImages = [];
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (previewContainer) {
+        previewContainer.innerHTML = '';
+        previewContainer.style.display = 'none';
+    }
 }
+
+/**
+ * Handle image file upload
+ */
+function handleImageUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) {
+            showToast('Please select image files only', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64Image = e.target.result;
+            state.pendingImages.push(base64Image);
+            showImagePreview(base64Image, state.pendingImages.length - 1);
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Clear file input
+    event.target.value = '';
+}
+
+/**
+ * Show image preview thumbnail
+ */
+function showImagePreview(base64Image, index) {
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (!previewContainer) return;
+
+    previewContainer.style.display = 'flex';
+
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'image-preview-thumbnail';
+    thumbnail.dataset.index = index;
+
+    const img = document.createElement('img');
+    img.src = base64Image;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'image-preview-remove';
+    removeBtn.innerHTML = '×';
+    removeBtn.onclick = () => removeImage(index);
+
+    thumbnail.appendChild(img);
+    thumbnail.appendChild(removeBtn);
+    previewContainer.appendChild(thumbnail);
+}
+
+/**
+ * Remove image from pending images
+ */
+function removeImage(index) {
+    state.pendingImages.splice(index, 1);
+
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (!previewContainer) return;
+
+    // Rebuild preview
+    previewContainer.innerHTML = '';
+
+    if (state.pendingImages.length === 0) {
+        previewContainer.style.display = 'none';
+    } else {
+        state.pendingImages.forEach((img, idx) => {
+            showImagePreview(img, idx);
+        });
+    }
+}
+
 
 /**
  * Add message to UI
@@ -583,6 +678,28 @@ export function addMessage(role, text, save = true, metadata = {}) {
     }
 
     contentDiv.setAttribute('data-original-text', text);
+
+    // Display images if present
+    if (metadata.images && metadata.images.length > 0) {
+        const imagesContainer = document.createElement('div');
+        imagesContainer.className = 'message-images';
+
+        metadata.images.forEach((base64Image) => {
+            const img = document.createElement('img');
+            img.src = base64Image;
+            img.className = 'message-image-thumbnail';
+            img.alt = 'Uploaded image';
+            img.onclick = () => {
+                // Open image in new tab
+                const win = window.open();
+                win.document.write(`<img src="${base64Image}" style="max-width:100%;height:auto;">`);
+            };
+            imagesContainer.appendChild(img);
+        });
+
+        contentDiv.appendChild(imagesContainer);
+    }
+
 
     // Pin button for live insights
     if (isLiveInsight) {

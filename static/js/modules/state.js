@@ -42,6 +42,9 @@ export const state = {
     // Chat
     currentChatId: null,
 
+    // Image upload
+    pendingImages: [],  // Array of base64-encoded images
+
     // Metrics
     firstTokenTime: null,
     messageStartTime: null,

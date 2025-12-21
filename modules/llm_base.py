@@ -15,15 +15,19 @@ class Message:
     """Unified message format for all LLM implementations"""
     role: str  # 'user', 'assistant', or 'system'
     content: str
+    images: Optional[List[str]] = None  # List of base64-encoded images
     timestamp: datetime = None
     
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now()
     
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
-        return {"role": self.role, "content": self.content}
+        result = {"role": self.role, "content": self.content}
+        if self.images:
+            result["images"] = self.images
+        return result
 
 
 class ConversationManagerBase:
@@ -34,9 +38,9 @@ class ConversationManagerBase:
         self.max_history = max_history
         self.max_tokens = max_tokens
     
-    def add_message(self, role: str, content: str) -> Message:
+    def add_message(self, role: str, content: str, images: Optional[List[str]] = None) -> Message:
         """Add a message to the conversation"""
-        message = Message(role=role, content=content)
+        message = Message(role=role, content=content, images=images)
         self.messages.append(message)
         
         # Trim history if needed (keep pairs)
@@ -45,7 +49,7 @@ class ConversationManagerBase:
         
         return message
     
-    def get_context(self, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
+    def get_context(self, system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get conversation context for LLM"""
         context = []
         

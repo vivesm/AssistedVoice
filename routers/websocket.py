@@ -20,7 +20,7 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
     # Store references for handler access
     _state = {
-        'llm': chat_service.llm,
+        'llm': chat_service.llm if chat_service else None,
         'config': config,
         'stt': stt,
         'tts': tts,
@@ -118,16 +118,21 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         """Process text input from client"""
         try:
             text = data.get('text', '').strip()
+            images = data.get('images', [])  # List of base64-encoded images
             enable_tts = data.get('enable_tts', True)
 
-            if not text:
+            if not text and not images:
                 return
+
+            # Use default prompt if text is empty but images are present
+            if not text and images:
+                text = "Describe this image in detail."
 
             # Generate response
             await sio.emit('status', {'message': 'Generating response...', 'type': 'generating'}, room=sid)
 
             response_text = ""
-            for chunk in _state['chat_service'].generate_response(text, stream=True):
+            for chunk in _state['chat_service'].generate_response(text, images=images, stream=True):
                 response_text += chunk
                 await sio.emit('response_chunk', {'text': chunk, 'model': _state['llm'].model}, room=sid)
 

@@ -54,16 +54,26 @@ class DatabaseService:
                 )
             """)
             
-            # Create messages table
+            # Create messages table with model info
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     conversation_id TEXT NOT NULL,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    model TEXT,
                     metadata TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+                )
+            """)
+            
+            # Create settings table for user preferences
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 )
             """)
             
@@ -75,6 +85,13 @@ class DatabaseService:
             
             # Enable foreign key support
             cursor.execute("PRAGMA foreign_keys = ON")
+            
+            # Migration: Add model column to existing messages table if missing
+            cursor.execute("PRAGMA table_info(messages)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'model' not in columns:
+                cursor.execute("ALTER TABLE messages ADD COLUMN model TEXT")
+                logger.info("Migrated messages table: added model column")
             
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
@@ -151,7 +168,7 @@ class DatabaseService:
             
             # Get messages
             cursor.execute("""
-                SELECT role, content, metadata, created_at 
+                SELECT role, content, model, metadata, created_at 
                 FROM messages 
                 WHERE conversation_id = ? 
                 ORDER BY id ASC
@@ -164,6 +181,8 @@ class DatabaseService:
                     "content": msg_row["content"],
                     "created_at": msg_row["created_at"]
                 }
+                if msg_row["model"]:
+                    msg["model"] = msg_row["model"]
                 if msg_row["metadata"]:
                     try:
                         msg["metadata"] = json.loads(msg_row["metadata"])
@@ -298,6 +317,7 @@ class DatabaseService:
         conversation_id: str,
         role: str,
         content: str,
+        model: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Add a message to a conversation
@@ -306,7 +326,8 @@ class DatabaseService:
             conversation_id: Conversation ID
             role: Message role (user, assistant, system)
             content: Message content
-            metadata: Optional metadata dict
+            model: LLM model used for this message (for assistant messages)
+            metadata: Optional metadata dict (can include settings, timing, etc.)
             
         Returns:
             Created message dict
@@ -325,18 +346,23 @@ class DatabaseService:
             )
             if not cursor.fetchone():
                 # Auto-create conversation
-                self.create_conversation(conversation_id)
+                self.create_conversation(conversation_id, model=model)
             
-            # Insert message
+            # Insert message with model info
             cursor.execute("""
-                INSERT INTO messages (conversation_id, role, content, metadata, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (conversation_id, role, content, metadata_json, now))
+                INSERT INTO messages (conversation_id, role, content, model, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (conversation_id, role, content, model, metadata_json, now))
             
-            # Update conversation timestamp
-            cursor.execute("""
-                UPDATE conversations SET updated_at = ? WHERE id = ?
-            """, (now, conversation_id))
+            # Update conversation timestamp and model
+            if model:
+                cursor.execute("""
+                    UPDATE conversations SET updated_at = ?, model = ? WHERE id = ?
+                """, (now, model, conversation_id))
+            else:
+                cursor.execute("""
+                    UPDATE conversations SET updated_at = ? WHERE id = ?
+                """, (now, conversation_id))
             
             # Update title if this is first user message
             cursor.execute("""
@@ -358,6 +384,7 @@ class DatabaseService:
                 "conversation_id": conversation_id,
                 "role": role,
                 "content": content,
+                "model": model,
                 "metadata": metadata,
                 "created_at": now
             }
@@ -408,18 +435,20 @@ class DatabaseService:
                 (conversation_id,)
             )
             
-            # Insert all messages
+            # Insert all messages with model info
             for msg in messages:
                 metadata_json = json.dumps(msg.get("metadata")) if msg.get("metadata") else None
+                msg_model = msg.get("model", model) if msg.get("role") == "assistant" else None
                 cursor.execute("""
-                    INSERT INTO messages (conversation_id, role, content, metadata, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO messages (conversation_id, role, content, model, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     conversation_id,
                     msg.get("role", "user"),
                     msg.get("content", ""),
+                    msg_model,
                     metadata_json,
-                    now
+                    msg.get("created_at", now)
                 ))
             
             conn.commit()
@@ -427,3 +456,98 @@ class DatabaseService:
             return self.get_conversation(conversation_id)
         finally:
             conn.close()
+    
+    # ========== Settings Methods ==========
+    
+    def get_setting(self, key: str) -> Optional[Any]:
+        """Get a setting value
+        
+        Args:
+            key: Setting key
+            
+        Returns:
+            Setting value (JSON decoded) or None if not found
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row:
+                try:
+                    return json.loads(row["value"])
+                except json.JSONDecodeError:
+                    return row["value"]
+            return None
+        finally:
+            conn.close()
+    
+    def set_setting(self, key: str, value: Any) -> bool:
+        """Set a setting value
+        
+        Args:
+            key: Setting key
+            value: Setting value (will be JSON encoded)
+            
+        Returns:
+            True if successful
+        """
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        value_json = json.dumps(value)
+        
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET 
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+            """, (key, value_json, now))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set setting {key}: {e}")
+            return False
+        finally:
+            conn.close()
+    
+    def get_all_settings(self) -> Dict[str, Any]:
+        """Get all settings
+        
+        Returns:
+            Dict of all settings
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM settings")
+            settings = {}
+            for row in cursor.fetchall():
+                try:
+                    settings[row["key"]] = json.loads(row["value"])
+                except json.JSONDecodeError:
+                    settings[row["key"]] = row["value"]
+            return settings
+        finally:
+            conn.close()
+    
+    def delete_setting(self, key: str) -> bool:
+        """Delete a setting
+        
+        Args:
+            key: Setting key to delete
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+

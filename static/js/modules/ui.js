@@ -328,10 +328,12 @@ function setupModelSelection() {
 /**
  * Load available models from backend and populate settings dropdown
  */
-export async function loadAvailableModels() {
+export async function loadAvailableModels(retryCount = 0) {
     console.log('Loading available models...');
     const modelSelect = document.getElementById('modelSelect');
     const modelGrid = document.querySelector('.model-grid');
+    const maxRetries = 10;
+    const retryDelay = 3000; // 3 seconds
 
     if (!modelSelect) {
         console.error('Model select dropdown not found');
@@ -339,9 +341,11 @@ export async function loadAvailableModels() {
     }
 
     try {
-        // Show loading state
-        modelSelect.innerHTML = '<option value="">Loading models...</option>';
-        modelSelect.disabled = true;
+        // Show loading state if first time or currently loading
+        if (retryCount === 0) {
+            modelSelect.innerHTML = '<option value="">Loading models...</option>';
+            modelSelect.disabled = true;
+        }
 
         // Fetch models from backend
         const response = await fetch('/api/models');
@@ -351,6 +355,22 @@ export async function loadAvailableModels() {
         }
 
         const data = await response.json();
+
+        // If backend says "Loading..." or returns empty list during initialization
+        if (data.current === "Loading..." || (data.models.length === 0 && retryCount < maxRetries)) {
+            console.log(`Models still loading, retrying in ${retryDelay / 1000}s... (Attempt ${retryCount + 1}/${maxRetries})`);
+
+            // Update UI to show progress
+            if (modelSelect.disabled) {
+                modelSelect.innerHTML = `<option value="">Models loading... (${retryCount + 1})</option>`;
+            }
+            if (modelGrid && retryCount === 0) {
+                modelGrid.innerHTML = '<p class="status-text">Connecting to AI backend... please wait.</p>';
+            }
+
+            setTimeout(() => loadAvailableModels(retryCount + 1), retryDelay);
+            return;
+        }
 
         if (!data.models || !Array.isArray(data.models)) {
             throw new Error('Invalid response format from /api/models');
@@ -366,7 +386,7 @@ export async function loadAvailableModels() {
 
         if (data.models.length === 0) {
             modelSelect.innerHTML = '<option value="">No models available</option>';
-            if (modelGrid) modelGrid.innerHTML = '<p class="error-text">No models available</p>';
+            if (modelGrid) modelGrid.innerHTML = '<p class="error-text">No models available. Please check Ollama/LM Studio.</p>';
             showToast('No models available', 'warning', 3000);
             return;
         }
@@ -434,6 +454,7 @@ export async function loadAvailableModels() {
 
         modelSelect.disabled = false;
         console.log(`Loaded ${data.models.length} models successfully`);
+        if (retryCount > 0) showToast('Models loaded successfully', 'success');
 
     } catch (error) {
         console.error('Failed to load models:', error);
@@ -1203,6 +1224,25 @@ function clearCurrentConversation() {
         welcome.style.display = 'flex';
         // Refresh model grid to ensure it's up to date
         loadAvailableModels();
+    }
+
+    // Clear live mode insights panel
+    const aiInsightsContent = document.getElementById('aiInsightsContent');
+    if (aiInsightsContent) {
+        aiInsightsContent.innerHTML = `
+            <div class="insight-placeholder">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <p>Waiting for conversation context...</p>
+            </div>
+        `;
+    }
+
+    // Clear live mode transcript panel
+    const liveTranscriptContent = document.getElementById('liveTranscriptContent');
+    if (liveTranscriptContent) {
+        liveTranscriptContent.innerHTML = '<p class="placeholder-text">Speak to start transcription...</p>';
     }
 
     // Clear localStorage

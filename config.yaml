@@ -1,119 +1,95 @@
-# AssistedVoice Configuration
-
-# Server Configuration
 server:
-  type: "ollama"           # Options: ollama, lm-studio, custom
-  host: "host.docker.internal"         # Server hostname or IP address (use host.docker.internal for host-resident Ollama)
-  port: 11434                  # Server port (11434 for Ollama, 1234 for LM Studio)
-  timeout: 30                 # Connection timeout in seconds
-  retry_attempts: 3           # Number of retry attempts on failure
-  
-  # LM Studio specific settings (when type is 'lm-studio')
+  type: ollama
+  host: host.docker.internal
+  port: 11434
+  timeout: 30
+  retry_attempts: 3
   lm_studio:
-    api_key: "not-needed"     # LM Studio doesn't require API key
-    base_url: "/v1"           # API base path
-
-# Speech Recognition (Whisper)
+    api_key: not-needed
+    base_url: /v1
 whisper:
-  model: "small"              # Options: tiny, base, small, medium, large, turbo
-  language: "en"              # Language code (en, es, fr, etc.)
-  device: "auto"              # auto, cpu, cuda, mps (Metal Performance Shaders)
-  compute_type: "int8"        # int8 for Apple Silicon, float16 for CUDA GPUs
-  
-# Language Model (Ollama)
+  model: small
+  language: en
+  device: cpu
+  compute_type: int8
 ollama:
-  model: "llama3.2:latest"     # Model name (using available model)
-  fallback_model: "mistral:latest"  # Fallback option
-  temperature: 0.7            # Response randomness (0.0-1.0)
-  max_tokens: 500             # Maximum response length
-  context_window: 4096        # Context size
-  system_prompt: |
-    You are a helpful voice assistant. Keep responses concise and natural for speech.
-    Avoid using markdown, special characters, or formatting that doesn't work well when spoken aloud.
+  model: ministral-3:8b
+  fallback_model: mistral:latest
+  temperature: 0.7
+  max_tokens: 500
+  context_window: 4096
+  system_prompt: 'You are a helpful voice assistant. Keep responses concise and natural
+    for speech.
+
+    Avoid using markdown, special characters, or formatting that doesn''t work well
+    when spoken aloud.
+
     Be conversational and friendly.
 
-# Language Model (LM Studio)
+    '
 lm_studio:
-  model: "openai/gpt-oss-20b"  # Default LM Studio model
-  fallback_model: "qwen/qwen3-32b"  # Fallback option
-  temperature: 0.7            # Response randomness (0.0-1.0)
-  max_tokens: 800             # Maximum response length
-  context_window: 8192        # Context size
-  system_prompt: |
-    You are a helpful voice assistant. Keep responses concise and natural for speech.
-    Avoid using markdown, special characters, or formatting that doesn't work well when spoken aloud.
+  model: openai/gpt-oss-20b
+  fallback_model: qwen/qwen3-32b
+  temperature: 0.7
+  max_tokens: 800
+  context_window: 8192
+  system_prompt: 'You are a helpful voice assistant. Keep responses concise and natural
+    for speech.
+
+    Avoid using markdown, special characters, or formatting that doesn''t work well
+    when spoken aloud.
+
     Be conversational and friendly.
 
-# User Interface
+    '
 ui:
-  mode: "text"                # Options: text, voice, both
-  theme: "default"            # Terminal color theme
-  show_timestamps: true       # Display message timestamps
-  show_latency: true          # Show response times
-  clear_on_start: true        # Clear terminal on startup
-
-# Audio Settings
+  mode: text
+  theme: default
+  show_timestamps: true
+  show_latency: true
+  clear_on_start: true
 audio:
-  input_device: null          # null for default, or device index
-  sample_rate: 16000          # Sample rate for recording
-  channels: 1                 # Mono audio
-  chunk_duration: 0.5         # Audio chunk size in seconds
-  silence_threshold: 500      # VAD silence threshold
-  
-# Voice Activity Detection
+  input_device: null
+  sample_rate: 16000
+  channels: 1
+  chunk_duration: 0.5
+  silence_threshold: 500
 vad:
-  enabled: true               # Enable VAD
-  mode: 2                     # Aggressiveness (0-3, 3 most aggressive)
-  speech_timeout: 1.5         # Seconds of silence to stop recording
-  min_speech_duration: 0.5    # Minimum speech duration
-  
-# Text-to-Speech
-tts:
-  engine: "edge-tts"             # Options: macos, pyttsx3, edge-tts, none (text-only mode)
-  
-  # macOS voices
-  voice: "Samantha"           # macOS voice name
-  
-  # Edge TTS voices (examples of popular English voices)
-  edge_voice: "en-US-JennyNeural"  # Options: en-US-JennyNeural (female), en-US-GuyNeural (male), 
-                                    # en-US-AriaNeural (female), en-US-ChristopherNeural (male)
-                                    # en-GB-SoniaNeural (British female), en-GB-RyanNeural (British male)
-                                    # See full list: edge-tts --list-voices
-  
-  # Speech parameters  
-  rate: 180                   # Speech rate (words per minute for macOS/pyttsx3)
-                             # For edge-tts use: "+0%" (normal), "+50%" (faster), "-25%" (slower)
-  volume: 0.9                 # Volume (0.0-1.0 for macOS/pyttsx3)
-                             # For edge-tts use: "+0%" (normal), "+50%" (louder), "-25%" (quieter)
-  pitch: "+0Hz"              # Pitch adjustment for edge-tts (e.g., "+50Hz" higher, "-25Hz" lower)
-  
-# Hotkeys
+  enabled: true
+  mode: 2
+  speech_timeout: 1.5
+  min_speech_duration: 0.5
 hotkeys:
-  push_to_talk: "space"       # Key to hold for recording
-  toggle_mode: "m"            # Switch between text/voice mode
-  clear_history: "c"          # Clear conversation
-  exit: "q"                   # Quit application
-  
-# Logging
+  push_to_talk: space
+  toggle_mode: m
+  clear_history: c
+  exit: q
 logging:
-  level: "INFO"               # DEBUG, INFO, WARNING, ERROR
-  file: "logs/assistant.log"  # Log file path
-  max_size: "10MB"            # Maximum log file size
-  backup_count: 3             # Number of backup files
-  
-# Performance
+  level: INFO
+  file: logs/assistant.log
+  max_size: 10MB
+  backup_count: 3
 performance:
-  response_streaming: true    # Stream responses as they generate
-  cache_responses: true       # Cache common responses
-  max_cache_size: 100         # Maximum cached responses
-  parallel_processing: true   # Process audio while generating response
-# Reading Mode
+  response_streaming: true
+  cache_responses: true
+  max_cache_size: 100
+  parallel_processing: true
+stt:
+  type: whisper
+  model: small
+  language: en
+  device: cpu
+  compute_type: int8
+tts:
+  engine: edge-tts
+  voice: en-US-JennyNeural
+  rate: +0%
+  volume: +40%
+  edge_voice: en-US-JennyNeural
 reading_mode:
   enabled: true
-  max_text_length: 200000        # Maximum characters allowed (hard limit)
-  chunk_size: 500                # Characters per TTS chunk
-  auto_advance: true             # Auto-advance to next chunk after TTS completes
-  
-  # Share integration
-  share_base_url: "https://share.vives.io"  # Base URL for textshare service
-  fetch_timeout: 10              # Seconds to wait for share fetch
+  max_text_length: 200000
+  chunk_size: 500
+  auto_advance: true
+  share_base_url: https://share.vives.io
+  fetch_timeout: 10

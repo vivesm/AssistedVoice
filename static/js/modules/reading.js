@@ -13,10 +13,10 @@ export class ReadingMode {
 
         this.initElements();
         this.initEventListeners();  // UI works immediately
-        
+
         // Defer socket listeners until socket is connected
         this.waitForSocket();
-        
+
         console.log('[ReadingMode] Initialized, waiting for socket...');
     }
 
@@ -29,7 +29,7 @@ export class ReadingMode {
                 console.log('[ReadingMode] Socket listeners attached');
             }
         }, 100);
-        
+
         // Stop checking after 10 seconds
         setTimeout(() => clearInterval(checkSocket), 10000);
     }
@@ -38,6 +38,7 @@ export class ReadingMode {
         // Buttons
         this.readingModeBtn = document.getElementById('readingModeBtn');
         this.closeReadingBtn = document.getElementById('closeReadingBtn');
+        this.backBtn = document.getElementById('backBtn');
         this.startReadingBtn = document.getElementById('startReadingBtn');
         this.loadShareBtn = document.getElementById('loadShareBtn');
 
@@ -70,14 +71,14 @@ export class ReadingMode {
         this.progressPercentage = document.getElementById('progressPercentage');
         this.progressFill = document.getElementById('readingProgressFill');
         this.readingStatus = document.getElementById('readingStatus');
-        
+
         console.log('[ReadingMode] Elements initialized:', {
             readingModeBtn: !!this.readingModeBtn,
             readingPanel: !!this.readingPanel,
             chatContainer: !!this.chatContainer,
             readingModeBtnElement: this.readingModeBtn
         });
-        
+
         if (!this.readingModeBtn) {
             console.error('[ReadingMode] CRITICAL: readingModeBtn not found! Cannot attach click listener');
         }
@@ -87,7 +88,7 @@ export class ReadingMode {
         if (!this.chatContainer) {
             console.error('[ReadingMode] CRITICAL: chatContainer not found!');
         }
-        console.log('[ReadingMode] Elements initialized (condensed):, {
+        console.log('[ReadingMode] Elements initialized (condensed):', {
             readingModeBtn: !!this.readingModeBtn,
             readingPanel: !!this.readingPanel,
             chatContainer: !!this.chatContainer
@@ -102,9 +103,18 @@ export class ReadingMode {
                 this.toggleReadingMode();
             });
         }
-        
+
         if (this.closeReadingBtn) {
             this.closeReadingBtn.addEventListener('click', () => this.closeReadingMode());
+        }
+
+        if (this.backBtn) {
+            this.backBtn.addEventListener('click', (e) => {
+                if (this.isActive) {
+                    e.preventDefault();
+                    this.closeReadingMode();
+                }
+            });
         }
 
         // Tab switching
@@ -112,7 +122,7 @@ export class ReadingMode {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
         });
 
-        
+
         // Prevent Enter key from submitting to chat
         this.textInput?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -122,7 +132,7 @@ export class ReadingMode {
                 // this.startReading();
             }
         });
-        
+
         // Text input character count
         this.textInput?.addEventListener('input', () => this.updateCharCount());
 
@@ -141,7 +151,7 @@ export class ReadingMode {
         this.shareInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.loadShare();
         });
-        
+
         console.log('[ReadingMode] Event listeners attached');
     }
 
@@ -221,7 +231,7 @@ export class ReadingMode {
     openReadingMode() {
         console.log('[ReadingMode] Opening reading mode');
         this.isActive = true;
-        
+
         if (this.readingPanel) {
             this.readingPanel.style.display = 'block';
         }
@@ -230,19 +240,28 @@ export class ReadingMode {
         }
         this.readingModeBtn?.classList.add('active');
 
-        // Show back button in header
+        // Hide input bar footer
+        const footer = document.querySelector('.input-bar');
+        if (footer) footer.style.display = 'none';
+
+        // Update header
         const backBtn = document.getElementById('backBtn');
         const menuBtn = document.getElementById('menuBtn');
-        if (backBtn && menuBtn) {
-            backBtn.style.display = 'flex';
-            menuBtn.style.display = 'none';
-        }
+        const headerRight = document.getElementById('headerRight');
+        const appTitle = document.querySelector('.app-title');
+        const readingTitle = document.getElementById('readingModeTitle');
+
+        if (backBtn) backBtn.style.display = 'flex';
+        if (menuBtn) menuBtn.style.display = 'none';
+        if (headerRight) headerRight.style.display = 'none';
+        if (appTitle) appTitle.style.display = 'none';
+        if (readingTitle) readingTitle.style.display = 'block';
     }
 
     closeReadingMode() {
         console.log('[ReadingMode] Closing reading mode');
         this.isActive = false;
-        
+
         if (this.readingPanel) {
             this.readingPanel.style.display = 'none';
         }
@@ -251,19 +270,28 @@ export class ReadingMode {
         }
         this.readingModeBtn?.classList.remove('active');
 
-        // Hide back button, show menu button
+        // Show input bar footer
+        const footer = document.querySelector('.input-bar');
+        if (footer) footer.style.display = 'block';
+
+        // Reset header
         const backBtn = document.getElementById('backBtn');
         const menuBtn = document.getElementById('menuBtn');
-        if (backBtn && menuBtn) {
-            backBtn.style.display = 'none';
-            menuBtn.style.display = 'flex';
-        }
+        const headerRight = document.getElementById('headerRight');
+        const appTitle = document.querySelector('.app-title');
+        const readingTitle = document.getElementById('readingModeTitle');
+
+        if (backBtn) backBtn.style.display = 'none';
+        if (menuBtn) menuBtn.style.display = 'flex';
+        if (headerRight) headerRight.style.display = 'flex';
+        if (appTitle) appTitle.style.display = 'block';
+        if (readingTitle) readingTitle.style.display = 'none';
 
         // Clean up
         if (this.isPlaying) {
             this.stop();
         }
-        
+
         if (this.state.socket && this.state.socket.connected) {
             this.state.socket.emit('end_reading');
         }
@@ -309,7 +337,7 @@ export class ReadingMode {
             this.showToast('Not connected to server', 'error');
             return;
         }
-        
+
         const activeTab = document.querySelector('.input-tab.active')?.dataset.tab || 'text';
 
         if (activeTab === 'text') {

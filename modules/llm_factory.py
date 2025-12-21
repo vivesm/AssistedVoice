@@ -6,7 +6,7 @@ from typing import Optional
 from .config_helper import get_server_config
 from .llm import OllamaLLM, OptimizedOllamaLLM
 from .llm_lmstudio import LMStudioLLM
-from .llm_base import BaseLLM
+from .llm_base import BaseLLM, NullLLM
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +63,21 @@ def create_llm(config: dict, optimized: bool = True) -> BaseLLM:
     
     except Exception as e:
         logger.error(f"Failed to create LLM instance: {e}")
-        logger.info("Falling back to default Ollama configuration")
+        logger.info("Falling back to default Ollama configuration (no-op host)")
         
-        # Fallback to default Ollama
-        fallback_config = config.copy()
-        fallback_config['server'] = {
-            'type': 'ollama',
-            'host': 'localhost',
-            'port': 11434
-        }
-        return OllamaLLM(fallback_config)
+        try:
+            # Fallback to default Ollama but don't crash if it fails too
+            fallback_config = config.copy()
+            fallback_config['server'] = {
+                'type': 'ollama',
+                'host': 'localhost',
+                'port': 11434
+            }
+            return OllamaLLM(fallback_config)
+        except Exception as final_e:
+            logger.error(f"Ultimate failure to initialize LLM: {final_e}")
+            # Instead of crashing, return a NullLLM that reports the error gracefully
+            return NullLLM(config, error_message=str(e))
 
 
 def detect_server_type(base_url: str) -> str:

@@ -202,19 +202,159 @@ function setupSocketListeners() {
         updateVADStatus('silence');
     });
 
-    // Live mode events
+    // Live mode events - Transcript buffer for merging
+    let transcriptBuffer = '';
+    let transcriptDebounceTimer = null;
+    const TRANSCRIPT_DEBOUNCE_MS = 5000; // Wait 5 seconds of silence before saving to chat
+
     socket.on('live_transcript', (data) => {
         console.log('[Live Mode] Received transcript:', data.text);
 
-        // Add transcript as a live-transcript message in chat history
-        addMessage('live-transcript', data.text, true);
+        // Add to live transcript modal for real-time viewing (always show immediately)
+        const liveTranscriptContent = document.getElementById('liveTranscriptContent');
+        if (liveTranscriptContent) {
+            // Remove placeholder if it exists
+            const placeholder = liveTranscriptContent.querySelector('.placeholder-text');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            // Add new transcript segment to modal
+            const transcriptSegment = document.createElement('p');
+            transcriptSegment.className = 'transcript-segment';
+            transcriptSegment.textContent = data.text;
+            transcriptSegment.style.marginBottom = '8px';
+            transcriptSegment.style.opacity = '0';
+            transcriptSegment.style.animation = 'fadeIn 0.3s ease-out forwards';
+
+            liveTranscriptContent.appendChild(transcriptSegment);
+
+            // Auto-scroll to bottom
+            liveTranscriptContent.scrollTop = liveTranscriptContent.scrollHeight;
+        }
+
+        // Buffer transcripts and debounce - only add to chat after speech pauses
+        // Clear any previous timer
+        if (transcriptDebounceTimer) {
+            clearTimeout(transcriptDebounceTimer);
+        }
+
+        // Smart merging - handle progressive refinements
+        if (transcriptBuffer) {
+            const bufferWords = transcriptBuffer.toLowerCase().trim().split(/\s+/);
+            const newWords = data.text.toLowerCase().trim().split(/\s+/);
+
+            // Count how many words from buffer appear in new text (in order)
+            let matchedWords = 0;
+            let newIndex = 0;
+            for (const bufferWord of bufferWords) {
+                for (let i = newIndex; i < newWords.length; i++) {
+                    if (newWords[i].includes(bufferWord) || bufferWord.includes(newWords[i])) {
+                        matchedWords++;
+                        newIndex = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            // If >50% of buffer words appear in new text, it's a refinement
+            const matchRatio = matchedWords / Math.max(bufferWords.length, 1);
+            const isRefinement = matchRatio > 0.5 ||
+                data.text.toLowerCase().includes(transcriptBuffer.toLowerCase().substring(0, 10));
+
+            console.log('[Live Mode] Merge check:', {
+                buffer: transcriptBuffer.substring(0, 30),
+                new: data.text.substring(0, 30),
+                matchRatio,
+                isRefinement
+            });
+
+            if (isRefinement) {
+                // Use the longer/more complete version
+                transcriptBuffer = data.text.length > transcriptBuffer.length ? data.text : transcriptBuffer;
+            } else {
+                // Genuinely new content - append it
+                transcriptBuffer += ' ' + data.text;
+            }
+        } else {
+            transcriptBuffer = data.text;
+        }
+
+        // Set timer to save merged transcript to chat after pause
+        transcriptDebounceTimer = setTimeout(() => {
+            if (transcriptBuffer.trim()) {
+                console.log('[Live Mode] Saving merged transcript to chat:', transcriptBuffer);
+                addMessage('live-transcript', transcriptBuffer.trim(), true);
+                transcriptBuffer = '';
+            }
+        }, TRANSCRIPT_DEBOUNCE_MS);
     });
+
 
 
     socket.on('ai_insight', (data) => {
         console.log('[Live Mode] Received AI insight:', data);
 
-        // Add insight as a live-insight message in chat history with metadata
+        // Add to AI insights modal for real-time viewing
+        const aiInsightsContent = document.getElementById('aiInsightsContent');
+        if (aiInsightsContent) {
+            // Remove placeholder if it exists
+            const placeholder = aiInsightsContent.querySelector('.insight-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            // Create insight card for modal
+            const insightCard = document.createElement('div');
+            insightCard.className = 'insight-card';
+            insightCard.style.cssText = `
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 16px;
+                opacity: 0;
+                animation: fadeIn 0.5s ease-out forwards;
+            `;
+
+            // Topic
+            const topic = document.createElement('h4');
+            topic.textContent = data.topic || 'Insight';
+            topic.style.cssText = `
+                margin: 0 0 12px 0;
+                color: var(--primary);
+                font-size: 1rem;
+                font-weight: 600;
+            `;
+            insightCard.appendChild(topic);
+
+            // Key points
+            if (data.key_points && data.key_points.length > 0) {
+                const pointsList = document.createElement('ul');
+                pointsList.style.cssText = `
+                    margin: 0;
+                    padding-left: 20px;
+                    color: var(--text);
+                    line-height: 1.6;
+                `;
+
+                data.key_points.forEach(point => {
+                    const li = document.createElement('li');
+                    li.textContent = point;
+                    li.style.marginBottom = '8px';
+                    pointsList.appendChild(li);
+                });
+
+                insightCard.appendChild(pointsList);
+            }
+
+            aiInsightsContent.appendChild(insightCard);
+
+            // Auto-scroll to bottom
+            aiInsightsContent.scrollTop = aiInsightsContent.scrollHeight;
+        }
+
+        // Also add insight as a live-insight message in chat history with metadata for persistence
         const metadata = {
             topic: data.topic || 'Insight',
             keyPoints: data.key_points || [],

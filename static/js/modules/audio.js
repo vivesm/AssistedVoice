@@ -30,120 +30,96 @@ function hideMiniPlayer() {
 }
 
 /**
- * Start recording audio
+ * Start recording audio - SIMPLEST POSSIBLE IMPLEMENTATION
  */
 export async function startRecording() {
     try {
-        // Reset chunks
         state.audioChunks = [];
 
-        // Get microphone permission
-        state.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Get microphone - simplest constraints
+        state.audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: true
+        });
 
-        // Create MediaRecorder
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus'
-            : 'audio/webm';
+        console.log('PTT: Simple MediaRecorder starting');
 
-        state.mediaRecorder = new MediaRecorder(state.audioStream, { mimeType: mimeType });
+        // Create MediaRecorder - let browser decide everything
+        state.mediaRecorder = new MediaRecorder(state.audioStream);
 
-        // Collect audio data
         state.mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 state.audioChunks.push(event.data);
             }
         };
 
-        // Handle recording stop
         state.mediaRecorder.onstop = () => {
-            // Create blob from chunks
-            const audioBlob = new Blob(state.audioChunks, { type: 'audio/webm' });
+            const audioBlob = new Blob(state.audioChunks, { type: state.mediaRecorder.mimeType });
+            console.log(`PTT: Blob ${audioBlob.size} bytes, type: ${audioBlob.type}`);
 
-            // Convert to base64 and send
+            // Send
             const reader = new FileReader();
             reader.onloadend = () => {
-                // Start performance tracking
                 state.messageStartTime = Date.now();
                 state.firstTokenTime = null;
                 state.tokenCount = 0;
 
-                const requestData = {
-                    audio: reader.result,
-                    enable_tts: state.ttsEnabled
-                };
-                logRequest('process_audio', { audioSize: reader.result.length, enable_tts: state.ttsEnabled });
                 if (state.socket) {
-                    state.socket.emit('process_audio', requestData);
+                    state.socket.emit('process_audio', {
+                        audio: reader.result,
+                        enable_tts: state.ttsEnabled
+                    });
                 }
             };
             reader.readAsDataURL(audioBlob);
 
-            // Clean up
+            // Cleanup
+            state.audioStream.getTracks().forEach(track => track.stop());
+            state.audioStream = null;
             state.audioChunks = [];
         };
 
-        // Start recording
         state.mediaRecorder.start();
         state.isRecording = true;
 
-        // Initialize audio visualization
-        initAudioVisualization(state.audioStream);
-
-        // Update UI
+        // UI
         const voiceBtn = document.getElementById('voiceBtn');
-        const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
-        const micIcon = voiceBtn?.querySelector('.mic-icon');
-
         if (voiceBtn) {
             voiceBtn.classList.add('recording');
             document.body.classList.add('recording');
         }
-        if (recordingIndicator) {
-            recordingIndicator.style.display = 'flex';
-        }
-        if (micIcon) {
-            micIcon.style.display = 'none';
-        }
-        updateStatus('Recording... Click again to stop', 'recording');
+        const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
+        if (recordingIndicator) recordingIndicator.style.display = 'flex';
+        const micIcon = voiceBtn?.querySelector('.mic-icon');
+        if (micIcon) micIcon.style.display = 'none';
+
+        updateStatus('Recording...', 'recording');
 
     } catch (err) {
+        console.error('PTT:', err);
         showError('Failed to start recording: ' + err.message);
     }
 }
 
 /**
- * Stop recording audio
+ * Stop recording
  */
 export function stopRecording() {
     if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
         state.mediaRecorder.stop();
     }
-
-    if (state.audioStream) {
-        state.audioStream.getTracks().forEach(track => track.stop());
-        state.audioStream = null;
-    }
-
     state.isRecording = false;
 
-    // Stop audio visualization
-    stopAudioVisualization();
-
-    // Update UI
+    // UI
     const voiceBtn = document.getElementById('voiceBtn');
-    const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
-    const micIcon = voiceBtn?.querySelector('.mic-icon');
-
     if (voiceBtn) {
         voiceBtn.classList.remove('recording');
         document.body.classList.remove('recording');
     }
-    if (recordingIndicator) {
-        recordingIndicator.style.display = 'none';
-    }
-    if (micIcon) {
-        micIcon.style.display = 'block';
-    }
+    const recordingIndicator = voiceBtn?.querySelector('.recording-indicator');
+    if (recordingIndicator) recordingIndicator.style.display = 'none';
+    const micIcon = voiceBtn?.querySelector('.mic-icon');
+    if (micIcon) micIcon.style.display = 'block';
+
     updateStatus('Processing...', 'processing');
 }
 
@@ -188,14 +164,17 @@ export async function startLiveMode() {
             if (!state.isLiveMode) return;
 
             const pcmFloat32 = event.data;
+            // Calculate RMS for client-side silence detection (threshold: 0.0005)
+            let sum = 0;
+            for (let i = 0; i < pcmFloat32.length; i++) sum += Math.abs(pcmFloat32[i]);
+            const rms = sum / pcmFloat32.length;
 
-            // Debug: Check if audio is non-silent
-            let maxVal = 0;
-            for (let i = 0; i < pcmFloat32.length; i++) maxVal = Math.max(maxVal, Math.abs(pcmFloat32[i]));
-
-            if (maxVal > 0.01) {
-                console.log(`[Live Mode] Audio activity detected: max amplitude ${maxVal.toFixed(4)}`);
+            if (rms < 0.0005) {
+                // Skip sending silent chunk
+                return;
             }
+
+
 
             const base64PCM = arrayBufferToBase64(pcmFloat32.buffer);
 
@@ -206,10 +185,6 @@ export async function startLiveMode() {
                     channels: 1,
                     timestamp: Date.now()
                 });
-            } else if (state.socket) {
-                console.warn('[Live Mode] Socket disconnected, cannot send PCM chunk');
-            } else {
-                console.error('[Live Mode] No socket connection!');
             }
         };
 

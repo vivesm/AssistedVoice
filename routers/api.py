@@ -31,7 +31,8 @@ def register_api_routes(app, app_state):
             'ui': config.get('ui', {}),
             'audio': config.get('audio', {}),
             'vad': config.get('vad', {}),
-            'performance': config.get('performance', {})
+            'performance': config.get('performance', {}),
+            'initialized': app_state.get('initialized', {})
         }
 
     @app.get("/api/models", response_model=ModelListResponse, tags=["Models"])

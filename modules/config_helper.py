@@ -153,12 +153,18 @@ def save_config_to_file(config: dict, file_path: str = 'config.yaml'):
         config_to_save = config.copy()
         
         # Remove volatile or large fields if they exist as a precaution
-        fields_to_remove = ['sio', 'stt', 'tts', 'chat_service', 'audio_service', 'model_service', 'llm']
+        fields_to_remove = ['sio', 'chat_service', 'audio_service', 'model_service', 'llm']
         for field in fields_to_remove:
             if field in config_to_save:
+                del config_to_save[field]
+        
+        # Only remove 'stt' and 'tts' if they are NOT dictionaries (meaning they are engine objects)
+        for field in ['stt', 'tts']:
+            if field in config_to_save and not isinstance(config_to_save[field], dict):
                 del config_to_save[field]
                 
         with open(file_path, 'w') as f:
             yaml.dump(config_to_save, f, default_flow_style=False, sort_keys=False)
         logger.info(f"Configuration saved to {file_path}")
     except Exception as e:
+        logger.error(f"Failed to save configuration: {e}")

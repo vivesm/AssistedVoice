@@ -24,6 +24,9 @@ class ModelService:
         Returns:
             Tuple of (model_list, current_model)
         """
+        if not self.llm:
+            return [], "Loading..."
+
         try:
             # Check if LLM has list_models method (for LM Studio, custom backends, etc.)
             if hasattr(self.llm, 'list_models'):
@@ -39,7 +42,7 @@ class ModelService:
                 return model_list, current_model
         except Exception as e:
             logger.error(f"Error getting models: {e}")
-            raise
+            return [], "Error"
 
     def switch_model(self, new_model: str) -> Tuple[Any, str]:
         """
@@ -79,6 +82,10 @@ class ModelService:
 
             # Get the actual model name that was loaded
             actual_model = new_llm.model
+            
+            # Sync the actual model back to the config (important for fallbacks)
+            self.config[config_section]['model'] = actual_model
+            
             logger.info(f"Changed model to: {actual_model}")
 
             return new_llm, actual_model

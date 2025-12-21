@@ -169,3 +169,24 @@ class BaseLLM(ABC):
             "server": getattr(self, 'server_url', 'unknown'),
             "conversation_length": len(self.conversation.messages)
         }
+
+
+class NullLLM(BaseLLM):
+    """Fallback LLM for when connections fail"""
+    
+    def __init__(self, config: dict, error_message: str = "LLM not connected"):
+        super().__init__(config)
+        self.model = "Disconnected"
+        self.error_message = error_message
+        
+    def setup(self):
+        pass
+        
+    def list_models(self) -> List[str]:
+        return []
+        
+    def test_connection(self) -> tuple[bool, str]:
+        return False, self.error_message
+        
+    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+        yield f"Error: {self.error_message}. Please check your configuration and ensure the LLM server is accessible."

@@ -27,6 +27,7 @@ from routers.api import register_api_routes
 from services.model_service import ModelService
 from services.chat_service import ChatService
 from services.audio_service import AudioService
+from services.reading_service import ReadingService
 
 # Load environment variables
 load_dotenv()
@@ -47,38 +48,86 @@ app_state = {
     'model_service': None,
     'chat_service': None,
     'audio_service': None,
-    'sio': None
+    'reading_service': None,
+    'sio': None,
+    'initialized': {
+        'stt': False,
+        'llm': False,
+        'tts': False,
+        'services': False
+    }
 }
 
 
 async def initialize_components():
     """Initialize AI components asynchronously"""
+    try:
+        # Load configuration if not already loaded
+        if not app_state['config']:
+            with open('config.yaml', 'r') as f:
+                app_state['config'] = yaml.safe_load(f)
 
-    # Load configuration
-    with open('config.yaml', 'r') as f:
-        app_state['config'] = yaml.safe_load(f)
+        logger.info("Initializing components in background...")
 
-    logger.info("Initializing components...")
+        # Initialize TTS first (usually fast)
+        try:
+            app_state['tts'] = create_tts_engine(app_state['config'])
+            app_state['initialized']['tts'] = True
+            logger.info("✓ Text-to-Speech initialized")
+        except Exception as e:
+            logger.error(f"Error initializing TTS: {e}")
 
-    # Initialize STT (runs in thread pool for blocking ops)
-    app_state['stt'] = WhisperSTT(app_state['config'])
-    logger.info("✓ Speech-to-Text initialized")
+        # Initialize STT (can be slow)
+        try:
+            logger.info("Loading Speech-to-Text model...")
+            app_state['stt'] = WhisperSTT(app_state['config'])
+            app_state['initialized']['stt'] = True
+            logger.info("✓ Speech-to-Text initialized")
+        except Exception as e:
+            logger.error(f"Error initializing STT: {e}")
 
-    # Initialize LLM using factory
-    app_state['llm'] = create_llm(app_state['config'], optimized=True)
-    logger.info(f"✓ Language Model initialized ({app_state['llm'].__class__.__name__})")
+        # Initialize LLM using factory (can be slow if it tests connection)
+        try:
+            logger.info("Connecting to Language Model...")
+            app_state['llm'] = create_llm(app_state['config'], optimized=True)
+            if app_state['llm']:
+                app_state['initialized']['llm'] = True
+                logger.info(f"✓ Language Model initialized ({app_state['llm'].__class__.__name__})")
+            else:
+                logger.warning("⚠️ Language Model failed to initialize.")
+        except Exception as e:
+            logger.error(f"Error during LLM initialization: {e}")
+            app_state['llm'] = None
 
-    # Initialize TTS
-    app_state['tts'] = create_tts_engine(app_state['config'])
-    logger.info("✓ Text-to-Speech initialized")
+        # Initialize services
+        from services.reading_service import ReadingService
+        app_state['model_service'] = ModelService(app_state['llm'], app_state['config'])
+        app_state['chat_service'] = ChatService(app_state['llm'])
+        app_state['audio_service'] = AudioService(app_state['stt'], app_state['tts'])
+        app_state['reading_service'] = ReadingService(app_state['config'])
+        app_state['initialized']['services'] = True
+        logger.info("✓ Services initialized")
 
-    # Initialize services
-    app_state['model_service'] = ModelService(app_state['llm'], app_state['config'])
-    app_state['chat_service'] = ChatService(app_state['llm'])
-    app_state['audio_service'] = AudioService(app_state['stt'], app_state['tts'])
-    logger.info("✓ Services initialized")
+        # Re-register WebSocket handlers if SIO is available
+        if app_state['sio']:
+            from routers.websocket import register_websocket_handlers
+            register_websocket_handlers(
+                app_state['sio'],
+                app_state['config'],
+                app_state['stt'],
+                app_state['tts'],
+                app_state['chat_service'],
+                app_state['audio_service'],
+                app_state['model_service'],
+                app_state['reading_service']
+            )
+            logger.info("✓ WebSocket handlers updated with initialized components")
 
-    return True
+        print_startup_message()
+        return True
+    except Exception as e:
+        logger.error(f"Critical error during background initialization: {e}")
+        return False
 
 
 def print_startup_message():
@@ -87,10 +136,22 @@ def print_startup_message():
     print("   AssistedVoice - Push to Talk (FastAPI)")
     print("=" * 60)
     print()
-    print("✓ All components initialized")
-    print(f"✓ Model: {app_state['llm'].model}")
-    print(f"✓ Whisper: {app_state['config']['whisper']['model']}")
-    print(f"✓ TTS: {app_state['config']['tts']['engine']}")
+    
+    if app_state['initialized']['llm'] and app_state['llm']:
+        print(f"✓ Model: {app_state['llm'].model}")
+    else:
+        print("⏳ Model: INITIALIZING or NOT CONNECTED")
+        
+    if app_state['initialized']['stt']:
+        print(f"✓ Whisper: {app_state['config']['whisper']['model']}")
+    else:
+        print("⏳ Whisper: LOADING...")
+        
+    if app_state['initialized']['tts']:
+        print(f"✓ TTS: {app_state['config']['tts']['engine']}")
+    else:
+        print("⏳ TTS: INITIALIZING...")
+        
     print()
     print("=" * 60)
     print()
@@ -110,25 +171,33 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting AssistedVoice...")
 
-    # Initialize components
-    await initialize_components()
+    # Load config immediately for routing and middleware
+    try:
+        with open('config.yaml', 'r') as f:
+            app_state['config'] = yaml.safe_load(f)
+    except Exception as e:
+        logger.error(f"Failed to load config.yaml: {e}")
+        # Use default empty config to avoid crashes
+        app_state['config'] = {'ui': {}, 'audio': {}, 'whisper': {}, 'tts': {}, 'server': {}, 'ollama': {}, 'performance': {}, 'vad': {}, 'reading_mode': {}}
 
-    # Register WebSocket handlers after components are initialized
+    # Start initialization in background
+    import asyncio
+    asyncio.create_task(initialize_components())
+
+    # Register initial WebSocket handlers (with None components)
     from routers.websocket import register_websocket_handlers
     register_websocket_handlers(
         sio,
         app_state['config'],
-        app_state['stt'],
-        app_state['tts'],
-        app_state['chat_service'],
-        app_state['audio_service'],
-        app_state['model_service']
+        None,
+        None,
+        None,
+        None,
+        None,
+        None
     )
 
-    # Print startup message
-    print_startup_message()
-
-    logger.info("✓ AssistedVoice ready")
+    logger.info("✓ AssistedVoice server starting (components loading in background)")
 
     yield
 
@@ -160,12 +229,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create Socket.IO server
+# Create Socket.IO server with longer timeouts for live mode
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins=cors_origins if cors_origins != ["*"] else '*',
     logger=False,
-    engineio_logger=False
+    engineio_logger=False,
+    ping_timeout=60,      # Wait 60 seconds before disconnecting
+    ping_interval=25      # Send ping every 25 seconds
 )
 app_state['sio'] = sio
 

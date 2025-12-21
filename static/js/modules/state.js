@@ -25,7 +25,6 @@ export const state = {
     liveAudioContext: null,
     liveAudioWorklet: null,
     liveAudioStream: null,
-    recentTranscripts: [],
 
     // Audio visualization
     audioContext: null,

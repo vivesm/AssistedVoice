@@ -8,7 +8,7 @@ sounddevice==0.5.3             # Audio capture
 numpy==2.3.5                  # Audio processing
 
 # Audio processing
-pyaudio==0.2.14                # Audio I/O
+# pyaudio==0.2.14                # Audio I/O
 webrtcvad==2.0.10              # Voice activity detection
 
 # Configuration

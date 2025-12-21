@@ -448,6 +448,60 @@ class DesktopCommanderService:
         return f"Failed to kill process {pid}"
 
 
+class MemoryService:
+    """Memory MCP service for persistent knowledge graph"""
+    
+    IMAGE = "mcp/memory"
+    
+    def __init__(self, client: MCPClient):
+        self.client = client
+    
+    def is_available(self) -> bool:
+        return self.client._check_image_available(self.IMAGE)
+    
+    def create_entities(self, entities: List[Dict[str, str]]) -> str:
+        """Create new entities in the knowledge graph"""
+        result = self.client.call_tool(self.IMAGE, "create_entities", {"entities": entities})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to create entities"
+    
+    def create_relations(self, relations: List[Dict[str, str]]) -> str:
+        """Create relations between entities"""
+        result = self.client.call_tool(self.IMAGE, "create_relations", {"relations": relations})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to create relations"
+    
+    def add_observations(self, observations: List[Dict[str, Any]]) -> str:
+        """Add observations to existing entities"""
+        result = self.client.call_tool(self.IMAGE, "add_observations", {"observations": observations})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to add observations"
+    
+    def search_nodes(self, query: str) -> str:
+        """Search for nodes in the knowledge graph"""
+        result = self.client.call_tool(self.IMAGE, "search_nodes", {"query": query})
+        if result:
+            return self.client.get_text_content(result)
+        return f"No results found for: {query}"
+    
+    def read_graph(self) -> str:
+        """Read the entire knowledge graph"""
+        result = self.client.call_tool(self.IMAGE, "read_graph", {})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to read graph"
+    
+    def open_nodes(self, names: List[str]) -> str:
+        """Open specific nodes by name"""
+        result = self.client.call_tool(self.IMAGE, "open_nodes", {"names": names})
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to open nodes: {names}"
+
+
 class SequentialThinkingService:
     """Sequential Thinking MCP service for step-by-step problem solving"""
     
@@ -509,6 +563,7 @@ _context7: Optional[Context7Service] = None
 _playwright: Optional[PlaywrightService] = None
 _docker: Optional[DockerService] = None
 _desktop_commander: Optional[DesktopCommanderService] = None
+_memory: Optional[MemoryService] = None
 _sequential_thinking: Optional[SequentialThinkingService] = None
 
 
@@ -558,6 +613,14 @@ def get_desktop_commander() -> DesktopCommanderService:
     if _desktop_commander is None:
         _desktop_commander = DesktopCommanderService(get_mcp_client())
     return _desktop_commander
+
+
+def get_memory() -> MemoryService:
+    """Get or create the Memory service"""
+    global _memory
+    if _memory is None:
+        _memory = MemoryService(get_mcp_client())
+    return _memory
 
 
 def get_sequential_thinking() -> SequentialThinkingService:

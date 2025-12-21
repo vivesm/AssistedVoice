@@ -76,7 +76,7 @@ class MCPClient:
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=60  # Longer timeout for docs fetching
+                timeout=180  # Extended timeout for large docs/complex operations
             )
             
             if result.returncode != 0:
@@ -249,17 +249,23 @@ class Context7Service:
         Returns:
             Documentation text or error message
         """
-        library_id = self.resolve_library(library_name)
-        if not library_id:
-            return f"Could not find library: {library_name}"
-        
-        logger.info(f"Resolved '{library_name}' to '{library_id}'")
-        docs = self.get_docs(library_id, topic=topic)
-        
-        if not docs:
-            return f"No documentation found for {library_name}"
-        
-        return docs
+        try:
+            library_id = self.resolve_library(library_name)
+            if not library_id:
+                return f"Could not find library: {library_name}"
+            
+            logger.info(f"Resolved '{library_name}' to '{library_id}'")
+            docs = self.get_docs(library_id, topic=topic)
+            
+            if not docs:
+                return f"No documentation found for {library_name}"
+            
+            return docs
+        except Exception as e:
+            # Handle timeouts gracefully
+            if "timed out" in str(e).lower():
+                return f"Documentation lookup for {library_name} timed out. Try searching the web instead or visit the official docs at https://www.google.com/search?q={library_name}+documentation"
+            return f"Error fetching docs for {library_name}: {str(e)}"
 
 
 class PlaywrightService:

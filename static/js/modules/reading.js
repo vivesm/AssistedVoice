@@ -96,6 +96,17 @@ export class ReadingMode {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
         });
 
+        
+        // Prevent Enter key from submitting to chat
+        this.textInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Optionally start reading on Enter
+                // this.startReading();
+            }
+        });
+        
         // Text input character count
         this.textInput?.addEventListener('input', () => this.updateCharCount());
 

@@ -14,20 +14,25 @@ logger = logging.getLogger(__name__)
 class MCPSearchService:
     """Web search service using Brave MCP Server via Docker"""
 
-    def __init__(self, api_key: Optional[str] = None):
-        """
-        Initialize MCP search service
-        
-        Args:
-            api_key: Brave Search API key. If not provided, reads from BRAVE_API_KEY env var
-        """
-        self.api_key = api_key or os.getenv("BRAVE_API_KEY")
-        if not self.api_key:
-            logger.warning("No Brave API key configured. Web search will be unavailable.")
+    def __init__(self):
+        """Initialize MCP search service (API key is configured in Docker)"""
+        self._available = self._check_docker_available()
+    
+    def _check_docker_available(self) -> bool:
+        """Check if Docker and MCP image are available"""
+        try:
+            result = subprocess.run(
+                ["docker", "image", "inspect", "mcp/brave-search"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
     
     def is_available(self) -> bool:
-        """Check if search service is configured"""
-        return bool(self.api_key)
+        """Check if search service is available"""
+        return self._available
     
     def _call_mcp_tool(self, tool_name: str, arguments: dict) -> Optional[dict]:
         """
@@ -40,10 +45,6 @@ class MCPSearchService:
         Returns:
             Tool result or None on error
         """
-        if not self.api_key:
-            logger.error("Brave API key not configured")
-            return None
-        
         # JSON-RPC request for MCP
         request = {
             "jsonrpc": "2.0",
@@ -56,12 +57,10 @@ class MCPSearchService:
         }
         
         try:
-            # Run Docker MCP container
+            # Run Docker MCP container (API key is pre-configured in Docker)
             result = subprocess.run(
                 [
                     "docker", "run", "-i", "--rm",
-                    "-e", f"BRAVE_API_KEY={self.api_key}",
-                    "-e", "BRAVE_MCP_TRANSPORT=stdio",
                     "mcp/brave-search"
                 ],
                 input=json.dumps(request),

@@ -33,9 +33,4 @@ keyboard==0.13.5               # Keyboard input detection
 
 # Testing
 pytest==9.0.2                  # Testing framework
-pytest==9.0.2                  # Testing framework
 pytest-cov==7.0.0              # Coverage reporting
-
-# ChatLink (Signal Bot) Dependencies
-websocket-client               # Signal WebSocket client
-google-generativeai            # Google Gemini API

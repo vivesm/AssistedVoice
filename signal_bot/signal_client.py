@@ -4,7 +4,7 @@ import time
 import requests
 import websocket
 import threading
-from config import CONFIG
+from .config import CONFIG
 
 # =================================================================================
 # SIGNAL INTERACTION (WebSocket)

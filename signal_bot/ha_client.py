@@ -1,7 +1,7 @@
 import requests
 import logging
 from typing import Dict, Any, Optional, List
-from config import CONFIG
+from .config import CONFIG
 
 class HAClient:
     """Home Assistant REST API Client."""

@@ -119,12 +119,12 @@ class OllamaLLM(BaseLLM):
         except Exception as e:
             return False, f"Failed to connect to Ollama: {str(e)}"
 
-    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """Generate response from LLM"""
-        # Add user message to conversation
-        self.conversation.add_message("user", prompt)
+        # Add user message to conversation using updated signature
+        self.conversation.add_message("user", prompt, images=images)
         
-        # Get conversation context
+        # Get conversation context (now includes images in dict)
         messages = self.conversation.get_context(
             system_prompt=self.config['ollama'].get('system_prompt')
         )
@@ -140,9 +140,18 @@ class OllamaLLM(BaseLLM):
             first_token_time = None
             full_response = ""
             
+            # Determine which model to use
+            current_model = self.model
+            
+            # Switch to vision model if images are present
+            if images and self.config['ollama'].get('vision_model'):
+                vision_model = self.config['ollama']['vision_model']
+                logger.info(f"Images detected, switching to vision model: {vision_model}")
+                current_model = vision_model
+
             # Stream response
             response = self.client.chat(
-                model=self.model,
+                model=current_model,
                 messages=messages,
                 stream=stream,
                 options=options
@@ -230,10 +239,10 @@ class OptimizedOllamaLLM(OllamaLLM):
             max_size=config['performance'].get('max_cache_size', 100)
         ) if config['performance'].get('cache_responses', True) else None
     
-    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """Generate with caching support"""
-        # Check cache first
-        if self.cache and not stream:
+        # Check cache first (only for text-only requests)
+        if self.cache and not stream and not images:
             cached = self.cache.get(prompt)
             if cached:
                 yield cached
@@ -241,7 +250,7 @@ class OptimizedOllamaLLM(OllamaLLM):
         
         # Generate response
         full_response = ""
-        for chunk in super().generate(prompt, stream):
+        for chunk in super().generate(prompt, stream, images):
             full_response += chunk
             yield chunk
         

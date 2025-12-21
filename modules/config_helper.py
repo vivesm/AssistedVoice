@@ -162,3 +162,5 @@ def save_config_to_file(config: dict, file_path: str = 'config.yaml'):
             yaml.dump(config_to_save, f, default_flow_style=False, sort_keys=False)
         logger.info(f"Configuration saved to {file_path}")
     except Exception as e:
+        logger.error(f"Error saving configuration: {e}")
+        pass

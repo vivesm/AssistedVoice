@@ -9,6 +9,10 @@ from faster_whisper import WhisperModel
 import webrtcvad
 from typing import Optional, Callable
 import logging
+import requests
+import base64
+import io
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,12 @@ class WhisperSTT:
         
     def setup(self):
         """Initialize Whisper model and VAD"""
-        # Load Whisper model
+        # Check if running in remote mode
+        if self.config['whisper'].get('mode') == 'remote':
+            logger.info(f"STT configured for REMOTE mode (Server: {self.config['whisper']['remote_url']})")
+            return
+
+        # Load Whisper model (Local Mode)
         model_name = self.config['whisper']['model']
         # Note: 'turbo' is a valid model name for faster-whisper
         
@@ -216,6 +225,16 @@ class WhisperSTT:
         if len(audio) == 0:
             return ""
         
+        # Use remote transcription if configured
+        if self.config['whisper'].get('mode') == 'remote':
+            # Convert numpy array back to base64 to send (inefficient but compatible with API)
+            # Actually, standard API expects base64 encoded file/bytes.
+            # Convert float32 numpy -> int16 bytes -> base64
+            audio_int16 = (audio * 32767).astype(np.int16)
+            audio_bytes = audio_int16.tobytes()
+            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            return self.transcribe_remote(audio_b64)
+
         start_time = time.time()
         
         # Transcribe with faster-whisper
@@ -232,6 +251,67 @@ class WhisperSTT:
         
         logger.info(f"Transcription ({elapsed:.2f}s): {transcription}")
         return transcription
+
+    def transcribe_remote(self, audio_base64: str) -> str:
+        """Transcribe using remote server"""
+        remote_url = self.config['whisper'].get('remote_url')
+        if not remote_url:
+            logger.error("Remote URL not configured")
+            return "Error: Remote transcription URL not configured"
+            
+        try:
+            logger.info(f"Transcribing via remote server: {remote_url}")
+            start_time = time.time()
+            
+            payload = {'audio': audio_base64}
+            response = requests.post(remote_url, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                text = result.get('text', '')
+                elapsed = time.time() - start_time
+                logger.info(f"Remote Transcription ({elapsed:.2f}s): {text}")
+                return text
+            else:
+                logger.error(f"Remote server error: {response.status_code} - {response.text}")
+                return f"Error: Remote server returned {response.status_code}"
+                
+        except Exception as e:
+            logger.error(f"Remote transcription failed: {e}")
+            return f"Error: Remote transcription failed - {str(e)}"
+
+    def transcribe_base64(self, audio_base64: str) -> str:
+        """Transcribe base64 audio data"""
+        if not audio_base64:
+            return ""
+            
+        # Remote mode: Pass through directly
+        if self.config['whisper'].get('mode') == 'remote':
+            return self.transcribe_remote(audio_base64)
+            
+        # Local mode: Decode and process
+        try:
+            # Decode base64 
+            audio_bytes = base64.b64decode(audio_base64)
+            
+            # Convert bytes to numpy array (assuming 16-bit PCM for now, 
+            # as that's what typical browsers/recording send)
+            # Note: This implies the source sends raw PCM. 
+            # If source sends WAV/MP3, we need faster-whisper's decode_audio or ffmpeg.
+            # faster-whisper's decode_audio handles file paths or file-like objects.
+            
+            # Using faster_whisper.decode_audio which handles various formats
+            # We wrap bytes in a BytesIO object
+            from faster_whisper import decode_audio
+            
+            audio_file = io.BytesIO(audio_bytes)
+            audio_array = decode_audio(audio_file)
+            
+            return self.transcribe(audio_array)
+            
+        except Exception as e:
+            logger.error(f"Error decoding base64 audio: {e}")
+            return ""
     
     def record_and_transcribe(self, duration: Optional[float] = None,
                              use_vad: bool = True) -> str:

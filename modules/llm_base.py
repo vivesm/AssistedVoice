@@ -15,15 +15,19 @@ class Message:
     """Unified message format for all LLM implementations"""
     role: str  # 'user', 'assistant', or 'system'
     content: str
+    images: Optional[List[str]] = None  # Paths or base64 data
     timestamp: datetime = None
     
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now()
     
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
-        return {"role": self.role, "content": self.content}
+        data = {"role": self.role, "content": self.content}
+        if self.images:
+            data["images"] = self.images
+        return data
 
 
 class ConversationManagerBase:
@@ -34,9 +38,9 @@ class ConversationManagerBase:
         self.max_history = max_history
         self.max_tokens = max_tokens
     
-    def add_message(self, role: str, content: str) -> Message:
+    def add_message(self, role: str, content: str, images: Optional[List[str]] = None) -> Message:
         """Add a message to the conversation"""
-        message = Message(role=role, content=content)
+        message = Message(role=role, content=content, images=images)
         self.messages.append(message)
         
         # Trim history if needed (keep pairs)
@@ -45,7 +49,7 @@ class ConversationManagerBase:
         
         return message
     
-    def get_context(self, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
+    def get_context(self, system_prompt: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get conversation context for LLM"""
         context = []
         
@@ -100,13 +104,14 @@ class BaseLLM(ABC):
         pass
     
     @abstractmethod
-    def generate(self, prompt: str, stream: bool = True) -> Generator[str, None, None]:
+    def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """
         Generate response from the LLM
         
         Args:
             prompt: The user's input prompt
             stream: Whether to stream the response
+            images: Optional list of image paths or base64 data for vision models
             
         Yields:
             Response chunks as strings
@@ -133,18 +138,19 @@ class BaseLLM(ABC):
         """
         pass
     
-    def generate_complete(self, prompt: str) -> str:
+    def generate_complete(self, prompt: str, images: Optional[List[str]] = None) -> str:
         """
         Generate complete response (non-streaming)
         
         Args:
             prompt: The user's input prompt
+            images: Optional list of images
             
         Returns:
             Complete response as a string
         """
         response = ""
-        for chunk in self.generate(prompt, stream=False):
+        for chunk in self.generate(prompt, stream=False, images=images):
             response += chunk
         return response
     

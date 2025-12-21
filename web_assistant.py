@@ -27,6 +27,7 @@ from routers.api import register_api_routes
 from services.model_service import ModelService
 from services.chat_service import ChatService
 from services.audio_service import AudioService
+from services.signal_bot_service import SignalBotService
 
 # Load environment variables
 load_dotenv()
@@ -113,6 +114,11 @@ async def lifespan(app: FastAPI):
     # Initialize components
     await initialize_components()
 
+    # Start Signal Bot
+    signal_service = SignalBotService(app_state['config'])
+    signal_service.start(app_state['audio_service'])
+    app_state['signal_bot'] = signal_service
+
     # Register WebSocket handlers after components are initialized
     from routers.websocket import register_websocket_handlers
     register_websocket_handlers(
@@ -134,6 +140,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down AssistedVoice...")
+    
+    if app_state.get('signal_bot'):
+        app_state['signal_bot'].stop()
 
 
 # Create FastAPI app

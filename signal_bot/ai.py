@@ -1,8 +1,8 @@
 import logging
 import os
 from typing import Tuple, List, Dict, Any
-from config import CONFIG, SHARED_PROMPTS, CONTEXT_WINDOW_SIZE
-from utils import run_command_on_host
+from .config import CONFIG, SHARED_PROMPTS, CONTEXT_WINDOW_SIZE
+from .utils import run_command_on_host
 
 # For direct API calls
 from openai import OpenAI

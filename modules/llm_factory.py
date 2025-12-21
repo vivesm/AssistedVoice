@@ -6,6 +6,7 @@ from typing import Optional
 from .config_helper import get_server_config
 from .llm import OllamaLLM, OptimizedOllamaLLM
 from .llm_lmstudio import LMStudioLLM
+from .llm_cloud import OpenAILLM, GeminiLLM
 from .llm_base import BaseLLM
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,18 @@ def create_llm(config: dict, optimized: bool = True) -> BaseLLM:
             # Use LM Studio implementation
             logger.info("Using LM Studio OpenAI-compatible API")
             return LMStudioLLM(config)
+
+        elif server_type == 'openai':
+            logger.info("Using OpenAI Native API")
+            llm = OpenAILLM(config)
+            llm.setup()
+            return llm
+
+        elif server_type == 'gemini':
+            logger.info("Using Google Gemini API")
+            llm = GeminiLLM(config)
+            llm.setup()
+            return llm
         
         elif server_type == 'custom':
             # For custom servers, try to detect the type

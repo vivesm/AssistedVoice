@@ -2,6 +2,12 @@ import os
 import json
 import logging
 from typing import Dict
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load .env from parent directory (AssistedVoice root)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # =================================================================================
 # CONFIGURATION
@@ -19,7 +25,7 @@ CONFIG = {
     ],
     
     # Maximum length of message to process (safety)
-    "MAX_MSG_LEN": 1000,
+    "MAX_MSG_LEN": int(os.environ.get("MAX_MSG_LEN", "4000")),  # Increased default
     
     # Log file path
     "LOG_FILE": "logs/chatops.log",
@@ -35,9 +41,14 @@ CONFIG = {
     # AI API Keys
     "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
     "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY", ""),
+
+    # Signal Data Path (for attachments)
+    "SIGNAL_DATA_PATH": os.environ.get("SIGNAL_DATA_PATH", ""),
 }
 
-CONTEXT_WINDOW_SIZE = 5  # Pass last 5 messages to AI
+# Pass last N messages to AI (Memory)
+# User requested "no limits", so we allow override. Default increased to 20.
+CONTEXT_WINDOW_SIZE = int(os.environ.get("CONTEXT_WINDOW_SIZE", "20"))
 
 # Preferences file location (persistent storage)
 PREFERENCES_FILE = "/app/user_preferences.json"

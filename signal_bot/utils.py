@@ -3,7 +3,7 @@ import subprocess
 import logging
 import json
 from typing import Tuple, List, Dict, Any
-from config import CONFIG
+from .config import CONFIG
 
 def detect_mode(text: str) -> str:
     """

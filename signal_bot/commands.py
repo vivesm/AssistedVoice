@@ -1,8 +1,8 @@
 import logging
 import json
 from typing import Dict, Any
-from utils import run_command_on_host, classify_operation
-from ha_client import HAClient
+from .utils import run_command_on_host, classify_operation
+from .ha_client import HAClient
 
 ha = HAClient()
 

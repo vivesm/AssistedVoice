@@ -7,7 +7,7 @@ import base64
 from typing import Dict, Any, Optional
 
 from .config import CONFIG, SHARED_PROMPTS, load_user_preferences, save_user_preferences
-from .utils import detect_mode, parse_mode, classify_operation, extract_actions_from_response
+from .utils import detect_mode, parse_mode, classify_operation, extract_actions_from_response, format_markdown_for_signal
 from .signal_client import run_signal_receive, send_signal_reply, send_reaction, send_typing_indicator
 from .commands import execute_action
 
@@ -183,7 +183,7 @@ class SignalBot:
         final_reply = self._process_actions(sender, mode, response, message_timestamp)
         
         # 7. Send Reply
-        send_signal_reply(sender, final_reply)
+        send_signal_reply(sender, format_markdown_for_signal(final_reply))
 
     def _handle_attachments(self, attachments: list) -> tuple[str, list]:
         """Process attachments: Transcribe audio, return image paths."""
@@ -254,7 +254,7 @@ class SignalBot:
         send_typing_indicator(sender, self.signal_number, False)
         
         send_reaction(sender, timestamp, "✅", self.signal_number)
-        send_signal_reply(sender, f"[{mode.upper()} - Executed]\n\n{result}")
+        send_signal_reply(sender, format_markdown_for_signal(f"[{mode.upper()} - Executed]\n\n{result}"))
 
     def _process_actions(self, sender, mode, response, timestamp) -> str:
         """Extract and process actions from response"""

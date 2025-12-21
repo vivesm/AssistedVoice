@@ -249,3 +249,28 @@ def extract_actions_from_response(response: str) -> List[Dict[str, Any]]:
             unique_actions.append(a)
 
     return unique_actions
+
+def format_markdown_for_signal(text: str) -> str:
+    """
+    Format markdown text for better display in Signal.
+    - Converts [Text](URL) to "Text: URL"
+    - Converts headers (#) to bold (**text**)
+    - Preserves existing bold/italic if compatible
+    """
+    if not text:
+        return text
+        
+    # 1. Convert Markdown Links: [Title](URL) -> Title: URL
+    # We use a loop to handle nested brackets if possible, but simple regex works for most
+    link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+    text = re.sub(link_pattern, r'\1: \2', text)
+    
+    # 2. Convert Headers: # Title -> **Title**
+    # Matches #, ##, ### etc at start of line
+    header_pattern = r'(?m)^#+\s*(.+)$'
+    text = re.sub(header_pattern, r'**\1**', text)
+    
+    # 3. Fix bold if it uses __ (Signal prefers **) (actually Signal supports both, but consistent is good)
+    # text = re.sub(r'__([^_]+)__', r'**\1**', text)
+    
+    return text

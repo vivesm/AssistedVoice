@@ -111,6 +111,24 @@ A powerful local AI voice assistant that runs entirely on your Mac, combining Wh
 - Whisper models for accurate transcription
 - Multiple Ollama models available
 - Fast response times with local processing
+- **Distributed Ready**: Capable of running backend on a dedicated server (e.g., Mac Studio) while clients run on lightweight devices.
+
+## 📡 Distributed Deployment
+
+If you are running the `AssistedVoice` backend on a remote server (e.g., `sagan`), follow these steps to connect your client (e.g., Signal Bot on `atom`):
+
+1.  **Backend (`sagan`)**:
+    *   Ensure `AssistedVoice` is running: `python web_assistant.py` (or via service).
+    *   Verify it is accessible at `http://sagan.local:5001`.
+
+2.  **Client (`atom`)**:
+    *   Update `config.yaml` to point to the remote server:
+        ```yaml
+        server:
+          type: "remote"  # or "ollama" if using direct remote ollama, but usually via API
+          url: "http://sagan.local:5001"
+        ```
+    *   The `run_bot.py` script will use this URL for Speech-to-Text and other API calls.
 
 ## Quick Start
 

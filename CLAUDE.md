@@ -8,6 +8,17 @@ AssistedVoice is a local AI voice assistant that runs entirely on macOS, combini
 
 **Architecture**: Modern async FastAPI backend with Socket.IO for real-time communication, modular service layer (chat, audio, models), Pydantic validation, and automatic OpenAPI documentation.
 
+## Distributed Setup (New)
+
+The system is designed to run in a distributed manner:
+- **Backend (`sagan`)**: Hosting Ollama, Whisper, and the core `AssistedVoice` API (`web_assistant.py`).
+- **Client (`atom`)**: Running the `SignalBot` (`run_bot.py`) or other lightweight clients.
+
+**Accessing Backend on Sagan**:
+- The backend API runs on `http://sagan.local:5001`.
+- Ensure SSH access to `sagan` is configured if you need to manage the backend directly.
+- The `SignalBot` on `atom` connects to this remote backend for STT and LLM services via `config.yaml`.
+
 ## Commands
 
 ### Setup and Installation

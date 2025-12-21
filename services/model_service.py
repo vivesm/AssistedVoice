@@ -22,24 +22,53 @@ class ModelService:
         Get list of available models from current LLM backend
 
         Returns:
-            Tuple of (model_list, current_model)
+            Tuple of (model_list, current_model) where model_list contains ModelInfo objects
         """
+        if not self.llm:
+            return [], "Loading..."
+
         try:
-            # Check if LLM has list_models method (for LM Studio, custom backends, etc.)
+            raw_models = []
+            # Check if LLM has list_models method
             if hasattr(self.llm, 'list_models'):
-                model_list = self.llm.list_models()
-                # Use actual model loaded by LLM instance (handles fallback correctly)
+                raw_models = self.llm.list_models()
                 current_model = self.llm.model
-                return model_list, current_model
             # Fallback to Ollama-specific API
             else:
                 models = self.llm.client.list()
-                model_list = [model.model for model in models['models']]
+                raw_models = [model.model for model in models['models']]
                 current_model = self.config['ollama']['model']
-                return model_list, current_model
+
+            # Enrich models with capabilities
+            enriched_models = []
+            for name in raw_models:
+                enriched_models.append({
+                    'name': name,
+                    'capabilities': self._infer_capabilities(name)
+                })
+
+            return enriched_models, current_model
         except Exception as e:
             logger.error(f"Error getting models: {e}")
-            raise
+            return [], "Error"
+
+    def _infer_capabilities(self, model_name: str) -> list:
+        """Helper to infer capabilities from model name"""
+        capabilities = []
+        name_lower = model_name.lower()
+
+        # Vision capabilities
+        vision_keywords = ['llava', 'vision', 'v-', 'vl', 'pixtral', 'multimodal', 'minicpm', 'moondream', 'mistral', 'ministral']
+        if any(kw in name_lower for kw in vision_keywords):
+            capabilities.append('vision')
+
+        # Tool capabilities
+        # Mistral is explicitly mentioned by user
+        tool_keywords = ['mistral', 'command-r', 'function', 'tools']
+        if any(kw in name_lower for kw in tool_keywords):
+            capabilities.append('tools')
+
+        return capabilities
 
     def switch_model(self, new_model: str) -> Tuple[Any, str]:
         """
@@ -79,6 +108,10 @@ class ModelService:
 
             # Get the actual model name that was loaded
             actual_model = new_llm.model
+            
+            # Sync the actual model back to the config (important for fallbacks)
+            self.config[config_section]['model'] = actual_model
+            
             logger.info(f"Changed model to: {actual_model}")
 
             return new_llm, actual_model

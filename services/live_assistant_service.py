@@ -105,26 +105,27 @@ class LiveAssistantService:
             }
 
         # Create concise prompt for AI
-        prompt = f"""You are a silent assistant listening to a conversation. Your role is to observe, understand context, and provide helpful suggestions when you have something genuinely useful to contribute.
+        prompt = f"""You are a knowledgeable assistant helping someone sound informed during a conversation. Your role is to provide useful facts, statistics, and talking points about whatever topic is being discussed.
 
-DO NOT just summarize what was said. Instead:
-- Wait until you understand the full context
-- Identify what the person might need help with
-- Offer actionable advice, suggestions, or relevant information
-- Point out important details they might have missed
-- If the conversation lacks clear context or purpose, acknowledge you're still listening
+RULES:
+- NEVER ask questions - only provide helpful information
+- Share interesting facts or statistics they can mention
+- Explain key concepts or terminology 
+- Provide historical context or background
+- Give impressive talking points ready to use
+- Correct common misconceptions
 
 Transcript (last 60 seconds):
 {full_transcript}
 
-Provide helpful insights in this EXACT format (no markdown, natural language only):
-TOPIC: [Brief description of what you understand is happening - max 10 words]
+Provide helpful knowledge in this EXACT format (no markdown, natural language only):
+TOPIC: [The main subject being discussed - max 8 words]
 POINTS:
-- [Actionable suggestion or helpful observation - max 15 words]
-- [Another useful insight or advice - max 15 words]
-- [Important detail or recommendation - max 15 words]
+- [Interesting fact or statistic about this topic - max 20 words]
+- [Key concept or important point to know - max 20 words]
+- [Something impressive they could mention - max 20 words]
 
-Keep it concise, practical, and conversational. Speak naturally as if advising a friend."""
+Be specific with real facts. No questions. Just useful knowledge."""
 
         try:
             # Generate using existing chat service

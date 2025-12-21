@@ -30,7 +30,6 @@ export function registerUIFunctions() {
         showError,
         showEnhancedError,
         updateVADStatus,
-        syncAISettingsToBackend,
         showMiniPlayer,
         hideMiniPlayer,
         clearLiveUI,
@@ -187,7 +186,27 @@ function setupEventListeners() {
     // New chat button
     const newChatBtn = document.getElementById('newChatBtn');
     if (newChatBtn) {
-        newChatBtn.addEventListener('click', startNewChat);
+        newChatBtn.addEventListener('click', () => {
+            startNewChat();
+            // Close the menu after starting new chat
+            const sideMenu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('overlay');
+            if (sideMenu) sideMenu.classList.remove('open');
+            if (overlay) overlay.classList.remove('active');
+        });
+    }
+
+    // Clear chat button (from menu)
+    const clearChatBtn = document.getElementById('clearChatBtn');
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', () => {
+            clearCurrentConversation();
+            // Close the menu after clearing
+            const sideMenu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('overlay');
+            if (sideMenu) sideMenu.classList.remove('open');
+            if (overlay) overlay.classList.remove('active');
+        });
     }
 
     // Clear conversation button
@@ -221,6 +240,18 @@ function setupEventListeners() {
         if (closeMenuBtn) closeMenuBtn.addEventListener('click', closeMenu);
         overlay.addEventListener('click', closeMenu);
     }
+
+    // Image upload button
+    const imageUploadBtn = document.getElementById('imageUploadBtn');
+    const imageInput = document.getElementById('imageInput');
+
+    if (imageUploadBtn && imageInput) {
+        imageUploadBtn.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        imageInput.addEventListener('change', handleImageUpload);
+    }
 }
 
 function setupModelSelection() {
@@ -250,11 +281,21 @@ function setupModelSelection() {
 
             // Optimistic UI update
             state.currentModel = model;
+
+            // Save to localStorage for persistence
+            localStorage.setItem('selectedModel', model);
+
             updateStatus('Ready', 'ready');
+
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = model;
 
             // Update dropdown if exists
             const modelSelect = document.getElementById('modelSelect');
             if (modelSelect) modelSelect.value = model;
+
+            // Update upload button visibility
+            updateUploadButtonVisibility();
 
             // Show toast
             const modelName = btn.querySelector('.model-name').textContent;
@@ -284,11 +325,20 @@ function setupModelSelection() {
             // Update state
             state.currentModel = selectedModel;
 
+            // Save to localStorage for persistence
+            localStorage.setItem('selectedModel', selectedModel);
+
             // Show loading feedback
             showToast(`Switching to ${selectedModel}...`, 'info', 2000);
 
             // Emit model change event to backend
             emit('change_model', { model: selectedModel });
+
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = selectedModel;
+
+            // Update upload button visibility
+            updateUploadButtonVisibility();
         });
         console.log('Model dropdown listener added');
     }
@@ -309,10 +359,12 @@ function setupModelSelection() {
 /**
  * Load available models from backend and populate settings dropdown
  */
-export async function loadAvailableModels() {
+export async function loadAvailableModels(retryCount = 0) {
     console.log('Loading available models...');
     const modelSelect = document.getElementById('modelSelect');
     const modelGrid = document.querySelector('.model-grid');
+    const maxRetries = 10;
+    const retryDelay = 3000; // 3 seconds
 
     if (!modelSelect) {
         console.error('Model select dropdown not found');
@@ -320,9 +372,11 @@ export async function loadAvailableModels() {
     }
 
     try {
-        // Show loading state
-        modelSelect.innerHTML = '<option value="">Loading models...</option>';
-        modelSelect.disabled = true;
+        // Show loading state if first time or currently loading
+        if (retryCount === 0) {
+            modelSelect.innerHTML = '<option value="">Loading models...</option>';
+            modelSelect.disabled = true;
+        }
 
         // Fetch models from backend
         const response = await fetch('/api/models');
@@ -333,45 +387,72 @@ export async function loadAvailableModels() {
 
         const data = await response.json();
 
+        // If backend says "Loading..." or returns empty list during initialization
+        if (data.current === "Loading..." || (data.models.length === 0 && retryCount < maxRetries)) {
+            console.log(`Models still loading, retrying in ${retryDelay / 1000}s... (Attempt ${retryCount + 1}/${maxRetries})`);
+
+            // Update UI to show progress
+            if (modelSelect.disabled) {
+                modelSelect.innerHTML = `<option value="">Models loading... (${retryCount + 1})</option>`;
+            }
+            if (modelGrid && retryCount === 0) {
+                modelGrid.innerHTML = '<p class="status-text">Connecting to AI backend... please wait.</p>';
+            }
+
+            setTimeout(() => loadAvailableModels(retryCount + 1), retryDelay);
+            return;
+        }
+
         if (!data.models || !Array.isArray(data.models)) {
             throw new Error('Invalid response format from /api/models');
         }
 
+        // List of all available model info
+        state.availableModels = data.models;
+
         // Clear and populate dropdown
         modelSelect.innerHTML = '';
 
-        // Clear welcome grid if it exists
-        if (modelGrid) {
-            modelGrid.innerHTML = '';
-        }
+        // Clear welcome grid and quick selector
+        if (modelGrid) modelGrid.innerHTML = '';
+        const quickSelector = document.getElementById('quickModelSelector');
 
         if (data.models.length === 0) {
             modelSelect.innerHTML = '<option value="">No models available</option>';
-            if (modelGrid) modelGrid.innerHTML = '<p class="error-text">No models available</p>';
+            if (modelGrid) modelGrid.innerHTML = '<p class="error-text">No models available. Please check Ollama/LM Studio.</p>';
             showToast('No models available', 'warning', 3000);
             return;
         }
 
         // Add models to dropdown and welcome grid
-        data.models.forEach(model => {
+        data.models.forEach(modelInfo => {
+            const modelName = modelInfo.name;
+            const capabilities = modelInfo.capabilities || [];
+
             // Add to dropdown
             const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model;
+            option.value = modelName;
+            option.textContent = modelName + (capabilities.length ? ` (${capabilities.join(', ')})` : '');
             modelSelect.appendChild(option);
 
-            // Add to welcome grid (limit to first 6 to avoid overcrowding)
-            if (modelGrid && modelGrid.children.length < 6) {
+            // Add to welcome grid
+            if (modelGrid && modelGrid.children.length < 8) {
                 const btn = document.createElement('button');
                 btn.className = 'model-btn';
-                btn.dataset.model = model;
+                btn.dataset.model = modelName;
 
-                // Deterministic color/icon based on model name
-                const isDeepSeek = model.toLowerCase().includes('deepseek');
-                const isQwen = model.toLowerCase().includes('qwen');
-                const isLlama = model.toLowerCase().includes('llama');
-                const isMistral = model.toLowerCase().includes('mistral');
-                const isGemma = model.toLowerCase().includes('gemma');
+                // Build capability badges
+                let badgesHTML = '<div class="capability-badges">';
+                capabilities.forEach(cap => {
+                    badgesHTML += `<span class="badge badge-${cap}">${cap}</span>`;
+                });
+                badgesHTML += '</div>';
+
+                // Deterministic icon based on model name
+                const isDeepSeek = modelName.toLowerCase().includes('deepseek');
+                const isQwen = modelName.toLowerCase().includes('qwen');
+                const isLlama = modelName.toLowerCase().includes('llama');
+                const isMistral = modelName.toLowerCase().includes('mistral');
 
                 let icon = '';
                 let desc = 'AI Model';
@@ -385,36 +466,61 @@ export async function loadAvailableModels() {
                 } else if (isLlama) {
                     desc = 'Meta Llama';
                     icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`;
+                } else if (isMistral) {
+                    desc = 'Mistral Model';
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>`;
                 } else {
                     icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>`;
                 }
 
                 btn.innerHTML = `
                     <div class="model-icon">${icon}</div>
-                    <span class="model-name">${model}</span>
+                    <span class="model-name">${modelName}</span>
                     <span class="model-desc">${desc}</span>
+                    ${badgesHTML}
                 `;
 
                 modelGrid.appendChild(btn);
             }
         });
 
+        // Setup quick model selector click
+        if (quickSelector) {
+            quickSelector.onclick = () => {
+                const settingsBtn = document.getElementById('settingsBtn');
+                if (settingsBtn) settingsBtn.click();
+
+                // Focus the model select and open it if possible
+                const modelSelect = document.getElementById('modelSelect');
+                if (modelSelect) {
+                    setTimeout(() => modelSelect.focus(), 200);
+                }
+            };
+        }
+
         // Set current model
-        const currentModel = data.current || data.models[0];
+        const currentModel = data.current || (data.models.length > 0 ? data.models[0].name : null);
         if (currentModel) {
             modelSelect.value = currentModel;
             state.currentModel = currentModel;
             console.log(`Current model set to: ${currentModel}`);
+
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = currentModel;
 
             // Highlight in grid if present
             if (modelGrid) {
                 const activeBtn = modelGrid.querySelector(`[data-model="${currentModel}"]`);
                 if (activeBtn) activeBtn.classList.add('active');
             }
+
+            // Initial upload button visibility check
+            updateUploadButtonVisibility();
         }
 
         modelSelect.disabled = false;
         console.log(`Loaded ${data.models.length} models successfully`);
+        if (retryCount > 0) showToast('Models loaded successfully', 'success');
 
     } catch (error) {
         console.error('Failed to load models:', error);
@@ -432,14 +538,14 @@ function sendTextMessage() {
     const textInput = document.getElementById('textInput');
     const text = textInput.value.trim();
 
-    if (!text) return;
+    if (!text && state.pendingImages.length === 0) return;
 
     // Clear input
     textInput.value = '';
     textInput.style.height = '';
 
-    // Add user message to UI
-    addMessage('user', text);
+    // Add user message to UI (with images if present)
+    addMessage('user', text || 'Describe this image', true, { images: state.pendingImages });
 
     // Start performance tracking
     state.messageStartTime = Date.now();
@@ -448,17 +554,101 @@ function sendTextMessage() {
 
     // Send to backend
     const requestData = {
-        text: text,
-        enable_tts: state.ttsEnabled
+        text: text || 'Describe this image',
+        images: state.pendingImages,
+        enable_tts: state.ttsEnabled,
+        conversation_id: state.currentChatId
     };
     logRequest('process_text', requestData);
     emit('process_text', requestData);
+
+    // Clear pending images
+    state.pendingImages = [];
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (previewContainer) {
+        previewContainer.innerHTML = '';
+        previewContainer.style.display = 'none';
+    }
 }
+
+/**
+ * Handle image file upload
+ */
+function handleImageUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) {
+            showToast('Please select image files only', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64Image = e.target.result;
+            state.pendingImages.push(base64Image);
+            showImagePreview(base64Image, state.pendingImages.length - 1);
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Clear file input
+    event.target.value = '';
+}
+
+/**
+ * Show image preview thumbnail
+ */
+function showImagePreview(base64Image, index) {
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (!previewContainer) return;
+
+    previewContainer.style.display = 'flex';
+
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'image-preview-thumbnail';
+    thumbnail.dataset.index = index;
+
+    const img = document.createElement('img');
+    img.src = base64Image;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'image-preview-remove';
+    removeBtn.innerHTML = '×';
+    removeBtn.onclick = () => removeImage(index);
+
+    thumbnail.appendChild(img);
+    thumbnail.appendChild(removeBtn);
+    previewContainer.appendChild(thumbnail);
+}
+
+/**
+ * Remove image from pending images
+ */
+function removeImage(index) {
+    state.pendingImages.splice(index, 1);
+
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    if (!previewContainer) return;
+
+    // Rebuild preview
+    previewContainer.innerHTML = '';
+
+    if (state.pendingImages.length === 0) {
+        previewContainer.style.display = 'none';
+    } else {
+        state.pendingImages.forEach((img, idx) => {
+            showImagePreview(img, idx);
+        });
+    }
+}
+
 
 /**
  * Add message to UI
  */
-export function addMessage(role, text, save = true) {
+export function addMessage(role, text, save = true, metadata = {}) {
     const messages = document.getElementById('messages');
     const welcome = document.getElementById('welcome');
 
@@ -471,12 +661,32 @@ export function addMessage(role, text, save = true) {
     }
 
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${role}`;
+    // Support live mode message types
+    const isLiveTranscript = role === 'live-transcript';
+    const isLiveInsight = role === 'live-insight';
+    const isPinned = metadata.pinned || false;
+
+    // Set appropriate classes
+    if (isLiveTranscript) {
+        messageDiv.className = 'message user live-transcript';
+    } else if (isLiveInsight) {
+        messageDiv.className = `message assistant live-insight${isPinned ? ' pinned' : ''}`;
+    } else {
+        messageDiv.className = `message ${role}`;
+    }
+
+    // Store metadata
+    if (isLiveTranscript || isLiveInsight) {
+        messageDiv.dataset.liveMode = 'true';
+        if (isPinned) messageDiv.dataset.pinned = 'true';
+        if (metadata.topic) messageDiv.dataset.topic = metadata.topic;
+        if (metadata.keyPoints) messageDiv.dataset.keyPoints = JSON.stringify(metadata.keyPoints);
+    }
 
     // Avatar
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'message-avatar';
-    if (role === 'user') {
+    if (role === 'user' || isLiveTranscript) {
         avatarDiv.innerHTML = `
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -498,7 +708,24 @@ export function addMessage(role, text, save = true) {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
 
-    if (role === 'assistant') {
+    // Handle live insight formatting
+    if (isLiveInsight && metadata.topic && metadata.keyPoints) {
+        const topic = metadata.topic;
+        const keyPoints = metadata.keyPoints;
+
+        let insightHTML = `<div class="live-insight-content">`;
+        insightHTML += `<h4 class="insight-topic">${topic}</h4>`;
+        if (keyPoints && keyPoints.length > 0) {
+            insightHTML += `<ul class="insight-points">`;
+            keyPoints.forEach(point => {
+                insightHTML += `<li>${point}</li>`;
+            });
+            insightHTML += `</ul>`;
+        }
+        insightHTML += `</div>`;
+
+        contentDiv.innerHTML = insightHTML;
+    } else if (role === 'assistant' && !isLiveInsight) {
         contentDiv.innerHTML = renderMarkdown(text);
         setTimeout(() => addCopyButtonsToCodeBlocks(contentDiv), 0);
     } else {
@@ -507,29 +734,77 @@ export function addMessage(role, text, save = true) {
 
     contentDiv.setAttribute('data-original-text', text);
 
-    // Action Buttons (Assistant only)
-    if (role === 'assistant') {
-        const actionButtons = document.createElement('div');
-        actionButtons.className = 'message-actions';
-        actionButtons.innerHTML = `
-            <button class="message-action-btn copy-btn" title="Copy message">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-            </button>
-            <button class="message-action-btn regenerate-btn" title="Regenerate response">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="1 4 1 10 7 10"/>
-                    <polyline points="23 20 23 14 17 14"/>
-                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                </svg>
-            </button>
+    // Display images if present
+    if (metadata.images && metadata.images.length > 0) {
+        const imagesContainer = document.createElement('div');
+        imagesContainer.className = 'message-images';
+
+        metadata.images.forEach((base64Image) => {
+            const img = document.createElement('img');
+            img.src = base64Image;
+            img.className = 'message-image-thumbnail';
+            img.alt = 'Uploaded image';
+            img.onclick = () => {
+                // Open image in new tab
+                const win = window.open();
+                win.document.write(`<img src="${base64Image}" style="max-width:100%;height:auto;">`);
+            };
+            imagesContainer.appendChild(img);
+        });
+
+        contentDiv.appendChild(imagesContainer);
+    }
+
+
+    // Pin button for live insights
+    if (isLiveInsight) {
+        const pinButton = document.createElement('button');
+        pinButton.className = `message-action-btn pin-btn${isPinned ? ' pinned' : ''}`;
+        pinButton.title = isPinned ? 'Unpin insight' : 'Pin insight';
+        pinButton.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v6m0 0l4-4m-4 4L8 4m4 4v6m0 0l-3 3m3-3l3 3"/>
+                <path d="M12 17v5"/>
+            </svg>
         `;
 
-        const copyBtn = actionButtons.querySelector('.copy-btn');
-        const regenerateBtn = actionButtons.querySelector('.regenerate-btn');
+        pinButton.addEventListener('click', () => {
+            togglePinInsight(messageDiv);
+        });
 
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'message-actions';
+        actionButtons.appendChild(pinButton);
+        contentWrapper.appendChild(actionButtons);
+    }
+
+    // Timestamp
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'message-time';
+    const now = new Date();
+    let timestampText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Add badge for live mode messages
+    if (isLiveTranscript) {
+        timestampText += ' • Live Transcript';
+    } else if (isLiveInsight) {
+        timestampText += ' • AI Insight';
+    }
+
+    timestampDiv.textContent = timestampText;
+
+    // Action buttons for assistant messages (copy, regenerate, speaker) - all in timestamp row
+    if (role === 'assistant' && !isLiveInsight) {
+        // Copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-action-btn copy-btn';
+        copyBtn.title = 'Copy message';
+        copyBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+        `;
         copyBtn.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(text);
@@ -539,6 +814,17 @@ export function addMessage(role, text, save = true) {
             }
         });
 
+        // Regenerate button
+        const regenerateBtn = document.createElement('button');
+        regenerateBtn.className = 'message-action-btn regenerate-btn';
+        regenerateBtn.title = 'Regenerate response';
+        regenerateBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"/>
+                <polyline points="23 20 23 14 17 14"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+        `;
         regenerateBtn.addEventListener('click', () => {
             const messages = Array.from(document.querySelectorAll('.message.user'));
             if (messages.length > 0) {
@@ -549,19 +835,10 @@ export function addMessage(role, text, save = true) {
             }
         });
 
-        contentWrapper.appendChild(actionButtons);
-    }
-
-    // Timestamp
-    const timestampDiv = document.createElement('div');
-    timestampDiv.className = 'message-time';
-    const now = new Date();
-    timestampDiv.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Speaker Button (Assistant only)
-    if (role === 'assistant') {
+        // Speaker button
         const speakerBtn = document.createElement('button');
         speakerBtn.className = 'message-speaker-btn';
+        speakerBtn.title = 'Read aloud';
         speakerBtn.innerHTML = `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
@@ -572,8 +849,11 @@ export function addMessage(role, text, save = true) {
             console.log('Speaker button clicked - replaying message:', text.substring(0, 50) + '...');
             emit('replay_text', { text: text, enable_tts: true });
         };
+
+        // Append all buttons to timestamp row
+        timestampDiv.appendChild(copyBtn);
+        timestampDiv.appendChild(regenerateBtn);
         timestampDiv.appendChild(speakerBtn);
-        console.log('Speaker button added to message (addMessage)');
     }
 
     contentWrapper.appendChild(contentDiv);
@@ -586,7 +866,7 @@ export function addMessage(role, text, save = true) {
         messages.appendChild(messageDiv);
 
         // Reactions
-        if (role === 'assistant') {
+        if (role === 'assistant' && !isLiveInsight) {
             const messageId = 'msg-' + Date.now() + '-' + Math.random();
             messageDiv.dataset.messageId = messageId;
             setTimeout(() => {
@@ -600,8 +880,54 @@ export function addMessage(role, text, save = true) {
     }
 
     if (save) {
-        setTimeout(saveConversation, 100);
+        setTimeout(() => {
+            saveConversation();
+            // Also save to history if this is a user message
+            if (role === 'user') {
+                const currentConversation = localStorage.getItem('assistedVoiceConversation');
+                if (currentConversation) {
+                    const data = JSON.parse(currentConversation);
+                    if (data.messages && data.messages.length > 0) {
+                        saveChatToHistory(data.messages, state.currentChatId);
+                    }
+                }
+            }
+        }, 100);
     }
+}
+
+/**
+ * Toggle pin status for live insight
+ */
+function togglePinInsight(messageDiv) {
+    const isPinned = messageDiv.classList.contains('pinned');
+
+    if (isPinned) {
+        messageDiv.classList.remove('pinned');
+        messageDiv.dataset.pinned = 'false';
+        const pinBtn = messageDiv.querySelector('.pin-btn');
+        if (pinBtn) {
+            pinBtn.classList.remove('pinned');
+            pinBtn.title = 'Pin insight';
+            const svg = pinBtn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', 'none');
+        }
+        showToast('Insight unpinned', 'info');
+    } else {
+        messageDiv.classList.add('pinned');
+        messageDiv.dataset.pinned = 'true';
+        const pinBtn = messageDiv.querySelector('.pin-btn');
+        if (pinBtn) {
+            pinBtn.classList.add('pinned');
+            pinBtn.title = 'Unpin insight';
+            const svg = pinBtn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', 'currentColor');
+        }
+        showToast('Insight pinned', 'success');
+    }
+
+    // Save conversation to persist pin status
+    saveConversation();
 }
 
 /**
@@ -694,9 +1020,50 @@ export function completeResponse(fullText) {
                 `;
             }
 
-            // Always add speaker button
+            // Add copy button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'message-action-btn copy-btn';
+            copyBtn.title = 'Copy message';
+            copyBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            `;
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(fullText);
+                    showToast('Message copied!', 'success');
+                } catch (err) {
+                    showToast('Failed to copy', 'error');
+                }
+            });
+
+            // Add regenerate button
+            const regenerateBtn = document.createElement('button');
+            regenerateBtn.className = 'message-action-btn regenerate-btn';
+            regenerateBtn.title = 'Regenerate response';
+            regenerateBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <polyline points="23 20 23 14 17 14"/>
+                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+            `;
+            regenerateBtn.addEventListener('click', () => {
+                const messages = Array.from(document.querySelectorAll('.message.user'));
+                if (messages.length > 0) {
+                    const lastUserMessage = messages[messages.length - 1];
+                    const userText = lastUserMessage.querySelector('.message-content').textContent;
+                    showToast('Regenerating...', 'info');
+                    emit('process_text', { text: userText, enable_tts: state.ttsEnabled });
+                }
+            });
+
+            // Add speaker button
             const speakerBtn = document.createElement('button');
             speakerBtn.className = 'message-speaker-btn';
+            speakerBtn.title = 'Read aloud';
             speakerBtn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
@@ -708,8 +1075,12 @@ export function completeResponse(fullText) {
                 showToast('Requesting audio replay...', 'info');
                 emit('replay_text', { text: fullText, enable_tts: true });
             };
+
+            // Append all buttons to timestamp row
+            timestampDiv.appendChild(copyBtn);
+            timestampDiv.appendChild(regenerateBtn);
             timestampDiv.appendChild(speakerBtn);
-            console.log('Speaker button added to completed response');
+            console.log('Action buttons added to completed response');
         }
     }
 
@@ -858,14 +1229,19 @@ async function loadSettings() {
         state.ttsEnabled = (engine !== 'none');
         localStorage.setItem('ttsEngine', engine);
 
-        // Sync LLM Model
+        // Sync LLM Model - backend is source of truth
         const serverType = config.server?.type || 'ollama';
         const model = serverType === 'lm-studio' ?
             config.lm_studio?.model : config.ollama?.model;
+
         if (model) {
+            // Update UI to reflect current backend state
             state.currentModel = model;
             const modelSelect = document.getElementById('modelSelect');
             if (modelSelect) modelSelect.value = model;
+
+            // Save current backend state to localStorage for reference
+            localStorage.setItem('selectedModel', model);
         }
 
         // Sync Whisper Model
@@ -887,6 +1263,66 @@ async function loadSettings() {
         }
         if (config.tts?.edge_voice) {
             localStorage.setItem('edgeVoice', config.tts.edge_voice);
+        }
+
+        // Sync AI Parameters
+        const configSection = serverType === 'lm-studio' ? 'lm_studio' : 'ollama';
+        const aiConfig = config[configSection];
+
+        if (aiConfig) {
+            if (aiConfig.temperature !== undefined) {
+                localStorage.setItem('aiTemperature', aiConfig.temperature);
+                const tempSlider = document.getElementById('temperatureSlider');
+                const tempValue = document.getElementById('temperatureValue');
+                if (tempSlider) tempSlider.value = aiConfig.temperature;
+                if (tempValue) tempValue.textContent = aiConfig.temperature;
+            }
+            if (aiConfig.max_tokens !== undefined) {
+                localStorage.setItem('aiMaxTokens', aiConfig.max_tokens);
+                const maxTokensInput = document.getElementById('maxTokensInput');
+                if (maxTokensInput) maxTokensInput.value = aiConfig.max_tokens;
+            }
+            if (aiConfig.system_prompt !== undefined) {
+                localStorage.setItem('aiSystemPrompt', aiConfig.system_prompt);
+                const systemPromptTextarea = document.getElementById('systemPromptTextarea');
+                if (systemPromptTextarea) systemPromptTextarea.value = aiConfig.system_prompt;
+            }
+        }
+
+        // Sync Server Settings
+        if (config.server) {
+            if (config.server.type) localStorage.setItem('serverType', config.server.type);
+            if (config.server.host) localStorage.setItem('serverHost', config.server.host);
+            if (config.server.port) localStorage.setItem('serverPort', config.server.port);
+
+            const serverTypeSelect = document.getElementById('serverTypeSelect');
+            const serverHost = document.getElementById('serverHost');
+            const serverPort = document.getElementById('serverPort');
+
+            if (serverTypeSelect) serverTypeSelect.value = config.server.type || 'ollama';
+            if (serverHost) serverHost.value = config.server.host || 'localhost';
+            if (serverPort) serverPort.value = config.server.port || '11434';
+        }
+
+        // Sync VAD Settings
+        if (config.vad) {
+            const vadEnabled = document.getElementById('vadEnabled');
+            const vadModeSlider = document.getElementById('vadModeSlider');
+            const vadModeValue = document.getElementById('vadModeValue');
+            const vadTimeoutSlider = document.getElementById('vadTimeoutSlider');
+            const vadTimeoutValue = document.getElementById('vadTimeoutValue');
+
+            if (vadEnabled) vadEnabled.checked = config.vad.enabled !== false;
+
+            if (config.vad.mode !== undefined) {
+                if (vadModeSlider) vadModeSlider.value = config.vad.mode;
+                if (vadModeValue) vadModeValue.textContent = config.vad.mode;
+            }
+
+            if (config.vad.speech_timeout !== undefined) {
+                if (vadTimeoutSlider) vadTimeoutSlider.value = config.vad.speech_timeout;
+                if (vadTimeoutValue) vadTimeoutValue.textContent = config.vad.speech_timeout + 's';
+            }
         }
     } else {
         // Fallback to localStorage if backend config fails
@@ -925,6 +1361,14 @@ function loadConversation() {
 
         const data = JSON.parse(saved);
 
+        // Restore the chat ID to prevent duplicate entries on refresh
+        if (data.chatId) {
+            state.currentChatId = data.chatId;
+        } else if (data.timestamp) {
+            // Fallback: use timestamp as ID for backward compatibility
+            state.currentChatId = data.timestamp.toString();
+        }
+
         const welcome = document.getElementById('welcome');
         const messages = document.getElementById('messages');
 
@@ -932,7 +1376,8 @@ function loadConversation() {
         if (messages) messages.classList.add('active');
 
         data.messages.forEach(msg => {
-            addMessage(msg.role, msg.content, false);
+            // Pass metadata for live mode messages
+            addMessage(msg.role, msg.content, false, msg.metadata || {});
         });
     } catch (err) {
         console.error('Failed to load conversation', err);
@@ -948,21 +1393,100 @@ function saveConversation() {
 
     messageElements.forEach(elem => {
         const isUser = elem.classList.contains('user');
-        const content = elem.querySelector('.message-content')?.textContent;
+        const isLiveTranscript = elem.classList.contains('live-transcript');
+        const isLiveInsight = elem.classList.contains('live-insight');
+        const content = elem.querySelector('.message-content')?.getAttribute('data-original-text') ||
+            elem.querySelector('.message-content')?.textContent;
+
         if (content) {
-            messages.push({
-                role: isUser ? 'user' : 'assistant',
+            const message = {
+                role: isLiveTranscript ? 'live-transcript' :
+                    isLiveInsight ? 'live-insight' :
+                        isUser ? 'user' : 'assistant',
                 content: content
-            });
+            };
+
+            // Initialize metadata if not already present
+            if (!message.metadata) {
+                message.metadata = {};
+            }
+
+            // Save metadata for live mode messages
+            if (isLiveInsight) {
+                message.metadata = {
+                    ...message.metadata,
+                    topic: elem.dataset.topic || '',
+                    keyPoints: elem.dataset.keyPoints ? JSON.parse(elem.dataset.keyPoints) : [],
+                    pinned: elem.dataset.pinned === 'true'
+                };
+            }
+
+            // Save images to metadata
+            const imageElements = elem.querySelectorAll('.message-image-thumbnail');
+            if (imageElements.length > 0) {
+                message.metadata.images = Array.from(imageElements).map(img => img.src);
+            }
+
+            // Remove metadata if it's still empty
+            if (Object.keys(message.metadata).length === 0) {
+                delete message.metadata;
+            }
+
+            messages.push(message);
         }
     });
 
     if (messages.length > 0) {
+        // Ensure we have a chatId
+        if (!state.currentChatId) {
+            state.currentChatId = Date.now().toString();
+        }
+
+        // Save to localStorage (immediate, always works)
         localStorage.setItem('assistedVoiceConversation', JSON.stringify({
             version: 3,
             timestamp: Date.now(),
+            chatId: state.currentChatId,
             messages: messages
         }));
+
+        // Save to database API (async, persistent)
+        saveConversationToDatabase(state.currentChatId, messages);
+    }
+}
+
+/**
+ * Save conversation to database API
+ */
+async function saveConversationToDatabase(chatId, messages) {
+    try {
+        const response = await fetch(`/api/conversations/${chatId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: messages,
+                model: state.currentModel
+            })
+        });
+
+        if (!response.ok) {
+            // If conversation doesn't exist, create it
+            if (response.status === 404) {
+                await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: chatId,
+                        messages: messages,
+                        model: state.currentModel
+                    })
+                });
+            } else {
+                console.warn('Failed to save conversation to database:', response.status);
+            }
+        }
+    } catch (error) {
+        console.warn('Database save failed, using localStorage only:', error);
     }
 }
 
@@ -980,7 +1504,30 @@ function clearCurrentConversation() {
     }
 
     const welcome = document.getElementById('welcome');
-    if (welcome) welcome.style.display = 'flex';
+    if (welcome) {
+        welcome.style.display = 'flex';
+        // Refresh model grid to ensure it's up to date
+        loadAvailableModels();
+    }
+
+    // Clear live mode insights panel
+    const aiInsightsContent = document.getElementById('aiInsightsContent');
+    if (aiInsightsContent) {
+        aiInsightsContent.innerHTML = `
+            <div class="insight-placeholder">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <p>Waiting for conversation context...</p>
+            </div>
+        `;
+    }
+
+    // Clear live mode transcript panel
+    const liveTranscriptContent = document.getElementById('liveTranscriptContent');
+    if (liveTranscriptContent) {
+        liveTranscriptContent.innerHTML = '<p class="placeholder-text">Speak to start transcription...</p>';
+    }
 
     // Clear localStorage
     localStorage.removeItem('assistedVoiceConversation');
@@ -1010,7 +1557,11 @@ function startNewChat() {
     }
 
     const welcome = document.getElementById('welcome');
-    if (welcome) welcome.style.display = 'flex';
+    if (welcome) {
+        welcome.style.display = 'flex';
+        // Refresh model grid to ensure it's up to date
+        loadAvailableModels();
+    }
 
     localStorage.removeItem('assistedVoiceConversation');
     state.currentChatId = Date.now().toString();
@@ -1019,8 +1570,236 @@ function startNewChat() {
 }
 
 /**
- * Chat History
+ * Chat History - Now uses database API with localStorage fallback
  */
+
+/**
+ * Get chat history from localStorage (fallback/cache)
+ */
+function getChatHistoryFromLocalStorage() {
+    try {
+        const history = localStorage.getItem('assistedVoiceChatHistory');
+        return history ? JSON.parse(history) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+/**
+ * Load chat history from database API
+ */
+async function loadChatHistory() {
+    const chatHistoryList = document.getElementById('chatHistoryList');
+    if (!chatHistoryList) return;
+
+    // Show loading state
+    chatHistoryList.innerHTML = '<div class="history-empty">Loading...</div>';
+
+    try {
+        // Try database API first
+        const response = await fetch('/api/conversations?limit=50');
+
+        if (response.ok) {
+            const data = await response.json();
+            const conversations = data.conversations || [];
+
+            // Cache to localStorage
+            const historyCache = conversations.map(conv => ({
+                id: conv.id,
+                timestamp: conv.updated_at || conv.created_at,
+                preview: conv.preview || conv.title || 'New chat',
+                messageCount: conv.message_count || 0
+            }));
+            localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(historyCache));
+
+            renderChatHistory(conversations.map(conv => ({
+                id: conv.id,
+                timestamp: conv.updated_at || conv.created_at,
+                preview: conv.preview || conv.title || 'New chat'
+            })));
+            return;
+        }
+    } catch (error) {
+        console.warn('Failed to load from database, using localStorage:', error);
+    }
+
+    // Fallback to localStorage
+    const history = getChatHistoryFromLocalStorage();
+    renderChatHistory(history);
+}
+
+/**
+ * Render chat history to the sidebar
+ */
+function renderChatHistory(history) {
+    const chatHistoryList = document.getElementById('chatHistoryList');
+    if (!chatHistoryList) return;
+
+    if (!history || history.length === 0) {
+        chatHistoryList.innerHTML = '<div class="history-empty">No previous chats</div>';
+        return;
+    }
+
+    let historyHTML = '';
+    history.forEach(chat => {
+        const date = new Date(chat.timestamp);
+        const dateStr = date.toLocaleDateString();
+        historyHTML += `
+            <div class="history-item" data-chat-id="${chat.id}">
+                <div class="history-item-content">
+                    <div class="history-item-date">${dateStr}</div>
+                    <div class="history-item-preview">${chat.preview || 'New chat'}</div>
+                </div>
+                <button class="history-item-delete" data-chat-id="${chat.id}" title="Delete conversation">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+        `;
+    });
+
+    chatHistoryList.innerHTML = historyHTML;
+
+    // Add click listeners for loading chats
+    chatHistoryList.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            // Don't load chat if delete button was clicked
+            if (e.target.closest('.history-item-delete')) {
+                return;
+            }
+            loadChatFromHistory(item.dataset.chatId);
+        });
+    });
+
+    // Add click listeners for delete buttons
+    chatHistoryList.querySelectorAll('.history-item-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent triggering the parent click
+            const chatId = btn.dataset.chatId;
+            deleteChatFromHistory(chatId);
+        });
+    });
+}
+
+/**
+ * Load a specific chat from history
+ */
+async function loadChatFromHistory(chatId) {
+    // Clear current chat first
+    const messagesContainer = document.getElementById('messages');
+    if (messagesContainer) {
+        messagesContainer.innerHTML = '';
+        messagesContainer.classList.remove('active');
+    }
+
+    state.currentChatId = chatId;
+
+    try {
+        // Try database API first
+        const response = await fetch(`/api/conversations/${chatId}`);
+
+        if (response.ok) {
+            const conversation = await response.json();
+
+            const welcome = document.getElementById('welcome');
+            if (welcome) welcome.style.display = 'none';
+            if (messagesContainer) messagesContainer.classList.add('active');
+
+            // Add messages to UI
+            if (conversation.messages) {
+                conversation.messages.forEach(msg => {
+                    addMessage(msg.role, msg.content, false, msg.metadata || {});
+                });
+            }
+
+            // Update localStorage cache
+            localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+                version: 3,
+                timestamp: Date.now(),
+                chatId: chatId,
+                messages: conversation.messages || []
+            }));
+
+            // Close menu
+            closeSideMenu();
+            return;
+        }
+    } catch (error) {
+        console.warn('Failed to load from database, trying localStorage:', error);
+    }
+
+    // Fallback to localStorage
+    const history = getChatHistoryFromLocalStorage();
+    const chat = history.find(c => c.id === chatId);
+    if (!chat || !chat.messages) {
+        showToast('Conversation not found', 'error');
+        return;
+    }
+
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.style.display = 'none';
+    if (messagesContainer) messagesContainer.classList.add('active');
+
+    chat.messages.forEach(msg => {
+        addMessage(msg.role, msg.content, false, msg.metadata || {});
+    });
+
+    localStorage.setItem('assistedVoiceConversation', JSON.stringify({
+        version: 3,
+        timestamp: Date.now(),
+        chatId: chatId,
+        messages: chat.messages
+    }));
+
+    closeSideMenu();
+}
+
+/**
+ * Delete a chat from history
+ */
+async function deleteChatFromHistory(chatId) {
+    try {
+        // Try database API first
+        const response = await fetch(`/api/conversations/${chatId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok && response.status !== 404) {
+            console.warn('Database delete failed:', response.status);
+        }
+    } catch (error) {
+        console.warn('Database delete failed:', error);
+    }
+
+    // Also remove from localStorage cache
+    const history = getChatHistoryFromLocalStorage();
+    const filteredHistory = history.filter(chat => chat.id !== chatId);
+    localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(filteredHistory));
+
+    // Reload the chat history display
+    loadChatHistory();
+
+    showToast('Conversation deleted', 'success', 1500);
+}
+
+/**
+ * Helper to close side menu
+ */
+function closeSideMenu() {
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.getElementById('overlay');
+    if (sideMenu) sideMenu.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Keep getChatHistory for backward compatibility
+function getChatHistory() {
+    return getChatHistoryFromLocalStorage();
+}
+
+// Keep saveChatToHistory for backward compatibility (now just updates localStorage cache)
 function saveChatToHistory(messages, chatId) {
     if (!messages || messages.length === 0) return;
 
@@ -1036,7 +1815,7 @@ function saveChatToHistory(messages, chatId) {
         messages: messages
     };
 
-    const history = getChatHistory();
+    const history = getChatHistoryFromLocalStorage();
     const existingIndex = history.findIndex(chat => chat.id === id);
 
     if (existingIndex !== -1) {
@@ -1045,80 +1824,9 @@ function saveChatToHistory(messages, chatId) {
         history.unshift(chatData);
     }
 
-    if (history.length > 20) history.splice(20);
+    if (history.length > 50) history.splice(50);
 
     localStorage.setItem('assistedVoiceChatHistory', JSON.stringify(history));
-}
-
-function getChatHistory() {
-    try {
-        const history = localStorage.getItem('assistedVoiceChatHistory');
-        return history ? JSON.parse(history) : [];
-    } catch (error) {
-        return [];
-    }
-}
-
-function loadChatHistory() {
-    const chatHistoryList = document.getElementById('chatHistoryList');
-    if (!chatHistoryList) return;
-
-    const history = getChatHistory();
-
-    if (history.length === 0) {
-        chatHistoryList.innerHTML = '<div class="history-empty">No previous chats</div>';
-        return;
-    }
-
-    let historyHTML = '';
-    history.forEach(chat => {
-        const date = new Date(chat.timestamp);
-        const dateStr = date.toLocaleDateString();
-        historyHTML += `
-            <div class="history-item" data-chat-id="${chat.id}">
-                <div class="history-item-date">${dateStr}</div>
-                <div class="history-item-preview">${chat.preview}</div>
-            </div>
-        `;
-    });
-
-    chatHistoryList.innerHTML = historyHTML;
-
-    chatHistoryList.querySelectorAll('.history-item').forEach(item => {
-        item.addEventListener('click', () => {
-            loadChatFromHistory(item.dataset.chatId);
-        });
-    });
-}
-
-function loadChatFromHistory(chatId) {
-    const history = getChatHistory();
-    const chat = history.find(c => c.id === chatId);
-    if (!chat) return;
-
-    startNewChat(); // Clear current
-    state.currentChatId = chatId;
-
-    const welcome = document.getElementById('welcome');
-    const messages = document.getElementById('messages');
-
-    if (welcome) welcome.style.display = 'none';
-    if (messages) messages.classList.add('active');
-
-    chat.messages.forEach(msg => {
-        addMessage(msg.role, msg.content, false);
-    });
-
-    localStorage.setItem('assistedVoiceConversation', JSON.stringify({
-        messages: chat.messages,
-        timestamp: chat.timestamp
-    }));
-
-    // Close menu
-    const sideMenu = document.getElementById('sideMenu');
-    const overlay = document.getElementById('overlay');
-    if (sideMenu) sideMenu.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
 }
 
 /**
@@ -1174,6 +1882,9 @@ function setupSettingsListeners() {
 
     // TTS Controls
     setupTTSControls();
+
+    // VAD Controls
+    setupVADSettings();
 }
 
 /**
@@ -1539,32 +2250,29 @@ export function setupServerSettings() {
         serverTypeSelect.addEventListener('change', (e) => {
             const serverType = e.target.value;
             localStorage.setItem('serverType', serverType);
-            showToast(`Server type will change to ${serverType} on restart`, 'info', 3000);
+            emit('update_server_config', { type: serverType });
+            showToast(`Server type changed to ${serverType}`, 'success', 2000);
         });
         console.log('Server type dropdown initialized');
     }
 
     // Server host input
     if (serverHost) {
-        const savedHost = localStorage.getItem('serverHost') || 'localhost';
-        serverHost.value = savedHost;
-
         serverHost.addEventListener('change', (e) => {
             const host = e.target.value;
             localStorage.setItem('serverHost', host);
-            showToast('Server host updated (restart required)', 'info', 2000);
+            emit('update_server_config', { host: host });
+            showToast(`Server host updated to ${host}`, 'success', 2000);
         });
     }
 
     // Server port input
     if (serverPort) {
-        const savedPort = localStorage.getItem('serverPort') || '1234';
-        serverPort.value = savedPort;
-
         serverPort.addEventListener('change', (e) => {
-            const port = e.target.value;
+            const port = parseInt(e.target.value);
             localStorage.setItem('serverPort', port);
-            showToast('Server port updated (restart required)', 'info', 2000);
+            emit('update_server_config', { port: port });
+            showToast(`Server port updated to ${port}`, 'success', 2000);
         });
     }
 
@@ -1603,6 +2311,55 @@ export function setupServerSettings() {
             }
         });
         console.log('Test connection button initialized');
+    }
+}
+
+/**
+ * Setup VAD Settings Controls
+ */
+export function setupVADSettings() {
+    console.log('Setting up VAD settings controls...');
+
+    const vadEnabled = document.getElementById('vadEnabled');
+    const vadModeSlider = document.getElementById('vadModeSlider');
+    const vadModeValue = document.getElementById('vadModeValue');
+    const vadTimeoutSlider = document.getElementById('vadTimeoutSlider');
+    const vadTimeoutValue = document.getElementById('vadTimeoutValue');
+
+    if (vadEnabled) {
+        vadEnabled.addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            emit('update_vad_config', { enabled });
+            showToast(`VAD ${enabled ? 'enabled' : 'disabled'}`, 'success', 1500);
+        });
+    }
+
+    if (vadModeSlider && vadModeValue) {
+        vadModeSlider.addEventListener('input', (e) => {
+            const mode = parseInt(e.target.value);
+            vadModeValue.textContent = mode;
+
+            // Debounce backend update
+            clearTimeout(window.vadModeDebounce);
+            window.vadModeDebounce = setTimeout(() => {
+                emit('update_vad_config', { mode });
+                showToast(`VAD Sensitivity set to ${mode}`, 'success', 1000);
+            }, 300);
+        });
+    }
+
+    if (vadTimeoutSlider && vadTimeoutValue) {
+        vadTimeoutSlider.addEventListener('input', (e) => {
+            const timeout = parseFloat(e.target.value);
+            vadTimeoutValue.textContent = timeout + 's';
+
+            // Debounce backend update
+            clearTimeout(window.vadTimeoutDebounce);
+            window.vadTimeoutDebounce = setTimeout(() => {
+                emit('update_vad_config', { speech_timeout: timeout });
+                showToast(`VAD Timeout set to ${timeout}s`, 'success', 1000);
+            }, 300);
+        });
     }
 }
 
@@ -1871,41 +2628,15 @@ function updateVADStatus(status) {
     // VAD status update
 }
 
-export function syncAISettingsToBackend() {
-    console.log('Syncing AI settings from localStorage to backend...');
-
-    // Send temperature
-    const temp = localStorage.getItem('aiTemperature');
-    if (temp) {
-        const temperature = parseFloat(temp);
-        emit('update_temperature', { temperature });
-        console.log(`Synced temperature: ${temperature}`);
-    }
-
-    // Send max tokens
-    const maxTokens = localStorage.getItem('aiMaxTokens');
-    if (maxTokens) {
-        const max_tokens = parseInt(maxTokens);
-        emit('update_max_tokens', { max_tokens });
-        console.log(`Synced max tokens: ${max_tokens}`);
-    }
-
-    // Send system prompt (CRITICAL: This fixes system prompt not persisting)
-    const systemPrompt = localStorage.getItem('aiSystemPrompt');
-    if (systemPrompt) {
-        emit('update_system_prompt', { system_prompt: systemPrompt });
-        console.log(`Synced system prompt (${systemPrompt.length} chars)`);
-    }
-
-    console.log('AI settings sync complete');
-}
 
 
-// Media player state
+/**
+ * Media player state
+ */
 let mediaPlayerInterval = null;
 let currentMediaAudio = null;
 
-function showMiniPlayer(audio, text) {
+export function showMiniPlayer(audio, text, options = {}) {
     console.log('showMiniPlayer called');
 
     const modal = document.getElementById('mediaControlModal');
@@ -1913,6 +2644,8 @@ function showMiniPlayer(audio, text) {
     const playIcon = playPauseBtn?.querySelector('.play-icon');
     const pauseIcon = playPauseBtn?.querySelector('.pause-icon');
     const closeBtn = document.getElementById('mediaCloseBtn');
+    const prevBtn = document.getElementById('mediaPrevBtn');
+    const nextBtn = document.getElementById('mediaNextBtn');
     const progressBar = document.getElementById('mediaProgressBar');
     const progressFill = document.getElementById('mediaProgressFill');
     const progressHandle = document.getElementById('mediaProgressHandle');
@@ -1928,6 +2661,22 @@ function showMiniPlayer(audio, text) {
 
     // Show modal
     modal.style.display = 'block';
+
+    // Navigation buttons
+    if (prevBtn) {
+        prevBtn.style.display = options.onPrev ? 'flex' : 'none';
+        prevBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (options.onPrev) options.onPrev();
+        };
+    }
+    if (nextBtn) {
+        nextBtn.style.display = options.onNext ? 'flex' : 'none';
+        nextBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (options.onNext) options.onNext();
+        };
+    }
 
     // Format time helper
     const formatTime = (seconds) => {
@@ -1978,6 +2727,7 @@ function showMiniPlayer(audio, text) {
             if (state.currentAudio === audio) {
                 state.currentAudio = null;
             }
+            if (options.onStop) options.onStop();
         };
     }
 
@@ -2003,20 +2753,22 @@ function showMiniPlayer(audio, text) {
     }
 
     // Audio event listeners
-    audio.addEventListener('loadedmetadata', () => {
+    // We use a named function to be able to remove it if needed, 
+    // but here we just re-add as showMiniPlayer is usually called once per audio object
+    audio.onloadedmetadata = () => {
         if (timeTotal) timeTotal.textContent = formatTime(audio.duration);
-    });
+    };
 
-    audio.addEventListener('play', () => {
+    audio.onplay = () => {
         if (playIcon) playIcon.style.display = 'none';
         if (pauseIcon) pauseIcon.style.display = 'block';
 
         // Start progress update interval
         if (mediaPlayerInterval) clearInterval(mediaPlayerInterval);
         mediaPlayerInterval = setInterval(updateProgress, 100);
-    });
+    };
 
-    audio.addEventListener('pause', () => {
+    audio.onpause = () => {
         if (playIcon) playIcon.style.display = 'block';
         if (pauseIcon) pauseIcon.style.display = 'none';
 
@@ -2024,9 +2776,9 @@ function showMiniPlayer(audio, text) {
             clearInterval(mediaPlayerInterval);
             mediaPlayerInterval = null;
         }
-    });
+    };
 
-    audio.addEventListener('ended', () => {
+    audio.onended = () => {
         if (playIcon) playIcon.style.display = 'block';
         if (pauseIcon) pauseIcon.style.display = 'none';
 
@@ -2035,17 +2787,20 @@ function showMiniPlayer(audio, text) {
             mediaPlayerInterval = null;
         }
 
-        // Auto-hide after a short delay
-        setTimeout(() => {
-            hideMiniPlayer();
-        }, 1000);
-    });
+        // Auto-hide after a short delay for normal messages
+        // But for reading mode, we might want to keep it or wait for next chunk
+        if (!options.onNext) {
+            setTimeout(() => {
+                if (audio.ended) hideMiniPlayer();
+            }, 1000);
+        }
+    };
 
     // Initial progress update
     updateProgress();
 }
 
-function hideMiniPlayer() {
+export function hideMiniPlayer() {
     console.log('hideMiniPlayer called');
 
     const modal = document.getElementById('mediaControlModal');
@@ -2084,4 +2839,28 @@ function addReactionButtons(messageDiv, messageId) {
 // Observe new message (placeholder)
 function observeNewMessage(messageDiv) {
     // Observe
+}
+
+/**
+ * Update image upload button visibility based on model capabilities
+ */
+function updateUploadButtonVisibility() {
+    const uploadBtn = document.getElementById('imageUploadBtn');
+    if (!uploadBtn) return;
+
+    if (!state.currentModel || !state.availableModels) {
+        uploadBtn.style.display = ''; // Default visible
+        return;
+    }
+
+    const modelInfo = state.availableModels.find(m => m.name === state.currentModel);
+    const hasVision = modelInfo && modelInfo.capabilities && modelInfo.capabilities.includes('vision');
+
+    if (hasVision) {
+        uploadBtn.style.display = '';
+        console.log(`Model ${state.currentModel} has vision. Showing upload button.`);
+    } else {
+        uploadBtn.style.display = 'none';
+        console.log(`Model ${state.currentModel} lacks vision. Hiding upload button.`);
+    }
 }

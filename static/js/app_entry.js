@@ -4,6 +4,7 @@
 import { state } from './modules/state.js';
 import { initializeWebSocket } from './modules/websocket.js';
 import { initializeUI, registerUIFunctions } from './modules/ui.js?v=2';
+import { ReadingMode } from './modules/reading.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Initializing AssistedVoice...');
@@ -16,6 +17,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize WebSocket connection
     initializeWebSocket();
+    
+    // Initialize reading mode - it handles socket availability internally
+    window.readingMode = new ReadingMode(state);
+    console.log('Reading mode initialized');
 
     // Mark initialization as complete after a short delay to allow sync events to finish silently
     setTimeout(() => {

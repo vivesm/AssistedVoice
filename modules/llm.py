@@ -3,7 +3,9 @@ Language Model interface using Ollama
 """
 import time
 import logging
+import io
 from typing import Optional, Generator, List, Dict, Any
+from PIL import Image
 from ollama import Client
 from .llm_base import BaseLLM
 from .config_helper import get_server_config
@@ -119,15 +121,72 @@ class OllamaLLM(BaseLLM):
         except Exception as e:
             return False, f"Failed to connect to Ollama: {str(e)}"
 
+    def _resize_image(self, image_bytes: bytes, max_size: int = 1024) -> bytes:
+        """Resize image to a maximum dimension while maintaining aspect ratio"""
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            
+            # Check if resize is needed
+            if max(img.size) <= max_size:
+                return image_bytes
+                
+            # Calculate new size
+            ratio = max_size / max(img.size)
+            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+            
+            # Resize
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Save back to bytes
+            output = io.BytesIO()
+            # Preserve original format if possible, otherwise JPEG
+            fmt = img.format if img.format else "JPEG"
+            img.save(output, format=fmt, quality=85)
+            return output.getvalue()
+        except Exception as e:
+            logger.warning(f"Failed to resize image: {e}")
+            return image_bytes
+
     def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """Generate response from LLM"""
         # Add user message to conversation using updated signature
+
         self.conversation.add_message("user", prompt, images=images)
+        
+        # Log if images are being sent
+        if images:
+            logger.info(f"Sending {len(images)} image(s) to model {self.model}")
+
         
         # Get conversation context (now includes images in dict)
         messages = self.conversation.get_context(
             system_prompt=self.config['ollama'].get('system_prompt')
         )
+
+        # Process images: Ollama library expects bytes or stripped base64 strings
+        # We'll convert them to bytes for robustness and resize them if too large
+        for msg in messages:
+            if 'images' in msg:
+                processed_images = []
+                for img_data in msg['images']:
+                    if isinstance(img_data, str) and img_data.startswith('data:image/'):
+                        # Strip prefix like "data:image/jpeg;base64,"
+                        try:
+                            # Split by comma and take the base64 part
+                            base64_str = img_data.split(',')[1]
+                            import base64
+                            img_bytes = base64.b64decode(base64_str)
+                            
+                            # Optimized resize
+                            img_bytes = self._resize_image(img_bytes)
+                            
+                            processed_images.append(img_bytes)
+                        except Exception as e:
+                            logger.error(f"Error decoding image: {e}")
+                            processed_images.append(img_data) # Fallback
+                    else:
+                        processed_images.append(img_data)
+                msg['images'] = processed_images
         
         # Generation parameters
         options = {
@@ -181,8 +240,14 @@ class OllamaLLM(BaseLLM):
             logger.info(f"Generated {tokens} tokens in {total_time:.2f}s ({tokens_per_sec:.1f} t/s)")
             
         except Exception as e:
-            logger.error(f"Generation error: {e}")
-            yield f"Error: {str(e)}"
+            error_msg = str(e)
+            logger.error(f"Generation error: {error_msg}")
+            
+            # Check if it's a vision-related error
+            if images and ("vision" in error_msg.lower() or "image" in error_msg.lower() or "multimodal" in error_msg.lower()):
+                yield f"Error: This model ({self.model}) does not support image inputs. Please select a vision-capable model like llava, bakllava, moondream, or llama3.2-vision."
+            else:
+                yield f"Error: {error_msg}"
     
     # clear_conversation and get_conversation_summary are inherited from BaseLLM
 
@@ -242,6 +307,7 @@ class OptimizedOllamaLLM(OllamaLLM):
     def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """Generate with caching support"""
         # Check cache first (only for text-only requests)
+
         if self.cache and not stream and not images:
             cached = self.cache.get(prompt)
             if cached:
@@ -251,9 +317,10 @@ class OptimizedOllamaLLM(OllamaLLM):
         # Generate response
         full_response = ""
         for chunk in super().generate(prompt, stream, images):
+
             full_response += chunk
             yield chunk
         
-        # Cache the response
-        if self.cache and not stream:
+        # Cache the response - only for text-only requests
+        if self.cache and not stream and not images:
             self.cache.set(prompt, full_response)

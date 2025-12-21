@@ -4,6 +4,7 @@
 import { state } from './state.js';
 import { logConnectionState, logResponse, showToast } from './utils.js';
 import { playAudioData, stopAudio } from './audio.js';
+import { addMessage } from './ui.js';
 
 // Helper to safely call UI updates
 function updateStatus(message, type) {
@@ -54,11 +55,6 @@ function updateVADStatus(status) {
     }
 }
 
-function syncAISettingsToBackend() {
-    if (state.ui && state.ui.syncAISettingsToBackend) {
-        state.ui.syncAISettingsToBackend();
-    }
-}
 
 /**
  * Initialize WebSocket connection
@@ -92,9 +88,6 @@ function setupSocketListeners() {
         logConnectionState('Connected');
         updateStatus('Ready', 'ready');
         state.reconnectAttempts = 0;
-
-        // Sync settings on reconnect
-        syncAISettingsToBackend();
     });
 
     socket.on('disconnect', (reason) => {
@@ -142,6 +135,11 @@ function setupSocketListeners() {
         hideStopGenerationButton();
         completeResponse(data.text);
         logResponse(data.text);
+    });
+
+    socket.on('transcription', (data) => {
+        console.log('Received transcription:', data.text);
+        addMessage('user', data.text);
     });
 
     // Audio processing events
@@ -204,10 +202,15 @@ function setupSocketListeners() {
         updateVADStatus('silence');
     });
 
-    // Live mode events
+    // Live mode events - Transcript buffer for merging
+    let transcriptBuffer = '';
+    let transcriptDebounceTimer = null;
+    const TRANSCRIPT_DEBOUNCE_MS = 5000; // Wait 5 seconds of silence before saving to chat
+
     socket.on('live_transcript', (data) => {
         console.log('[Live Mode] Received transcript:', data.text);
 
+        // Add to live transcript modal for real-time viewing (always show immediately)
         const liveTranscriptContent = document.getElementById('liveTranscriptContent');
         if (liveTranscriptContent) {
             // Remove placeholder if it exists
@@ -216,7 +219,7 @@ function setupSocketListeners() {
                 placeholder.remove();
             }
 
-            // Add new transcript segment
+            // Add new transcript segment to modal
             const transcriptSegment = document.createElement('p');
             transcriptSegment.className = 'transcript-segment';
             transcriptSegment.textContent = data.text;
@@ -229,11 +232,70 @@ function setupSocketListeners() {
             // Auto-scroll to bottom
             liveTranscriptContent.scrollTop = liveTranscriptContent.scrollHeight;
         }
+
+        // Buffer transcripts and debounce - only add to chat after speech pauses
+        // Clear any previous timer
+        if (transcriptDebounceTimer) {
+            clearTimeout(transcriptDebounceTimer);
+        }
+
+        // Smart merging - handle progressive refinements
+        if (transcriptBuffer) {
+            const bufferWords = transcriptBuffer.toLowerCase().trim().split(/\s+/);
+            const newWords = data.text.toLowerCase().trim().split(/\s+/);
+
+            // Count how many words from buffer appear in new text (in order)
+            let matchedWords = 0;
+            let newIndex = 0;
+            for (const bufferWord of bufferWords) {
+                for (let i = newIndex; i < newWords.length; i++) {
+                    if (newWords[i].includes(bufferWord) || bufferWord.includes(newWords[i])) {
+                        matchedWords++;
+                        newIndex = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            // If >50% of buffer words appear in new text, it's a refinement
+            const matchRatio = matchedWords / Math.max(bufferWords.length, 1);
+            const isRefinement = matchRatio > 0.5 ||
+                data.text.toLowerCase().includes(transcriptBuffer.toLowerCase().substring(0, 10));
+
+            console.log('[Live Mode] Merge check:', {
+                buffer: transcriptBuffer.substring(0, 30),
+                new: data.text.substring(0, 30),
+                matchRatio,
+                isRefinement
+            });
+
+            if (isRefinement) {
+                // Use the longer/more complete version
+                transcriptBuffer = data.text.length > transcriptBuffer.length ? data.text : transcriptBuffer;
+            } else {
+                // Genuinely new content - append it
+                transcriptBuffer += ' ' + data.text;
+            }
+        } else {
+            transcriptBuffer = data.text;
+        }
+
+        // Set timer to save merged transcript to chat after pause
+        transcriptDebounceTimer = setTimeout(() => {
+            if (transcriptBuffer.trim()) {
+                console.log('[Live Mode] Saving merged transcript to chat:', transcriptBuffer);
+                addMessage('live-transcript', transcriptBuffer.trim(), true);
+                transcriptBuffer = '';
+            }
+        }, TRANSCRIPT_DEBOUNCE_MS);
     });
+
+
 
     socket.on('ai_insight', (data) => {
         console.log('[Live Mode] Received AI insight:', data);
 
+        // Add to AI insights modal for real-time viewing
         const aiInsightsContent = document.getElementById('aiInsightsContent');
         if (aiInsightsContent) {
             // Remove placeholder if it exists
@@ -242,7 +304,7 @@ function setupSocketListeners() {
                 placeholder.remove();
             }
 
-            // Create insight card
+            // Create insight card for modal
             const insightCard = document.createElement('div');
             insightCard.className = 'insight-card';
             insightCard.style.cssText = `
@@ -291,6 +353,18 @@ function setupSocketListeners() {
             // Auto-scroll to bottom
             aiInsightsContent.scrollTop = aiInsightsContent.scrollHeight;
         }
+
+        // Also add insight as a live-insight message in chat history with metadata for persistence
+        const metadata = {
+            topic: data.topic || 'Insight',
+            keyPoints: data.key_points || [],
+            pinned: false
+        };
+
+        // Create a text representation for the data-original-text attribute
+        const textRepresentation = `${data.topic}\n${(data.key_points || []).map(p => `• ${p}`).join('\n')}`;
+
+        addMessage('live-insight', textRepresentation, true, metadata);
     });
 
     // Model events
@@ -300,6 +374,9 @@ function setupSocketListeners() {
 
         // Update state
         state.currentModel = data.model;
+
+        // Save to localStorage for persistence
+        localStorage.setItem('selectedModel', data.model);
 
         // Update status
         updateStatus('Ready', 'ready');

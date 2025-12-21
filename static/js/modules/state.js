@@ -25,7 +25,6 @@ export const state = {
     liveAudioContext: null,
     liveAudioWorklet: null,
     liveAudioStream: null,
-    recentTranscripts: [],
 
     // Audio visualization
     audioContext: null,
@@ -42,6 +41,9 @@ export const state = {
 
     // Chat
     currentChatId: null,
+
+    // Image upload
+    pendingImages: [],  // Array of base64-encoded images
 
     // Metrics
     firstTokenTime: null,

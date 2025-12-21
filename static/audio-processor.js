@@ -8,11 +8,11 @@ class AudioProcessor extends AudioWorkletProcessor {
         super();
 
         // Buffer size: ~250ms at 16kHz = 4000 samples
-        // Balanced for real-time feel vs CPU stability
         this.bufferSize = 4000;
         this.buffer = [];
+        this.lastLog = 0;
 
-        console.log('AudioProcessor initialized');
+        console.log('[AudioProcessor] Initialized');
     }
 
     process(inputs, outputs, parameters) {
@@ -22,6 +22,19 @@ class AudioProcessor extends AudioWorkletProcessor {
         if (input && input.length > 0) {
             const channelData = input[0]; // Mono channel
 
+            // Calculate RMS for debugging if needed (log once per sec)
+            if (Date.now() - this.lastLog > 1000) {
+                let sum = 0;
+                for (let i = 0; i < channelData.length; i++) {
+                    sum += channelData[i] * channelData[i];
+                }
+                const rms = Math.sqrt(sum / channelData.length);
+                if (rms > 0) {
+                    console.log(`[AudioProcessor] Capture RMS: ${rms.toFixed(6)}`);
+                }
+                this.lastLog = Date.now();
+            }
+
             // Accumulate samples into buffer
             for (let i = 0; i < channelData.length; i++) {
                 this.buffer.push(channelData[i]);
@@ -29,18 +42,12 @@ class AudioProcessor extends AudioWorkletProcessor {
 
             // When buffer is full, send to main thread
             if (this.buffer.length >= this.bufferSize) {
-                // Convert to Float32Array for efficient transfer
                 const audioData = new Float32Array(this.buffer);
-
-                // Send via message port
                 this.port.postMessage(audioData);
-
-                // Clear buffer
                 this.buffer = [];
             }
         }
 
-        // Return true to keep processor alive
         return true;
     }
 }

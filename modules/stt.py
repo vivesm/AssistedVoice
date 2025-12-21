@@ -220,7 +220,7 @@ class WhisperSTT:
             return np.concatenate(audio_chunks).flatten()
         return np.array([])
     
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, vad_filter: bool = False, beam_size: int = 5) -> str:
         """Transcribe audio to text"""
         if len(audio) == 0:
             return ""
@@ -241,8 +241,8 @@ class WhisperSTT:
         segments, info = self.model.transcribe(
             audio,
             language=self.config['whisper']['language'],
-            beam_size=5,
-            vad_filter=True
+            beam_size=beam_size,
+            vad_filter=vad_filter
         )
         
         # Combine all segments
@@ -280,37 +280,97 @@ class WhisperSTT:
             logger.error(f"Remote transcription failed: {e}")
             return f"Error: Remote transcription failed - {str(e)}"
 
-    def transcribe_base64(self, audio_base64: str) -> str:
-        """Transcribe base64 audio data"""
-        if not audio_base64:
+    def transcribe_base64(self, base64_audio: str, vad_filter: bool = False, beam_size: int = 5) -> str:
+        """Transcribe base64 encoded audio data (WebM or WAV)"""
+        if not base64_audio:
             return ""
-            
-        # Remote mode: Pass through directly
+
+        # Remote mode: Pass through directly if it's already encoded as needed by remote
         if self.config['whisper'].get('mode') == 'remote':
-            return self.transcribe_remote(audio_base64)
-            
-        # Local mode: Decode and process
+            return self.transcribe_remote(base64_audio)
+
         try:
-            # Decode base64 
-            audio_bytes = base64.b64decode(audio_base64)
+            import base64
+            import tempfile
+            import os
+            import subprocess
+            import shutil
             
-            # Convert bytes to numpy array (assuming 16-bit PCM for now, 
-            # as that's what typical browsers/recording send)
-            # Note: This implies the source sends raw PCM. 
-            # If source sends WAV/MP3, we need faster-whisper's decode_audio or ffmpeg.
-            # faster-whisper's decode_audio handles file paths or file-like objects.
+            # Clean base64 string
+            if ',' in base64_audio:
+                header, base64_audio = base64_audio.split(',', 1)
+                # Detect format from data URI
+                is_wav = 'audio/wav' in header or 'audio/wave' in header
+            else:
+                is_wav = False
             
-            # Using faster_whisper.decode_audio which handles various formats
-            # We wrap bytes in a BytesIO object
-            from faster_whisper import decode_audio
+            audio_bytes = base64.b64decode(base64_audio)
+            logger.info(f"Decoded PTT audio: {len(audio_bytes)} bytes, format: {'WAV' if is_wav else 'WebM'}")
             
-            audio_file = io.BytesIO(audio_bytes)
-            audio_array = decode_audio(audio_file)
+            # Save with appropriate extension
+            suffix = '.wav' if is_wav else '.webm'
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_audio:
+                tmp_audio.write(audio_bytes)
+                audio_path = tmp_audio.name
             
-            return self.transcribe(audio_array)
+            # DEBUG: Save a copy to /tmp for inspection
+            debug_path = f"/tmp/ptt_debug_{os.path.basename(audio_path)}"
+            shutil.copy(audio_path, debug_path)
+            logger.warning(f"DEBUG: Saved audio to {debug_path} for inspection")
             
+            try:
+                if is_wav:
+                    # WAV is already at 16kHz mono, transcribe directly
+                    logger.info(f"Transcribing WAV: {audio_path} (beam_size={beam_size}, vad_filter={vad_filter})")
+                    wav_path = audio_path
+                else:
+                    # Convert WebM to WAV
+                    wav_path = audio_path.replace('.webm', '.wav')
+                    logger.info(f"Converting WebM to WAV: {audio_path} -> {wav_path}")
+                    result = subprocess.run([
+                        'ffmpeg', '-i', audio_path, 
+                        '-ar', '16000', '-ac', '1', 
+                        '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+                        '-y', wav_path
+                    ], capture_output=True, text=True)
+                    
+                    if result.returncode != 0:
+                        logger.error(f"FFmpeg failed: {result.stderr}")
+                        # Fallback
+                        subprocess.run([
+                            'ffmpeg', '-i', audio_path, 
+                            '-ar', '16000', '-ac', '1', '-y', wav_path
+                        ], capture_output=True, text=True)
+
+                # Transcribe
+                start_time = time.time()
+                segments, info = self.model.transcribe(
+                    wav_path,
+                    language=self.config['whisper']['language'],
+                    beam_size=beam_size,
+                    vad_filter=vad_filter,
+                    temperature=0.0,
+                    condition_on_previous_text=False
+                )
+                
+                segments_list = list(segments)
+                transcription = " ".join([segment.text for segment in segments_list]).strip()
+                elapsed = time.time() - start_time
+                
+                logger.info(f"Transcription complete ({elapsed:.2f}s): '{transcription}' (segments: {len(segments_list)})")
+                return transcription
+            finally:
+                # Cleanup temporary files
+                if os.path.exists(audio_path): 
+                    os.unlink(audio_path)
+                if not is_wav and os.path.exists(wav_path): 
+                    os.unlink(wav_path)
+                    
         except Exception as e:
-            logger.error(f"Error decoding base64 audio: {e}")
+            logger.error(f"Error in transcribe_base64: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
             return ""
     
     def record_and_transcribe(self, duration: Optional[float] = None,

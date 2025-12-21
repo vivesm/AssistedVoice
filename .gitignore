@@ -32,8 +32,9 @@ logs/
 *.wav
 *.mp3
 
-# Model files
-models/
+# Model files (downloaded models)
+models/models--*
+models/.locks/
 *.bin
 *.pth
 *.pt

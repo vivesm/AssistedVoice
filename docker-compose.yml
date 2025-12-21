@@ -15,9 +15,13 @@ services:
       - ./logs:/app/logs
       # Persist Whisper models (downloaded on first run)
       - ./models:/app/models
-      # Mount config for easy editing (optional - remove for production)
-      - ./config.yaml:/app/config.yaml:ro
+      # Mount config for easy editing
+      - ./config.yaml:/app/config.yaml
       # Mount source code for development (Hot Reloading)
+      - ./modules:/app/modules
+      - ./routers:/app/routers
+      - ./services:/app/services
+      - ./web_assistant.py:/app/web_assistant.py
       - ./static:/app/static
       - ./templates:/app/templates
     environment:

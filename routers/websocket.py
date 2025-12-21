@@ -15,20 +15,105 @@ from modules.config_helper import save_config_to_file
 logger = logging.getLogger(__name__)
 
 
-def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_service, model_service):
+def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_service, model_service, reading_service, database_service):
     """Register async WebSocket event handlers"""
 
     # Store references for handler access
     _state = {
-        'llm': chat_service.llm,
+        'llm': chat_service.llm if chat_service else None,
         'config': config,
         'stt': stt,
         'tts': tts,
         'chat_service': chat_service,
         'audio_service': audio_service,
         'model_service': model_service,
-        'live_assistant': LiveAssistantService(chat_service)
+        'reading_service': reading_service,
+        'database_service': database_service,
+        'live_assistant': LiveAssistantService(chat_service),
+        'current_conversation_id': None
     }
+
+    async def _sync_llm_context(conversation_id):
+        """Sync LLM conversation context with database history"""
+        if not conversation_id or not _state['chat_service']:
+            return
+
+        db = _state.get('database_service')
+        if not db:
+            # Try to get it from app_state if not passed (though it should be in _state)
+            return
+
+        # Only sync if the conversation ID has changed or context is empty
+        llm = _state['llm']
+        if not llm:
+            return
+
+        if conversation_id == _state['current_conversation_id'] and len(llm.conversation.messages) > 0:
+            return
+
+        logger.info(f"Syncing LLM context for conversation: {conversation_id}")
+        
+        try:
+            # Get last few messages from DB
+            conv = await asyncio.to_thread(db.get_conversation, conversation_id)
+            if not conv or 'messages' not in conv:
+                return
+
+            # Clear current LLM context
+            llm.clear_conversation()
+
+            # Load last 10 messages (or max_history)
+            raw_history = conv['messages'][-12:] # Get a bit more to allow for filtering
+            
+            # Filter and sanitize history
+            sanitized_history = []
+            for msg in raw_history:
+                role = msg.get('role')
+                content = (msg.get('content') or '').strip()
+                metadata = msg.get('metadata', {})
+                images = metadata.get('images', []) if metadata else []
+                
+                # Normalize roles (map live-transcript/insight to user/assistant if needed)
+                if role in ['user', 'live-transcript']:
+                    role = 'user'
+                elif role in ['assistant', 'live-insight']:
+                    role = 'assistant'
+                
+                if role not in ['user', 'assistant', 'system']:
+                    continue
+                    
+                # Skip empty messages (no text AND no images)
+                if not content and not images:
+                    continue
+                
+                # Consolidate consecutive messages with same role (especially user messages)
+                if sanitized_history and sanitized_history[-1]['role'] == role:
+                    # Append content
+                    if content:
+                        prev_content = sanitized_history[-1]['content']
+                        if content not in prev_content: # Avoid duplicates
+                            sanitized_history[-1]['content'] = f"{prev_content}\n{content}".strip()
+                    # Append images
+                    if images:
+                        sanitized_history[-1]['images'].extend([img for img in images if img not in sanitized_history[-1]['images']])
+                else:
+                    sanitized_history.append({
+                        'role': role,
+                        'content': content,
+                        'images': images
+                    })
+            
+            # Final pass: Ensure alternating roles if possible (important for some models)
+            # and limit to max_history
+            final_history = sanitized_history[-10:]
+            for msg in final_history:
+                llm.conversation.add_message(msg['role'], msg['content'], images=msg['images'])
+            
+            _state['current_conversation_id'] = conversation_id
+            logger.info(f"Loaded {len(llm.conversation.messages)} sanitized messages into LLM context")
+            
+        except Exception as e:
+            logger.error(f"Error syncing LLM context: {e}")
 
     @sio.event
     async def connect(sid, environ):
@@ -55,30 +140,21 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         """Process audio from client (PTT mode)"""
         try:
             enable_tts = data.get('enable_tts', True)
+            conversation_id = data.get('conversation_id')
+            
+            # Sync context if needed
+            if conversation_id:
+                await _sync_llm_context(conversation_id)
 
-            await sio.emit('status', {'message': 'Processing audio...', 'type': 'processing'}, room=sid)
+            logger.info(f"Processing PTT audio from {sid} (size: {len(data['audio'])} bytes)")
 
-            # Decode base64 audio
-            audio_data = base64.b64decode(data['audio'].split(',')[1] if ',' in data['audio'] else data['audio'])
-
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as tmp_file:
-                tmp_file.write(audio_data)
-                tmp_path = tmp_file.name
-
-            # Transcribe (run in thread pool for blocking operation)
+            # Transcribe using STT module's optimized helper
             await sio.emit('status', {'message': 'Transcribing...', 'type': 'transcribing'}, room=sid)
-
-            segments, info = await asyncio.to_thread(
-                _state['stt'].model.transcribe,
-                tmp_path,
-                language=_state['config']['whisper']['language']
-            )
-            transcription = " ".join([segment.text for segment in segments]).strip()
+            # Transcribe the audio (VAD disabled - we have good audio now)
+            transcription = await asyncio.to_thread(_state['stt'].transcribe_base64, data['audio'], vad_filter=False, beam_size=5)
 
             if not transcription:
                 await sio.emit('error', {'message': 'No speech detected'}, room=sid)
-                os.unlink(tmp_path)
                 return
 
             # Emit transcription
@@ -122,8 +198,6 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
             await sio.emit('status', {'message': 'Ready', 'type': 'ready'}, room=sid)
 
-            # Clean up
-            os.unlink(tmp_path)
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
@@ -134,16 +208,26 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         """Process text input from client"""
         try:
             text = data.get('text', '').strip()
+            images = data.get('images', [])  # List of base64-encoded images
             enable_tts = data.get('enable_tts', True)
+            conversation_id = data.get('conversation_id')
 
-            if not text:
+            # Sync context if needed
+            if conversation_id:
+                await _sync_llm_context(conversation_id)
+
+            if not text and not images:
                 return
+
+            # Use default prompt if text is empty but images are present
+            if not text and images:
+                text = "Describe this image in detail."
 
             # Generate response
             await sio.emit('status', {'message': 'Generating response...', 'type': 'generating'}, room=sid)
 
             response_text = ""
-            for chunk in _state['chat_service'].generate_response(text, stream=True):
+            for chunk in _state['chat_service'].generate_response(text, images=images, stream=True):
                 response_text += chunk
                 await sio.emit('response_chunk', {'text': chunk, 'model': _state['llm'].model}, room=sid)
 
@@ -325,6 +409,65 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
 
         except Exception as e:
             logger.error(f"Error replaying text: {e}")
+            await sio.emit('error', {'message': str(e)}, room=sid)
+
+    @sio.event
+    async def update_server_config(sid, data):
+        """Update server configuration (type, host, port)"""
+        try:
+            if 'server' not in _state['config']:
+                _state['config']['server'] = {}
+            
+            updated = False
+            if 'type' in data:
+                _state['config']['server']['type'] = data['type']
+                updated = True
+            if 'host' in data:
+                _state['config']['server']['host'] = data['host']
+                updated = True
+            if 'port' in data:
+                _state['config']['server']['port'] = data['port']
+                updated = True
+                
+            if updated:
+                logger.info(f"Server config updated: {data}")
+                await sio.emit('status', {'message': 'Server configuration updated (restart required for some changes)', 'type': 'ready'}, room=sid)
+                # Persist config
+                save_config_to_file(_state['config'])
+                
+        except Exception as e:
+            logger.error(f"Error updating server config: {e}")
+            await sio.emit('error', {'message': str(e)}, room=sid)
+
+    @sio.event
+    async def update_vad_config(sid, data):
+        """Update VAD configuration"""
+        try:
+            if 'vad' not in _state['config']:
+                _state['config']['vad'] = {}
+            
+            updated = False
+            if 'enabled' in data:
+                _state['config']['vad']['enabled'] = data['enabled']
+                updated = True
+            if 'mode' in data:
+                _state['config']['vad']['mode'] = data['mode']
+                updated = True
+            if 'speech_timeout' in data:
+                _state['config']['vad']['speech_timeout'] = data['speech_timeout']
+                updated = True
+            if 'min_speech_duration' in data:
+                _state['config']['vad']['min_speech_duration'] = data['min_speech_duration']
+                updated = True
+                
+            if updated:
+                logger.info(f"VAD config updated: {data}")
+                await sio.emit('status', {'message': 'VAD configuration updated', 'type': 'ready'}, room=sid)
+                # Persist config
+                save_config_to_file(_state['config'])
+                
+        except Exception as e:
+            logger.error(f"Error updating VAD config: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
 
     @sio.event
@@ -590,9 +733,14 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             # Convert bytes to numpy Float32 array
             pcm_array = np.frombuffer(pcm_bytes, dtype=np.float32)
 
-            # Calculate RMS for volume debugging
-            rms = np.sqrt(np.mean(pcm_array**2))
+            # Calculate RMS for volume debugging (using simple mean absolute as proxy)
+            rms = np.abs(pcm_array).mean()
             logger.info(f"Received live PCM chunk: {len(pcm_array)} samples, RMS: {rms:.6f} from {sid}")
+
+            # Skip processing if chunk is silent (threshold: 0.0005)
+            # This is essential to prevent CPU overload
+            if rms < 0.0005:
+                return
 
             # Get sample rate from client
             sample_rate = data.get('sampleRate', 16000)
@@ -602,6 +750,10 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
                 _state['live_pcm_buffers'] = {}
             if sid not in _state['live_pcm_buffers']:
                 _state['live_pcm_buffers'][sid] = []
+            
+            # Concurrency check
+            if f'is_transcribing_{sid}' not in _state:
+                _state[f'is_transcribing_{sid}'] = False
 
             # Accumulate PCM samples
             _state['live_pcm_buffers'][sid].append(pcm_array)
@@ -609,34 +761,39 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             # Calculate total samples buffered
             total_samples = sum(len(chunk) for chunk in _state['live_pcm_buffers'][sid])
 
-            # Target: ~1.5 seconds of audio (snappy for 'small' model)
-            target_samples = sample_rate * 1.5
+            # Target: ~2.5 seconds of audio for better context
+            target_samples = sample_rate * 2.5
 
-            logger.info(f"Buffer status: {total_samples}/{target_samples} samples ({total_samples/sample_rate:.2f}s accumulated)")
+            # Process when we have enough audio and not already transcribing
+            if total_samples >= target_samples and not _state[f'is_transcribing_{sid}']:
+                # Set transcribing flag
+                _state[f'is_transcribing_{sid}'] = True
+                
+                try:
+                    # Concatenate all buffered PCM
+                    full_audio = np.concatenate(_state['live_pcm_buffers'][sid])
 
-            # Process when we have enough audio
-            if total_samples >= target_samples:
-                # Concatenate all buffered PCM
-                full_audio = np.concatenate(_state['live_pcm_buffers'][sid])
+                    # Normalize audio to improve transcription accuracy (like PTT mode's loudnorm)
+                    # Calculate current RMS
+                    audio_rms = np.sqrt(np.mean(full_audio ** 2))
+                    if audio_rms > 0:
+                        # Target RMS of 0.1 (similar to normalized audio)
+                        target_rms = 0.1
+                        normalization_factor = target_rms / audio_rms
+                        # Apply gain with clipping protection
+                        full_audio = np.clip(full_audio * normalization_factor, -1.0, 1.0)
+                        logger.info(f"Audio normalized: RMS {audio_rms:.4f} -> {np.sqrt(np.mean(full_audio ** 2)):.4f} (gain: {normalization_factor:.2f}x)")
 
-                # Transcribe directly with Whisper (numpy array input)
-                segments, info = await asyncio.to_thread(
-                    _state['stt'].model.transcribe,
-                    full_audio,
-                    language=_state['config']['whisper']['language'],
-                    vad_filter=False,  # Disable VAD filter for live mode to prevent aggressive cut-offs
-                    beam_size=1  # Fast decoding for real-time
-                )
-
-                # Convert generator to list once to avoid exhaustion
-                segments_list = list(segments)
-                transcription = " ".join([segment.text for segment in segments_list]).strip()
+                    # Transcribe using optimized STT method with beam_size=3 for better accuracy
+                    transcription = await asyncio.to_thread(_state['stt'].transcribe, full_audio, beam_size=3)
+                finally:
+                    _state[f'is_transcribing_{sid}'] = False
 
                 # Log transcription result
-                logger.info(f"Transcription result: '{transcription}' (segments: {len(segments_list)}, duration: {info.duration:.2f}s)")
+                logger.info(f"Live transcription result: '{transcription}' from {sid}")
 
-                # Keep last 0.75 seconds for context continuity
-                keep_samples = int(sample_rate * 0.75)
+                # Keep last 1.0 seconds for context continuity
+                keep_samples = int(sample_rate * 1.0)
                 if len(full_audio) > keep_samples:
                     _state['live_pcm_buffers'][sid] = [full_audio[-keep_samples:]]
                 else:
@@ -710,5 +867,262 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         except Exception as e:
             logger.error(f"Error clearing live assistant: {e}")
             await sio.emit('error', {'message': str(e)}, room=sid)
+
+
+    # ==================== Reading Mode Handlers ====================
+    
+    @sio.event
+    async def start_reading(sid, data):
+        """Initialize reading session with text or share code"""
+        try:
+            mode = data.get('mode', 'text')  # 'text' or 'share'
+            
+            if mode == 'share':
+                # Fetch content from share.vives.io
+                share_code = data.get('share_code', '').strip()
+                if not share_code:
+                    await sio.emit('reading_error', {'message': 'Share code is required'}, room=sid)
+                    return
+                
+                logger.info(f"Fetching share content for code: {share_code}")
+                success, content = await _state['reading_service'].fetch_share_content(share_code)
+                
+                if not success:
+                    await sio.emit('reading_error', {'message': content}, room=sid)
+                    return
+                
+                text = content
+                source = f"share:{share_code}"
+                
+            else:  # mode == 'text'
+                text = data.get('text', '').strip()
+                if not text:
+                    await sio.emit('reading_error', {'message': 'Text is required'}, room=sid)
+                    return
+                source = "text"
+            
+            # Validate text length
+            max_length = _state['reading_service'].max_text_length
+            if len(text) > max_length:
+                await sio.emit('reading_error', {
+                    'message': f'Text too large ({len(text)} chars). Maximum: {max_length}'
+                }, room=sid)
+                return
+            
+            # Create reading session
+            try:
+                session = _state['reading_service'].create_session(sid, text, source)
+                
+                # Send session info to client
+                await sio.emit('reading_started', {
+                    'total_chunks': session['total_chunks'],
+                    'source': session['source'],
+                    'text_length': len(text)
+                }, room=sid)
+                
+                # Send initial progress
+                progress = _state['reading_service'].get_progress(sid)
+                await sio.emit('reading_progress', progress, room=sid)
+                
+                logger.info(f"Reading session started for {sid}: {session['total_chunks']} chunks")
+                
+            except ValueError as e:
+                await sio.emit('reading_error', {'message': str(e)}, room=sid)
+                
+        except Exception as e:
+            logger.error(f"Error starting reading session: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_play(sid, data=None):
+        """Start or resume reading from current position"""
+        try:
+            session = _state['reading_service'].get_session(sid)
+            if not session:
+                await sio.emit('reading_error', {'message': 'No active reading session'}, room=sid)
+                return
+            
+            # Set state to playing
+            _state['reading_service'].set_state(sid, 'playing')
+            
+            # Get current chunk
+            chunk_text = _state['reading_service'].get_current_chunk(sid)
+            if not chunk_text:
+                await sio.emit('reading_complete', {}, room=sid)
+                _state['reading_service'].set_state(sid, 'stopped')
+                return
+            
+            # Send chunk info
+            progress = _state['reading_service'].get_progress(sid)
+            await sio.emit('reading_chunk', {
+                'text': chunk_text,
+                'progress': progress
+            }, room=sid)
+            
+            # Generate TTS if enabled
+            if _state['config']['tts']['engine'] != 'none':
+                if hasattr(_state['tts'], 'generate_audio_base64'):
+                    audio_data = await asyncio.to_thread(_state['tts'].generate_audio_base64, chunk_text)
+                    if audio_data:
+                        await sio.emit('reading_audio', {'audio': audio_data}, room=sid)
+                else:
+                    # Fallback to direct playback (not ideal for web)
+                    if hasattr(_state['tts'], 'speak_async'):
+                        await asyncio.to_thread(_state['tts'].speak_async, chunk_text)
+                    else:
+                        await asyncio.to_thread(_state['tts'].speak, chunk_text)
+            
+            logger.info(f"Playing chunk {progress['current_chunk']} for {sid}")
+            
+        except Exception as e:
+            logger.error(f"Error playing reading: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_pause(sid, data=None):
+        """Pause reading at current position"""
+        try:
+            _state['reading_service'].set_state(sid, 'paused')
+            await sio.emit('reading_paused', {}, room=sid)
+            logger.info(f"Reading paused for {sid}")
+        except Exception as e:
+            logger.error(f"Error pausing reading: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_stop(sid, data=None):
+        """Stop reading and reset to beginning"""
+        try:
+            _state['reading_service'].reset_position(sid)
+            await sio.emit('reading_stopped', {}, room=sid)
+            
+            # Send updated progress
+            progress = _state['reading_service'].get_progress(sid)
+            if progress:
+                await sio.emit('reading_progress', progress, room=sid)
+            
+            logger.info(f"Reading stopped for {sid}")
+        except Exception as e:
+            logger.error(f"Error stopping reading: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_next(sid, data=None):
+        """Skip to next chunk"""
+        try:
+            next_chunk = _state['reading_service'].get_next_chunk(sid)
+            
+            if next_chunk is None:
+                # Reached end
+                await sio.emit('reading_complete', {}, room=sid)
+                _state['reading_service'].set_state(sid, 'stopped')
+            else:
+                # Send updated progress
+                progress = _state['reading_service'].get_progress(sid)
+                await sio.emit('reading_progress', progress, room=sid)
+                
+                # If currently playing, play the new chunk
+                session = _state['reading_service'].get_session(sid)
+                if session and session['state'] == 'playing':
+                    await reading_play(sid)
+            
+            logger.info(f"Skipped to next chunk for {sid}")
+            
+        except Exception as e:
+            logger.error(f"Error skipping to next chunk: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_previous(sid, data=None):
+        """Go back to previous chunk"""
+        try:
+            prev_chunk = _state['reading_service'].get_previous_chunk(sid)
+            
+            if prev_chunk is None:
+                # Already at beginning
+                await sio.emit('reading_error', {'message': 'Already at beginning'}, room=sid)
+            else:
+                # Send updated progress
+                progress = _state['reading_service'].get_progress(sid)
+                await sio.emit('reading_progress', progress, room=sid)
+                
+                # If currently playing, play the new chunk
+                session = _state['reading_service'].get_session(sid)
+                if session and session['state'] == 'playing':
+                    await reading_play(sid)
+            
+            logger.info(f"Went back to previous chunk for {sid}")
+            
+        except Exception as e:
+            logger.error(f"Error going to previous chunk: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_seek(sid, data):
+        """Seek to specific chunk index"""
+        try:
+            chunk_index = data.get('chunk_index', 0)
+            chunk_text = _state['reading_service'].seek_to_chunk(sid, chunk_index)
+            
+            if chunk_text is None:
+                await sio.emit('reading_error', {'message': 'Invalid chunk index'}, room=sid)
+            else:
+                # Send updated progress
+                progress = _state['reading_service'].get_progress(sid)
+                await sio.emit('reading_progress', progress, room=sid)
+                
+                # If currently playing, play the new chunk
+                session = _state['reading_service'].get_session(sid)
+                if session and session['state'] == 'playing':
+                    await reading_play(sid)
+            
+            logger.info(f"Seeked to chunk {chunk_index} for {sid}")
+            
+        except Exception as e:
+            logger.error(f"Error seeking: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def reading_auto_advance(sid, data=None):
+        """Auto-advance to next chunk (called when TTS completes)"""
+        try:
+            session = _state['reading_service'].get_session(sid)
+            if not session or session['state'] != 'playing':
+                return
+            
+            # Move to next chunk
+            next_chunk = _state['reading_service'].get_next_chunk(sid)
+            
+            if next_chunk is None:
+                # Reached end
+                await sio.emit('reading_complete', {}, room=sid)
+                _state['reading_service'].set_state(sid, 'stopped')
+            else:
+                # Auto-play next chunk
+                await reading_play(sid)
+            
+        except Exception as e:
+            logger.error(f"Error auto-advancing: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
+
+    @sio.event
+    async def end_reading(sid, data=None):
+        """End reading session and clean up"""
+        try:
+            _state['reading_service'].delete_session(sid)
+            await sio.emit('reading_ended', {}, room=sid)
+            logger.info(f"Reading session ended for {sid}")
+        except Exception as e:
+            logger.error(f"Error ending reading session: {e}")
+            await sio.emit('reading_error', {'message': str(e)}, room=sid)
+
 
     logger.info("✓ WebSocket handlers registered")

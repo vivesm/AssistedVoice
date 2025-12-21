@@ -16,3 +16,8 @@ def register_page_routes(app):
     async def index(request: Request):
         """Serve the main interface"""
         return templates.TemplateResponse("index.html", {"request": request})
+
+    @app.get("/audio-test", response_class=HTMLResponse, tags=["Pages"])
+    async def audio_test(request: Request):
+        """Audio capture diagnostic test page"""
+        return templates.TemplateResponse("audio_test.html", {"request": request})

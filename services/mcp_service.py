@@ -332,11 +332,129 @@ class PlaywrightService:
         return "Browser closed"
 
 
+class DockerService:
+    """Docker MCP service for container management"""
+    
+    IMAGE = "mcp/docker"
+    
+    def __init__(self, client: MCPClient):
+        self.client = client
+    
+    def is_available(self) -> bool:
+        return self.client._check_image_available(self.IMAGE)
+    
+    def list_containers(self, all: bool = False) -> str:
+        """List Docker containers"""
+        result = self.client.call_tool(self.IMAGE, "list_containers", {"all": all})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to list containers"
+    
+    def list_images(self) -> str:
+        """List Docker images"""
+        result = self.client.call_tool(self.IMAGE, "list_images", {})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to list images"
+    
+    def run_container(self, image: str, name: Optional[str] = None, 
+                      ports: Optional[Dict[str, str]] = None) -> str:
+        """Run a Docker container"""
+        args = {"image": image}
+        if name:
+            args["name"] = name
+        if ports:
+            args["ports"] = ports
+        result = self.client.call_tool(self.IMAGE, "run_container", args)
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to run container {image}"
+    
+    def stop_container(self, container: str) -> str:
+        """Stop a Docker container"""
+        result = self.client.call_tool(self.IMAGE, "stop_container", {"container": container})
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to stop container {container}"
+    
+    def get_logs(self, container: str, tail: int = 100) -> str:
+        """Get container logs"""
+        result = self.client.call_tool(self.IMAGE, "get_logs", {
+            "container": container,
+            "tail": tail
+        })
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to get logs for {container}"
+
+
+class DesktopCommanderService:
+    """Desktop Commander MCP service for local machine control"""
+    
+    IMAGE = "mcp/desktop-commander"
+    
+    def __init__(self, client: MCPClient):
+        self.client = client
+    
+    def is_available(self) -> bool:
+        return self.client._check_image_available(self.IMAGE)
+    
+    def execute_command(self, command: str, timeout: int = 30) -> str:
+        """Execute a shell command"""
+        result = self.client.call_tool(self.IMAGE, "execute_command", {
+            "command": command,
+            "timeout": timeout
+        })
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to execute: {command}"
+    
+    def read_file(self, path: str) -> str:
+        """Read a file"""
+        result = self.client.call_tool(self.IMAGE, "read_file", {"path": path})
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to read file: {path}"
+    
+    def write_file(self, path: str, content: str) -> str:
+        """Write to a file"""
+        result = self.client.call_tool(self.IMAGE, "write_file", {
+            "path": path,
+            "content": content
+        })
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to write file: {path}"
+    
+    def list_directory(self, path: str) -> str:
+        """List directory contents"""
+        result = self.client.call_tool(self.IMAGE, "list_directory", {"path": path})
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to list directory: {path}"
+    
+    def list_processes(self) -> str:
+        """List running processes"""
+        result = self.client.call_tool(self.IMAGE, "list_processes", {})
+        if result:
+            return self.client.get_text_content(result)
+        return "Failed to list processes"
+    
+    def kill_process(self, pid: int) -> str:
+        """Kill a process by PID"""
+        result = self.client.call_tool(self.IMAGE, "kill_process", {"pid": pid})
+        if result:
+            return self.client.get_text_content(result)
+        return f"Failed to kill process {pid}"
+
+
 # Global instances
 _mcp_client: Optional[MCPClient] = None
 _brave_search: Optional[BraveSearchService] = None
 _context7: Optional[Context7Service] = None
 _playwright: Optional[PlaywrightService] = None
+_docker: Optional[DockerService] = None
+_desktop_commander: Optional[DesktopCommanderService] = None
 
 
 def get_mcp_client() -> MCPClient:
@@ -371,6 +489,22 @@ def get_playwright() -> PlaywrightService:
     return _playwright
 
 
+def get_docker() -> DockerService:
+    """Get or create the Docker service"""
+    global _docker
+    if _docker is None:
+        _docker = DockerService(get_mcp_client())
+    return _docker
+
+
+def get_desktop_commander() -> DesktopCommanderService:
+    """Get or create the Desktop Commander service"""
+    global _desktop_commander
+    if _desktop_commander is None:
+        _desktop_commander = DesktopCommanderService(get_mcp_client())
+    return _desktop_commander
+
+
 # Backwards compatibility
 def get_search_service() -> BraveSearchService:
     """Backwards compatible alias for get_brave_search"""
@@ -380,3 +514,4 @@ def get_search_service() -> BraveSearchService:
 # Alias for old imports
 MCPSearchService = BraveSearchService
 SearchService = BraveSearchService
+

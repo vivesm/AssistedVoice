@@ -186,7 +186,14 @@ function setupEventListeners() {
     // New chat button
     const newChatBtn = document.getElementById('newChatBtn');
     if (newChatBtn) {
-        newChatBtn.addEventListener('click', startNewChat);
+        newChatBtn.addEventListener('click', () => {
+            startNewChat();
+            // Close the menu after starting new chat
+            const sideMenu = document.getElementById('sideMenu');
+            const overlay = document.getElementById('overlay');
+            if (sideMenu) sideMenu.classList.remove('open');
+            if (overlay) overlay.classList.remove('active');
+        });
     }
 
     // Clear chat button (from menu)

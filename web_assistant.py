@@ -103,12 +103,19 @@ async def initialize_components():
 
         # Initialize services
         from services.reading_service import ReadingService
+        from services.search_service import get_search_service
+        
+        search_service = get_search_service()
         app_state['model_service'] = ModelService(app_state['llm'], app_state['config'])
-        app_state['chat_service'] = ChatService(app_state['llm'])
+        app_state['chat_service'] = ChatService(app_state['llm'], search_service=search_service)
         app_state['audio_service'] = AudioService(app_state['stt'], app_state['tts'])
         app_state['reading_service'] = ReadingService(app_state['config'])
         app_state['initialized']['services'] = True
-        logger.info("✓ Services initialized")
+        
+        if search_service.is_available():
+            logger.info("✓ Services initialized (web search enabled)")
+        else:
+            logger.info("✓ Services initialized (web search disabled - set BRAVE_API_KEY)")
 
         # Re-register WebSocket handlers if SIO is available
         if app_state['sio']:

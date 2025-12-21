@@ -2,14 +2,19 @@
 FastAPI REST API route handlers
 """
 import logging
-from fastapi import HTTPException, status
+import asyncio
+from fastapi import HTTPException, status, Body
 from models.schemas import (
     ConfigResponse,
     ModelListResponse,
+    ModelSwitchRequest,
+    BackendSwitchRequest,
     ConnectionTestResponse,
     TTSEngineRequest,
     SuccessResponse,
-    TranscriptionResponse
+    TranscriptionResponse,
+    ChatRequest,
+    ChatResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +51,87 @@ def register_api_routes(app, app_state):
             }
         except Exception as e:
             logger.error(f"Error getting models: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.post("/api/models/switch", response_model=SuccessResponse, tags=["Models"])
+    async def switch_model(request: ModelSwitchRequest):
+        """Switch model on current backend"""
+        try:
+            model_service = app_state['model_service']
+            new_llm, actual_model = model_service.switch_model(request.model)
+            
+            # Update app state
+            app_state['llm'] = new_llm
+            app_state['chat_service'].llm = new_llm
+            app_state['model_service'].llm = new_llm
+            
+            return {
+                'success': True,
+                'message': f"Switched to model: {actual_model}"
+            }
+        except Exception as e:
+            logger.error(f"Error switching model: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.post("/api/backend/switch", response_model=SuccessResponse, tags=["Models"])
+    async def switch_backend(request: BackendSwitchRequest):
+        """Switch LLM backend (e.g. ollama to openai)"""
+        try:
+            config = app_state['config']
+            config['server']['type'] = request.type
+            if request.model:
+                 # Update model in relevant section
+                 section = request.type if request.type in config else 'ollama'
+                 if section not in config: config[section] = {}
+                 config[section]['model'] = request.model
+            
+            from modules.llm_factory import switch_llm_server
+            # Preserve history using switch_llm_server helper
+            new_llm = switch_llm_server(app_state['llm'], config)
+            
+            # Update app state
+            app_state['llm'] = new_llm
+            app_state['chat_service'].llm = new_llm
+            app_state['model_service'].llm = new_llm
+            
+            return {
+                'success': True,
+                'message': f"Switched backend to {request.type} ({new_llm.__class__.__name__})"
+            }
+        except Exception as e:
+            logger.error(f"Error switching backend: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+    @app.post("/api/chat", response_model=ChatResponse, tags=["Chat"])
+    async def chat(request: ChatRequest):
+        """Text-based chat endpoint"""
+        try:
+            llm = app_state['llm']
+            
+            # Use assistant to generate response
+            response_text = ""
+            if hasattr(llm, 'generate'):
+                 # Note: Rest API non-streaming implementation
+                 for chunk in llm.generate(request.text, stream=True, images=request.images):
+                     response_text += chunk
+            else:
+                 raise HTTPException(status_code=500, detail="LLM not ready")
+
+            return {
+                'text': response_text,
+                'model': llm.model if hasattr(llm, 'model') else "unknown"
+            }
+        except Exception as e:
+            logger.error(f"Chat error: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
@@ -91,7 +177,7 @@ def register_api_routes(app, app_state):
     async def transcribe_audio(audio_data: dict):
         """Transcribe audio file"""
         try:
-            audio = audio_data.get('audio')
+            audio = audio_data.get('audio') or audio_data.get('audio_data')
 
             if not audio:
                 raise HTTPException(
@@ -100,7 +186,6 @@ def register_api_routes(app, app_state):
                 )
 
             # Process audio with STT (run in thread pool for blocking operation)
-            import asyncio
             stt = app_state['stt']
             text = await asyncio.to_thread(stt.transcribe_base64, audio)
 

@@ -25,7 +25,7 @@ class TTSConfig(BaseModel):
 
 class ServerConfig(BaseModel):
     """Server type configuration"""
-    type: str = Field(..., description="Server type (ollama/lm-studio)")
+    type: str = Field(..., description="Server type")
 
 
 class ConfigResponse(BaseModel):
@@ -48,6 +48,11 @@ class ModelSwitchRequest(BaseModel):
     """Request to switch model"""
     model: str = Field(..., description="Model name to switch to")
 
+class BackendSwitchRequest(BaseModel):
+    """Request to switch backend"""
+    type: str = Field(..., description="Backend type (ollama, openai, gemini, lm-studio)")
+    model: Optional[str] = Field(None, description="Optional model name for the backend")
+
 
 # Audio Processing
 class AudioProcessRequest(BaseModel):
@@ -65,7 +70,8 @@ class TranscriptionResponse(BaseModel):
 class ChatRequest(BaseModel):
     """Text chat request"""
     text: str = Field(..., description="User input text")
-    enable_tts: bool = Field(True, description="Enable TTS response")
+    images: Optional[List[str]] = Field(None, description="Optional image data as base64 or paths")
+    enable_tts: bool = Field(False, description="Enable TTS response")
 
 
 class ChatResponse(BaseModel):
@@ -90,83 +96,6 @@ class ConnectionTestResponse(BaseModel):
     """Connection test result"""
     success: bool = Field(..., description="Connection status")
     message: str = Field(..., description="Status message")
-
-
-# Settings Updates
-class TemperatureUpdateRequest(BaseModel):
-    """Temperature update request"""
-    temperature: float = Field(..., ge=0.0, le=2.0, description="Temperature value (0.0-2.0)")
-
-
-class MaxTokensUpdateRequest(BaseModel):
-    """Max tokens update request"""
-    max_tokens: int = Field(..., gt=0, description="Maximum tokens (must be positive)")
-
-
-class SystemPromptUpdateRequest(BaseModel):
-    """System prompt update request"""
-    system_prompt: str = Field(..., description="New system prompt")
-
-
-class WhisperModelRequest(BaseModel):
-    """Whisper model selection request"""
-    model: str = Field(..., description="Whisper model name")
-
-
-# Error Response
-class ErrorResponse(BaseModel):
-    """Error response"""
-    error: str = Field(..., description="Error message")
-    detail: Optional[str] = Field(None, description="Detailed error information")
-
-
-# WebSocket Event Payloads
-class StatusEvent(BaseModel):
-    """Status update event"""
-    message: str = Field(..., description="Status message")
-    type: str = Field(..., description="Status type (processing/transcribing/generating/speaking/ready)")
-
-
-class TranscriptionEvent(BaseModel):
-    """Transcription event"""
-    text: str = Field(..., description="Transcribed text")
-
-
-class ResponseChunkEvent(BaseModel):
-    """Response chunk event"""
-    text: str = Field(..., description="Text chunk")
-    model: str = Field(..., description="Model name")
-
-
-class ResponseCompleteEvent(BaseModel):
-    """Response complete event"""
-    text: str = Field(..., description="Complete response text")
-    model: str = Field(..., description="Model name")
-
-
-class AudioDataEvent(BaseModel):
-    """Audio data event"""
-    audio: str = Field(..., description="Base64-encoded audio data")
-
-
-class ErrorEvent(BaseModel):
-    """Error event"""
-    message: str = Field(..., description="Error message")
-
-
-class ModelChangedEvent(BaseModel):
-    """Model changed event"""
-    model: str = Field(..., description="New model name")
-
-
-class TTSChangedEvent(BaseModel):
-    """TTS engine changed event"""
-    engine: str = Field(..., description="New TTS engine")
-
-
-class WhisperModelChangedEvent(BaseModel):
-    """Whisper model changed event"""
-    model: str = Field(..., description="New Whisper model")
 
 
 # Generic Success Response

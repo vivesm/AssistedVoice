@@ -3,6 +3,7 @@ Cloud LLM Providers (OpenAI, Gemini) implemented as BaseLLM classes.
 """
 import logging
 import os
+import time
 from typing import Generator, List, Tuple, Optional
 
 # Third-party imports
@@ -45,32 +46,36 @@ class OpenAILLM(BaseLLM):
             yield "Error: OpenAI client not initialized."
             return
 
-        # Prepare messages using ConversationManager
-        messages = self.conversation.get_context(self.config.get('system_prompt'))
-        
-        # Construct User Message
-        user_content = [{"type": "text", "text": prompt}]
-        
-        if images:
-            import base64
-            for img_path in images:
-                try:
-                    with open(img_path, "rb") as image_file:
-                        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                        # Determine mime type (simple guess or default to jpeg)
-                        ext = os.path.splitext(img_path)[1].lower()
-                        mime = "image/png" if ext == ".png" else "image/jpeg"
-                        
-                        user_content.append({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime};base64,{encoded_string}"
-                            }
-                        })
-                except Exception as e:
-                    logger.error(f"Failed to load image {img_path}: {e}")
+        # Add user message to history
+        self.conversation.add_message("user", prompt, images=images)
 
-        messages.append({"role": "user", "content": user_content})
+        # Prepare messages using ConversationManager
+        # Note: get_context returns basic dictionaries {role, content}
+        raw_messages = self.conversation.get_context(self.config.get('system_prompt'))
+        
+        # Convert to OpenAI multimodal format for the current turn if needed, 
+        # or just ensure it's compatible.
+        messages = []
+        for msg in raw_messages:
+            # If the message has images, we need the multimodal list format
+            if msg.get('images'):
+                import base64
+                content = [{"type": "text", "text": msg['content']}]
+                for img_data in msg['images']:
+                    # Simple check if it's already base64 or a path
+                    if img_data.startswith('data:') or len(img_data) > 200:
+                         url = img_data if img_data.startswith('data:') else f"data:image/jpeg;base64,{img_data}"
+                    else:
+                        try:
+                            with open(img_data, "rb") as f:
+                                b64 = base64.b64encode(f.read()).decode('utf-8')
+                                url = f"data:image/jpeg;base64,{b64}"
+                        except:
+                            continue
+                    content.append({"type": "image_url", "image_url": {"url": url}})
+                messages.append({"role": msg['role'], "content": content})
+            else:
+                messages.append(msg)
 
         try:
             response = self.client.chat.completions.create(
@@ -79,20 +84,19 @@ class OpenAILLM(BaseLLM):
                 stream=stream
             )
 
+            full_response = ""
             if stream:
-                full_response = ""
                 for chunk in response:
-                    if chunk.choices[0].delta.content:
+                    if chunk.choices and chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         full_response += content
                         yield content
-                
-                # Add assistant response to history
-                self.conversation.add_message("assistant", full_response)
             else:
-                content = response.choices[0].message.content
-                self.conversation.add_message("assistant", content)
-                yield content
+                full_response = response.choices[0].message.content
+                yield full_response
+            
+            # Add assistant response to history
+            self.conversation.add_message("assistant", full_response)
 
         except Exception as e:
             logger.error(f"OpenAI Generation Error: {e}")
@@ -139,14 +143,15 @@ class GeminiLLM(BaseLLM):
             yield "Error: Gemini client not initialized."
             return
 
+        # Add user message to history
+        self.conversation.add_message("user", prompt, images=images)
+
         # Convert ConversationManager history to Gemini format
         chat_history = []
-        for msg in self.conversation.messages:
+        # We process all messages except the last one (which is the current prompt)
+        messages_to_process = self.conversation.messages[:-1]
+        for msg in messages_to_process:
             role = 'user' if msg.role == 'user' else 'model'
-            # Note: Gemini history usually text only in standard chat. 
-            # Multimodal history handling is complex. For now, we put text.
-            # If msg has images, we might leave them out of history or implementation dependent.
-            # Simplified: Text only history.
             chat_history.append({'role': role, 'parts': [msg.content]})
 
         try:
@@ -160,31 +165,39 @@ class GeminiLLM(BaseLLM):
 
             final_prompt_parts.append(f"User: {prompt}")
 
-            # Load images
+            # Load images for the current prompt
             if images:
                 import PIL.Image
-                for img_path in images:
+                import base64
+                import io
+                for img_data in images:
                     try:
-                        img = PIL.Image.open(img_path)
+                        if len(img_data) > 200 or img_data.startswith('data:'):
+                            # Base64 data
+                            if ',' in img_data: img_data = img_data.split(',')[1]
+                            img_bytes = base64.b64decode(img_data)
+                            img = PIL.Image.open(io.BytesIO(img_bytes))
+                        else:
+                            # Path
+                            img = PIL.Image.open(img_data)
                         final_prompt_parts.append(img)
                     except Exception as e:
-                        logger.error(f"Failed to load image for Gemini {img_path}: {e}")
+                        logger.error(f"Failed to load image for Gemini: {e}")
 
             # Send Message (Text + Images)
             response = chat.send_message(final_prompt_parts, stream=stream)
 
+            full_response = ""
             if stream:
-                full_response = ""
                 for chunk in response:
                     content = chunk.text
                     full_response += content
                     yield content
-                
-                self.conversation.add_message("assistant", full_response)
             else:
-                content = response.text
-                self.conversation.add_message("assistant", content)
-                yield content
+                full_response = response.text
+                yield full_response
+                
+            self.conversation.add_message("assistant", full_response)
 
         except Exception as e:
             logger.error(f"Gemini Generation Error: {e}")

@@ -448,6 +448,60 @@ class DesktopCommanderService:
         return f"Failed to kill process {pid}"
 
 
+class SequentialThinkingService:
+    """Sequential Thinking MCP service for step-by-step problem solving"""
+    
+    IMAGE = "mcp/sequentialthinking"
+    
+    def __init__(self, client: MCPClient):
+        self.client = client
+    
+    def is_available(self) -> bool:
+        return self.client._check_image_available(self.IMAGE)
+    
+    def think(self, problem: str, initial_thoughts: int = 5) -> str:
+        """
+        Use sequential thinking to solve a problem
+        
+        Args:
+            problem: The problem to solve
+            initial_thoughts: Initial estimate of thoughts needed
+            
+        Returns:
+            The thinking process and solution
+        """
+        thoughts = []
+        thought_num = 1
+        total_thoughts = initial_thoughts
+        next_needed = True
+        
+        while next_needed and thought_num <= 20:  # Safety limit
+            # Call the MCP tool
+            result = self.client.call_tool(
+                self.IMAGE,
+                "sequentialthinking",
+                {
+                    "thought": f"Analyzing: {problem}" if thought_num == 1 else f"Continuing analysis (step {thought_num})",
+                    "thoughtNumber": thought_num,
+                    "totalThoughts": total_thoughts,
+                    "nextThoughtNeeded": True
+                }
+            )
+            
+            if not result:
+                break
+            
+            # Extract thought content
+            content = self.client.get_text_content(result)
+            thoughts.append(f"Thought {thought_num}: {content}")
+            
+            # Simple heuristic: stop after initial_thoughts unless we detect complexity
+            thought_num += 1
+            next_needed = thought_num <= total_thoughts
+        
+        return "\n".join(thoughts)
+
+
 # Global instances
 _mcp_client: Optional[MCPClient] = None
 _brave_search: Optional[BraveSearchService] = None
@@ -455,6 +509,7 @@ _context7: Optional[Context7Service] = None
 _playwright: Optional[PlaywrightService] = None
 _docker: Optional[DockerService] = None
 _desktop_commander: Optional[DesktopCommanderService] = None
+_sequential_thinking: Optional[SequentialThinkingService] = None
 
 
 def get_mcp_client() -> MCPClient:
@@ -505,6 +560,14 @@ def get_desktop_commander() -> DesktopCommanderService:
     return _desktop_commander
 
 
+def get_sequential_thinking() -> SequentialThinkingService:
+    """Get or create the Sequential Thinking service"""
+    global _sequential_thinking
+    if _sequential_thinking is None:
+        _sequential_thinking = SequentialThinkingService(get_mcp_client())
+    return _sequential_thinking
+
+
 # Backwards compatibility
 def get_search_service() -> BraveSearchService:
     """Backwards compatible alias for get_brave_search"""
@@ -514,4 +577,5 @@ def get_search_service() -> BraveSearchService:
 # Alias for old imports
 MCPSearchService = BraveSearchService
 SearchService = BraveSearchService
+
 

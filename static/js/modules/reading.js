@@ -74,6 +74,22 @@ export class ReadingMode {
         console.log('[ReadingMode] Elements initialized:', {
             readingModeBtn: !!this.readingModeBtn,
             readingPanel: !!this.readingPanel,
+            chatContainer: !!this.chatContainer,
+            readingModeBtnElement: this.readingModeBtn
+        });
+        
+        if (!this.readingModeBtn) {
+            console.error('[ReadingMode] CRITICAL: readingModeBtn not found! Cannot attach click listener');
+        }
+        if (!this.readingPanel) {
+            console.error('[ReadingMode] CRITICAL: readingPanel not found!');
+        }
+        if (!this.chatContainer) {
+            console.error('[ReadingMode] CRITICAL: chatContainer not found!');
+        }
+        console.log('[ReadingMode] Elements initialized (condensed):, {
+            readingModeBtn: !!this.readingModeBtn,
+            readingPanel: !!this.readingPanel,
             chatContainer: !!this.chatContainer
         });
     }

@@ -115,8 +115,13 @@ class ChatService:
         # Check pattern-based intents
         for tool_type, patterns in INTENT_PATTERNS.items():
             for pattern in patterns:
-                if re.search(pattern, prompt_lower):
-                    return tool_type, prompt
+                match = re.search(pattern, prompt_lower)
+                if match:
+                    # Extract text after the match as the query
+                    query = prompt[match.end():].strip()
+                    if not query:
+                        query = prompt.strip()
+                    return tool_type, query
         
         return None, None
 

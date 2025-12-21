@@ -121,7 +121,8 @@ async def initialize_components():
                 app_state['chat_service'],
                 app_state['audio_service'],
                 app_state['model_service'],
-                app_state['reading_service']
+                app_state['reading_service'],
+                app_state['database_service']
             )
             logger.info("✓ WebSocket handlers updated with initialized components")
 
@@ -203,7 +204,8 @@ async def lifespan(app: FastAPI):
         None,
         None,
         None,
-        None
+        None,
+        app_state['database_service']
     )
 
     logger.info("✓ AssistedVoice server starting (components loading in background)")

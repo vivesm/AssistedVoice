@@ -2531,3 +2531,66 @@ kbd {
         height: 56px;
     }
 }
+/* Quick Model Selector Styles */
+.quick-model-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.quick-model-selector:hover {
+    background: var(--border);
+    border-color: var(--primary);
+    color: var(--text);
+}
+
+.quick-model-selector .model-indicator {
+    font-weight: 600;
+}
+
+/* Capability Badges */
+.capability-badges {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-vision {
+    background: rgba(129, 140, 248, 0.2);
+    color: var(--primary);
+    border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.badge-tools {
+    background: rgba(52, 211, 153, 0.2);
+    color: var(--success);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+/* Model Button Capability Layout */
+.model-btn {
+    position: relative;
+    padding-bottom: var(--space-md);
+}
+
+.model-btn .capability-badges {
+    position: absolute;
+    bottom: 8px;
+}

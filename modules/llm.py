@@ -3,7 +3,9 @@ Language Model interface using Ollama
 """
 import time
 import logging
+import io
 from typing import Optional, Generator, List, Dict, Any
+from PIL import Image
 from ollama import Client
 from .llm_base import BaseLLM
 from .config_helper import get_server_config
@@ -119,6 +121,32 @@ class OllamaLLM(BaseLLM):
         except Exception as e:
             return False, f"Failed to connect to Ollama: {str(e)}"
 
+    def _resize_image(self, image_bytes: bytes, max_size: int = 1024) -> bytes:
+        """Resize image to a maximum dimension while maintaining aspect ratio"""
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            
+            # Check if resize is needed
+            if max(img.size) <= max_size:
+                return image_bytes
+                
+            # Calculate new size
+            ratio = max_size / max(img.size)
+            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+            
+            # Resize
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Save back to bytes
+            output = io.BytesIO()
+            # Preserve original format if possible, otherwise JPEG
+            fmt = img.format if img.format else "JPEG"
+            img.save(output, format=fmt, quality=85)
+            return output.getvalue()
+        except Exception as e:
+            logger.warning(f"Failed to resize image: {e}")
+            return image_bytes
+
     def generate(self, prompt: str, images: Optional[List[str]] = None, stream: bool = True) -> Generator[str, None, None]:
         """Generate response from LLM"""
         # Add user message to conversation (with images if provided)
@@ -134,7 +162,7 @@ class OllamaLLM(BaseLLM):
         )
 
         # Process images: Ollama library expects bytes or stripped base64 strings
-        # We'll convert them to bytes for robustness
+        # We'll convert them to bytes for robustness and resize them if too large
         for msg in messages:
             if 'images' in msg:
                 processed_images = []
@@ -145,9 +173,14 @@ class OllamaLLM(BaseLLM):
                             # Split by comma and take the base64 part
                             base64_str = img_data.split(',')[1]
                             import base64
-                            processed_images.append(base64.b64decode(base64_str))
+                            img_bytes = base64.b64decode(base64_str)
+                            
+                            # Optimized resize
+                            img_bytes = self._resize_image(img_bytes)
+                            
+                            processed_images.append(img_bytes)
                         except Exception as e:
-                            logger.error(f"Error processing image data: {e}")
+                            logger.error(f"Error decoding image: {e}")
                             processed_images.append(img_data) # Fallback
                     else:
                         processed_images.append(img_data)

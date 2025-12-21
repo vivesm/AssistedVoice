@@ -15,7 +15,7 @@ from modules.config_helper import save_config_to_file
 logger = logging.getLogger(__name__)
 
 
-def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_service, model_service, reading_service):
+def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_service, model_service, reading_service, database_service):
     """Register async WebSocket event handlers"""
 
     # Store references for handler access
@@ -28,8 +28,92 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         'audio_service': audio_service,
         'model_service': model_service,
         'reading_service': reading_service,
-        'live_assistant': LiveAssistantService(chat_service)
+        'database_service': database_service,
+        'live_assistant': LiveAssistantService(chat_service),
+        'current_conversation_id': None
     }
+
+    async def _sync_llm_context(conversation_id):
+        """Sync LLM conversation context with database history"""
+        if not conversation_id or not _state['chat_service']:
+            return
+
+        db = _state.get('database_service')
+        if not db:
+            # Try to get it from app_state if not passed (though it should be in _state)
+            return
+
+        # Only sync if the conversation ID has changed or context is empty
+        llm = _state['llm']
+        if not llm:
+            return
+
+        if conversation_id == _state['current_conversation_id'] and len(llm.conversation.messages) > 0:
+            return
+
+        logger.info(f"Syncing LLM context for conversation: {conversation_id}")
+        
+        try:
+            # Get last few messages from DB
+            conv = await asyncio.to_thread(db.get_conversation, conversation_id)
+            if not conv or 'messages' not in conv:
+                return
+
+            # Clear current LLM context
+            llm.clear_conversation()
+
+            # Load last 10 messages (or max_history)
+            raw_history = conv['messages'][-12:] # Get a bit more to allow for filtering
+            
+            # Filter and sanitize history
+            sanitized_history = []
+            for msg in raw_history:
+                role = msg.get('role')
+                content = (msg.get('content') or '').strip()
+                metadata = msg.get('metadata', {})
+                images = metadata.get('images', []) if metadata else []
+                
+                # Normalize roles (map live-transcript/insight to user/assistant if needed)
+                if role in ['user', 'live-transcript']:
+                    role = 'user'
+                elif role in ['assistant', 'live-insight']:
+                    role = 'assistant'
+                
+                if role not in ['user', 'assistant', 'system']:
+                    continue
+                    
+                # Skip empty messages (no text AND no images)
+                if not content and not images:
+                    continue
+                
+                # Consolidate consecutive messages with same role (especially user messages)
+                if sanitized_history and sanitized_history[-1]['role'] == role:
+                    # Append content
+                    if content:
+                        prev_content = sanitized_history[-1]['content']
+                        if content not in prev_content: # Avoid duplicates
+                            sanitized_history[-1]['content'] = f"{prev_content}\n{content}".strip()
+                    # Append images
+                    if images:
+                        sanitized_history[-1]['images'].extend([img for img in images if img not in sanitized_history[-1]['images']])
+                else:
+                    sanitized_history.append({
+                        'role': role,
+                        'content': content,
+                        'images': images
+                    })
+            
+            # Final pass: Ensure alternating roles if possible (important for some models)
+            # and limit to max_history
+            final_history = sanitized_history[-10:]
+            for msg in final_history:
+                llm.conversation.add_message(msg['role'], msg['content'], images=msg['images'])
+            
+            _state['current_conversation_id'] = conversation_id
+            logger.info(f"Loaded {len(llm.conversation.messages)} sanitized messages into LLM context")
+            
+        except Exception as e:
+            logger.error(f"Error syncing LLM context: {e}")
 
     @sio.event
     async def connect(sid, environ):
@@ -56,6 +140,12 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
         """Process audio from client (PTT mode)"""
         try:
             enable_tts = data.get('enable_tts', True)
+            conversation_id = data.get('conversation_id')
+            
+            # Sync context if needed
+            if conversation_id:
+                await _sync_llm_context(conversation_id)
+
             logger.info(f"Processing PTT audio from {sid} (size: {len(data['audio'])} bytes)")
 
             # Transcribe using STT module's optimized helper
@@ -120,6 +210,11 @@ def register_websocket_handlers(sio, config, stt, tts, chat_service, audio_servi
             text = data.get('text', '').strip()
             images = data.get('images', [])  # List of base64-encoded images
             enable_tts = data.get('enable_tts', True)
+            conversation_id = data.get('conversation_id')
+
+            # Sync context if needed
+            if conversation_id:
+                await _sync_llm_context(conversation_id)
 
             if not text and not images:
                 return

@@ -30,6 +30,7 @@ httpx==0.28.1                  # Async HTTP client
 
 # Utilities
 keyboard==0.13.5               # Keyboard input detection
+Pillow==11.1.0                 # Image processing
 
 # Testing
 pytest==9.0.2                  # Testing framework

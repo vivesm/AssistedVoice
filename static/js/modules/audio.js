@@ -66,7 +66,8 @@ export async function startRecording() {
                 if (state.socket) {
                     state.socket.emit('process_audio', {
                         audio: reader.result,
-                        enable_tts: state.ttsEnabled
+                        enable_tts: state.ttsEnabled,
+                        conversation_id: state.currentChatId
                     });
                 }
             };

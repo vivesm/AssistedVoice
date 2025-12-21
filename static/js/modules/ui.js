@@ -280,9 +280,15 @@ function setupModelSelection() {
 
             updateStatus('Ready', 'ready');
 
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = model;
+
             // Update dropdown if exists
             const modelSelect = document.getElementById('modelSelect');
             if (modelSelect) modelSelect.value = model;
+
+            // Update upload button visibility
+            updateUploadButtonVisibility();
 
             // Show toast
             const modelName = btn.querySelector('.model-name').textContent;
@@ -320,6 +326,12 @@ function setupModelSelection() {
 
             // Emit model change event to backend
             emit('change_model', { model: selectedModel });
+
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = selectedModel;
+
+            // Update upload button visibility
+            updateUploadButtonVisibility();
         });
         console.log('Model dropdown listener added');
     }
@@ -388,13 +400,15 @@ export async function loadAvailableModels(retryCount = 0) {
             throw new Error('Invalid response format from /api/models');
         }
 
+        // List of all available model info
+        state.availableModels = data.models;
+
         // Clear and populate dropdown
         modelSelect.innerHTML = '';
 
-        // Clear welcome grid if it exists
-        if (modelGrid) {
-            modelGrid.innerHTML = '';
-        }
+        // Clear welcome grid and quick selector
+        if (modelGrid) modelGrid.innerHTML = '';
+        const quickSelector = document.getElementById('quickModelSelector');
 
         if (data.models.length === 0) {
             modelSelect.innerHTML = '<option value="">No models available</option>';
@@ -404,25 +418,34 @@ export async function loadAvailableModels(retryCount = 0) {
         }
 
         // Add models to dropdown and welcome grid
-        data.models.forEach(model => {
+        data.models.forEach(modelInfo => {
+            const modelName = modelInfo.name;
+            const capabilities = modelInfo.capabilities || [];
+
             // Add to dropdown
             const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model;
+            option.value = modelName;
+            option.textContent = modelName + (capabilities.length ? ` (${capabilities.join(', ')})` : '');
             modelSelect.appendChild(option);
 
-            // Add to welcome grid (limit to first 6 to avoid overcrowding)
-            if (modelGrid && modelGrid.children.length < 6) {
+            // Add to welcome grid
+            if (modelGrid && modelGrid.children.length < 8) {
                 const btn = document.createElement('button');
                 btn.className = 'model-btn';
-                btn.dataset.model = model;
+                btn.dataset.model = modelName;
 
-                // Deterministic color/icon based on model name
-                const isDeepSeek = model.toLowerCase().includes('deepseek');
-                const isQwen = model.toLowerCase().includes('qwen');
-                const isLlama = model.toLowerCase().includes('llama');
-                const isMistral = model.toLowerCase().includes('mistral');
-                const isGemma = model.toLowerCase().includes('gemma');
+                // Build capability badges
+                let badgesHTML = '<div class="capability-badges">';
+                capabilities.forEach(cap => {
+                    badgesHTML += `<span class="badge badge-${cap}">${cap}</span>`;
+                });
+                badgesHTML += '</div>';
+
+                // Deterministic icon based on model name
+                const isDeepSeek = modelName.toLowerCase().includes('deepseek');
+                const isQwen = modelName.toLowerCase().includes('qwen');
+                const isLlama = modelName.toLowerCase().includes('llama');
+                const isMistral = modelName.toLowerCase().includes('mistral');
 
                 let icon = '';
                 let desc = 'AI Model';
@@ -436,32 +459,56 @@ export async function loadAvailableModels(retryCount = 0) {
                 } else if (isLlama) {
                     desc = 'Meta Llama';
                     icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`;
+                } else if (isMistral) {
+                    desc = 'Mistral Model';
+                    icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>`;
                 } else {
                     icon = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>`;
                 }
 
                 btn.innerHTML = `
                     <div class="model-icon">${icon}</div>
-                    <span class="model-name">${model}</span>
+                    <span class="model-name">${modelName}</span>
                     <span class="model-desc">${desc}</span>
+                    ${badgesHTML}
                 `;
 
                 modelGrid.appendChild(btn);
             }
         });
 
+        // Setup quick model selector click
+        if (quickSelector) {
+            quickSelector.onclick = () => {
+                const settingsBtn = document.getElementById('settingsBtn');
+                if (settingsBtn) settingsBtn.click();
+
+                // Focus the model select and open it if possible
+                const modelSelect = document.getElementById('modelSelect');
+                if (modelSelect) {
+                    setTimeout(() => modelSelect.focus(), 200);
+                }
+            };
+        }
+
         // Set current model
-        const currentModel = data.current || data.models[0];
+        const currentModel = data.current || (data.models.length > 0 ? data.models[0].name : null);
         if (currentModel) {
             modelSelect.value = currentModel;
             state.currentModel = currentModel;
             console.log(`Current model set to: ${currentModel}`);
+
+            const modelIndicator = document.getElementById('modelIndicator');
+            if (modelIndicator) modelIndicator.textContent = currentModel;
 
             // Highlight in grid if present
             if (modelGrid) {
                 const activeBtn = modelGrid.querySelector(`[data-model="${currentModel}"]`);
                 if (activeBtn) activeBtn.classList.add('active');
             }
+
+            // Initial upload button visibility check
+            updateUploadButtonVisibility();
         }
 
         modelSelect.disabled = false;
@@ -502,7 +549,8 @@ function sendTextMessage() {
     const requestData = {
         text: text || 'Describe this image',
         images: state.pendingImages,
-        enable_tts: state.ttsEnabled
+        enable_tts: state.ttsEnabled,
+        conversation_id: state.currentChatId
     };
     logRequest('process_text', requestData);
     emit('process_text', requestData);
@@ -1306,13 +1354,30 @@ function saveConversation() {
                 content: content
             };
 
+            // Initialize metadata if not already present
+            if (!message.metadata) {
+                message.metadata = {};
+            }
+
             // Save metadata for live mode messages
             if (isLiveInsight) {
                 message.metadata = {
+                    ...message.metadata,
                     topic: elem.dataset.topic || '',
                     keyPoints: elem.dataset.keyPoints ? JSON.parse(elem.dataset.keyPoints) : [],
                     pinned: elem.dataset.pinned === 'true'
                 };
+            }
+
+            // Save images to metadata
+            const imageElements = elem.querySelectorAll('.message-image-thumbnail');
+            if (imageElements.length > 0) {
+                message.metadata.images = Array.from(imageElements).map(img => img.src);
+            }
+
+            // Remove metadata if it's still empty
+            if (Object.keys(message.metadata).length === 0) {
+                delete message.metadata;
             }
 
             messages.push(message);
@@ -2722,4 +2787,28 @@ function addReactionButtons(messageDiv, messageId) {
 // Observe new message (placeholder)
 function observeNewMessage(messageDiv) {
     // Observe
+}
+
+/**
+ * Update image upload button visibility based on model capabilities
+ */
+function updateUploadButtonVisibility() {
+    const uploadBtn = document.getElementById('imageUploadBtn');
+    if (!uploadBtn) return;
+
+    if (!state.currentModel || !state.availableModels) {
+        uploadBtn.style.display = ''; // Default visible
+        return;
+    }
+
+    const modelInfo = state.availableModels.find(m => m.name === state.currentModel);
+    const hasVision = modelInfo && modelInfo.capabilities && modelInfo.capabilities.includes('vision');
+
+    if (hasVision) {
+        uploadBtn.style.display = '';
+        console.log(`Model ${state.currentModel} has vision. Showing upload button.`);
+    } else {
+        uploadBtn.style.display = 'none';
+        console.log(`Model ${state.currentModel} lacks vision. Hiding upload button.`);
+    }
 }

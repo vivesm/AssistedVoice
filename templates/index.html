@@ -7,7 +7,7 @@
     <title>AssistedVoice</title>
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
-    <link rel="stylesheet" href="/static/assisted-voice.css?v=reading-mode-v1">
+    <link rel="stylesheet" href="/static/assisted-voice.css?v=reading-mode-v2">
 
     <!-- Markdown rendering libraries -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -156,6 +156,112 @@
                     </div>
                 </div>
             </div>
+            <!-- Reading Mode Panel (hidden by default) -->
+            <div class="reading-mode-panel" id="readingModePanel" style="display: none;">
+                <div class="reading-mode-header">
+                    <h2>Reading Mode</h2>
+                    <button class="close-reading-btn" id="closeReadingBtn">✕</button>
+                </div>
+
+                <div class="reading-input-section">
+                    <div class="input-tabs">
+                        <button class="input-tab active" data-tab="text">Paste Text</button>
+                        <button class="input-tab" data-tab="share">Share Code</button>
+                    </div>
+
+                    <div class="tab-content active" data-tab-content="text">
+                        <textarea id="readingTextInput" class="reading-text-input" 
+                            placeholder="Paste your text here... (up to 200,000 characters)" 
+                            rows="10"></textarea>
+                        <div class="text-info">
+                            <span id="textCharCount">0</span> / 200,000 characters
+                        </div>
+                    </div>
+
+                    <div class="tab-content" data-tab-content="share">
+                        <div class="share-input-group">
+                            <input type="text" id="readingShareInput" class="reading-share-input" 
+                                placeholder="Enter share.vives.io code (e.g., abc123)">
+                            <button id="loadShareBtn" class="load-share-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Load from Share
+                            </button>
+                        </div>
+                    </div>
+
+                    <button id="startReadingBtn" class="start-reading-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        Start Reading
+                    </button>
+                </div>
+
+                <div class="reading-player" id="readingPlayer" style="display: none;">
+                    <div class="reading-preview">
+                        <h4>Currently Reading:</h4>
+                        <p id="currentChunkText" class="current-chunk-text"></p>
+                    </div>
+
+                    <div class="reading-progress-section">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="readingProgressBar">
+                                <div class="progress-fill" id="readingProgressFill"></div>
+                            </div>
+                        </div>
+                        <div class="progress-info">
+                            <span class="chunk-counter">
+                                Chunk <span id="currentChunk">0</span> of <span id="totalChunks">0</span>
+                            </span>
+                            <span class="progress-percentage" id="progressPercentage">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="reading-controls">
+                        <button id="readingPrevBtn" class="control-btn" title="Previous chunk">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                                <line x1="5" y1="19" x2="5" y2="5"></line>
+                            </svg>
+                        </button>
+
+                        <button id="readingPlayBtn" class="control-btn play-btn" title="Play">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                        </button>
+
+                        <button id="readingPauseBtn" class="control-btn pause-btn" style="display: none;" title="Pause">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16"></rect>
+                                <rect x="14" y="4" width="4" height="16"></rect>
+                            </svg>
+                        </button>
+
+                        <button id="readingStopBtn" class="control-btn" title="Stop">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="6" width="12" height="12"></rect>
+                            </svg>
+                        </button>
+
+                        <button id="readingNextBtn" class="control-btn" title="Next chunk">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                                <line x1="19" y1="5" x2="19" y2="19"></line>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="reading-status">
+                        <span id="readingStatus">Ready</span>
+                    </div>
+                </div>
+            </div>
+
         </main>
 
         <!-- Input Bar -->
@@ -835,7 +941,7 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/app_entry.js?v=5"></script>
+    <script type="module" src="/static/js/app_entry.js?v=6"></script>
 </body>
 
 </html>

@@ -33,48 +33,39 @@ Your assistant can automatically use external tools via Docker MCP servers:
 
 **Setup**: Requires Docker Desktop with MCP images pulled.
 
-## Setup
+## Quick Start (Docker)
 
-### Prerequisites
-- macOS (optimized for Apple Silicon)
-- Python 3.8+
-- 16GB+ RAM recommended
-- Docker Desktop (for MCP tools)
+1. **Setup Environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set your keys/secrets
+   ```
 
-### 1. Environment Configuration
-Create a `.env` file with your API keys:
-```env
-OPENAI_API_KEY=your_key
-GEMINI_API_KEY=your_key
-BRAVE_API_KEY=your_brave_key # For web search
-```
+2. **Start Services**:
+   ```bash
+   docker compose up -d --build
+   ```
 
-### 2. Installation
+3. **Verify**:
+   Visit [http://localhost:5001](http://localhost:5001) or check logs with `docker compose logs -f assistedvoice`.
+
+## Configuration & Development
+
+### 🐳 Docker Workflow
+The system is optimized for a seamless Docker development experience:
+- **Hot Reload**: Changes to `.py`, `.html`, or `.js` files on your host are instantly reflected in the container.
+- **Persistence**: Database (`data/`), logs (`logs/`), and Signal account data (`signal_data/`) are persisted across restarts.
+- **Dependency Updates**: Run `docker compose up -d --build` whenever you modify `requirements.txt`.
+
+### 🏗️ Manual Installation
+For host-mode execution without Docker:
 ```bash
-# Clone the repository
-git clone https://github.com/vivesm/AssistedVoice.git
-cd AssistedVoice
-
-# Run the setup script
+# 1. Install dependencies
 ./setup.sh
-```
 
-### 3. Pull MCP Images (Optional)
-```bash
-docker pull mcp/brave-search
-docker pull mcp/context7
-docker pull mcp/playwright
-docker pull mcp/docker
-docker pull mcp/desktop-commander
-docker pull mcp/memory
-docker pull mcp/sequential-thinking
-```
-
-### 4. Running the Server
-```bash
+# 2. Start the server
 ./start.sh
 ```
-The server defaults to port `5001`.
 
 ## Remote Client Integration (ChatLink)
 AssistedVoice is specifically optimized to work with the ChatLink Signal bot. 

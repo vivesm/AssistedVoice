@@ -49,99 +49,41 @@ docker pull mcp/sequential-thinking
 
 ### Running the Application
 
-**Web Interface (AssistedVoice Backend)**
+**Option A: Docker (Recommended)**
 ```bash
-# 1. (Optional) Create .env file for configuration
+# 1. Setup environment
 cp .env.example .env
-# Edit .env to set SECRET_KEY, CORS_ALLOWED_ORIGINS, BRAVE_API_KEY, etc.
+# Edit .env: SIGNAL_NUMBER, BRAVE_API_KEY, etc.
 
-# 2. Start Ollama service (required for Ollama backend)
-ollama serve
+# 2. Build and start services
+docker compose up -d --build
 
-# 3. Start AssistedVoice web server (recommended method)
+# 3. View logs
+docker compose logs -f assistedvoice
+```
+
+**Option B: Host Mode (Native)**
+```bash
+# 1. Start AssistedVoice web server
 ./start.sh
 
-# Or manually:
-source venv/bin/activate
-python web_assistant.py
-
-# Or use uvicorn directly:
-uvicorn web_assistant:socket_app --reload --port 5001
-
-# Open browser to:
-# - Main UI: http://localhost:5001
-# - API Docs (Swagger): http://localhost:5001/docs
-# - API Docs (ReDoc): http://localhost:5001/redoc
+# 2. Open browser: http://localhost:5001
 ```
 
-**Signal Bot (Standalone Client)**
-```bash
-# 1. Configure Signal credentials in .env
-# Add: SIGNAL_NUMBER, OPENAI_API_KEY, GEMINI_API_KEY
+### Local Development Workflow (Docker)
+Edit code on the host, and the container reloads instantly:
+- **Instant Reload**: Code in `modules/`, `routers/`, `services/`, and `web_assistant.py` is mounted via volumes.
+- **Dependencies**: For changes to `requirements.txt`, run `docker compose up -d --build`.
+- **Git**: Perform all git actions on the host machine.
 
-# 2. Ensure backend is running (on sagan or locally)
-# Update config.yaml whisper.remote_url if using remote backend
+### Signal Bot Setup
 
-# 3. Start Signal bot
-source venv/bin/activate
-python run_bot.py
+The Signal bot is integrated into the primary `docker-compose.yml`.
 
-# The bot will listen for Signal messages and respond using the configured backend
-```
-
-### Signal Bot Setup (signal-cli-rest-api)
-
-The Signal bot requires `signal-cli-rest-api` to send/receive Signal messages.
-
-**Docker Setup (Recommended)**
-```bash
-# 1. Create Docker network for inter-container communication (if not already exists)
-docker network create assistedvoice-net
-
-# 2. Run signal-cli-rest-api container
-docker run -d \
-  --name signal-api \
-  --network assistedvoice-net \
-  -p 8080:8080 \
-  -v ~/signal-data:/home/.local/share/signal-cli \
-  bbernhard/signal-cli-rest-api:latest
-
-# 3. Register your phone number (one-time setup)
-# Visit http://localhost:8080/v1/qrcodelink?device_name=signal-bot
-# Scan the QR code with your Signal app: Settings > Linked Devices > Link New Device
-
-# 4. Verify registration
-curl -X GET http://localhost:8080/v1/about
-
-# 5. Update .env with your Signal number and allowed users
-echo "SIGNAL_NUMBER=+1234567890" >> .env
-echo "SIGNAL_API_URL=http://signal-api:8080" >> .env
-echo "ALLOWED_USERS=+1234567890,+0987654321" >> .env
-```
-
-**Native Installation (Alternative)**
-```bash
-# Install signal-cli (requires Java 17+)
-# macOS
-brew install signal-cli
-
-# Linux (Debian/Ubuntu)
-wget https://github.com/AsamK/signal-cli/releases/download/v0.11.11/signal-cli-0.11.11.tar.gz
-tar xf signal-cli-0.11.11.tar.gz -C /opt
-sudo ln -sf /opt/signal-cli-0.11.11/bin/signal-cli /usr/local/bin/
-
-# Register your number
-signal-cli -u +1234567890 register
-
-# Verify with code received via SMS
-signal-cli -u +1234567890 verify [CODE]
-
-# Start signal-cli in daemon mode
-signal-cli -u +1234567890 daemon --http 0.0.0.0:8080
-
-# Update .env
-echo "SIGNAL_API_URL=http://localhost:8080" >> .env
-```
+**Setup Progress**
+1. **Start Containers**: `docker compose up -d`.
+2. **Link Account**: Visit `http://localhost:8080/v1/qrcodelink?device_name=signal-bot` to link your device.
+3. **Verify**: Check logs with `docker compose logs -f signal-api`.
 
 **Configuration**
 

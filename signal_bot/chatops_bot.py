@@ -17,7 +17,7 @@ class SignalBot:
     """
     Signal Bot Service using AssistedVoice backend
     """
-    def __init__(self, config: dict, llm_factory_func, audio_service):
+    def __init__(self, config: dict, llm_factory_func, audio_service, chat_service=None):
         """
         Initialize the bot
         
@@ -25,10 +25,12 @@ class SignalBot:
             config: Application configuration
             llm_factory_func: Function to create new LLM instances (create_llm)
             audio_service: Service for audio processing (STT)
+            chat_service: ChatService for orchestration (optional)
         """
         self.config = config
         self.create_llm = llm_factory_func
         self.audio_service = audio_service
+        self.chat_service = chat_service
         
         # State
         self.running = False
@@ -39,6 +41,16 @@ class SignalBot:
         # Load Signal config from env if not in main config (fallback)
         self.signal_number = os.environ.get("SIGNAL_NUMBER", CONFIG.get("SIGNAL_NUMBER"))
         self.allowed_users = CONFIG.get("ALLOWED_USERS", [])
+        self.backend_url = self.config.get("BACKEND_URL", "http://localhost:5001")
+
+        # Validate required configuration
+        if not self.signal_number:
+            logger.error("SIGNAL_NUMBER not configured! Bot will not function properly.")
+            raise ValueError("SIGNAL_NUMBER must be set in .env or config")
+
+        logger.info(f"Bot initialized with number: {self.signal_number}")
+        logger.info(f"Allowed users: {self.allowed_users}")
+        logger.info(f"Backend URL: {self.backend_url}")
 
     def start(self):
         """Start the bot in a background thread"""
@@ -121,6 +133,101 @@ class SignalBot:
             send_reaction(sender, message_timestamp, "✅", self.signal_number)
             send_signal_reply(sender, "Conversation history cleared.")
             return
+            
+        if raw_text.strip().lower() in ["/help", "help"]:
+            send_reaction(sender, message_timestamp, "👀", self.signal_number)
+            help_text = """🤖 AssistedVoice Bot Help
+
+MODES:
+• ASK (default) - Read-only with confirmation
+  Usage: Just send a message
+  
+• AGENT - Full control with confirmation
+  Usage: [agent] your message
+  
+• PLAN - Planning only, no execution
+  Usage: [plan] your message
+
+COMMANDS:
+• /help or help - Show this help
+• /reset - Clear conversation history
+• /model <name> - Switch model (e.g. /model ministral-3:8b)
+• /gemini - Switch to Gemini model (gemini-1.5-flash)
+• ping - Test bot connectivity
+• yes/confirm/y - Confirm suggested action
+
+AVAILABLE ACTIONS:
+• transcribe_video - Transcribe YouTube/video URLs
+  Example: [agent] transcribe https://youtube.com/...
+  
+• homeassistant_action - Control smart home devices
+  Example: [agent] turn on living room lights
+  
+• shell_exec - Execute shell commands (agent mode)
+  Example: [agent] list files in /tmp
+
+MODELS:
+Currently using Ollama with:
+• llama3.2:latest - Default text model
+• ministral-3:8b - Vision model (auto-switches for images)
+• qwen3-vl:8b - Alternative vision model
+
+FEATURES:
+• 📷 Image analysis - Send images with questions
+• 🎤 Voice transcription - Send voice messages
+• 🏠 Smart home control via Home Assistant
+• 🔍 Web search via MCP (Brave Search)
+• 🌐 Browser automation via MCP (Playwright)
+• 💾 Memory and context via MCP tools
+
+Reply yes to confirm suggested actions."""
+            send_signal_reply(sender, help_text)
+            return  # Stop processing after showing help
+
+        if raw_text.strip().lower().startswith("/model "):
+            model_name = raw_text.strip()[7:].strip()
+            send_reaction(sender, message_timestamp, "👀", self.signal_number)
+            
+            # Call AssistedVoice API to switch model
+            import requests
+            try:
+                resp = requests.post(
+                    f"{self.backend_url}/api/models/switch",
+                    json={"model": model_name},
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    send_reaction(sender, message_timestamp, "✅", self.signal_number)
+                    send_signal_reply(sender, f"🧠 Switched to model: {model_name}")
+                else:
+                    send_reaction(sender, message_timestamp, "❌", self.signal_number)
+                    send_signal_reply(sender, f"❌ Model not found: {model_name}")
+            except Exception as e:
+                send_reaction(sender, message_timestamp, "❌", self.signal_number)
+                send_signal_reply(sender, f"❌ Error: {str(e)}")
+            return
+            
+        if raw_text.strip().lower() == "/gemini":
+            send_reaction(sender, message_timestamp, "👀", self.signal_number)
+            
+            # Call AssistedVoice API to switch to Gemini model
+            import requests
+            try:
+                resp = requests.post(
+                    f"{self.backend_url}/api/models/switch",
+                    json={"model": "gemini-1.5-flash"},
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    send_reaction(sender, message_timestamp, "✅", self.signal_number)
+                    send_signal_reply(sender, "🧠 Switched to model: gemini-1.5-flash")
+                else:
+                    send_reaction(sender, message_timestamp, "❌", self.signal_number)
+                    send_signal_reply(sender, "❌ Failed to switch to Gemini")
+            except Exception as e:
+                send_reaction(sender, message_timestamp, "❌", self.signal_number)
+                send_signal_reply(sender, f"❌ Error: {str(e)}")
+            return
 
         # 0. Check for pending confirmation
         if sender in self.pending_commands and raw_text.strip().lower() in ["yes", "confirm", "y"]:
@@ -139,6 +246,8 @@ class SignalBot:
         
         if "dataMessage" in env and "attachments" in env["dataMessage"]:
             attachments_text, images = self._handle_attachments(env["dataMessage"]["attachments"])
+        elif "syncMessage" in env and "sentMessage" in env["syncMessage"] and "attachments" in env["syncMessage"]["sentMessage"]:
+            attachments_text, images = self._handle_attachments(env["syncMessage"]["sentMessage"]["attachments"])
             
         # Combine text
         final_user_text = user_text
@@ -154,26 +263,36 @@ class SignalBot:
 
         # 4. Generate Response
         llm = self.get_session_llm(sender)
+        system_prompt = SHARED_PROMPTS.get(mode, SHARED_PROMPTS["ask"])
         llm.config['system_prompt'] = system_prompt
 
-        send_typing_indicator(sender, self.signal_number, True)
         try:
-            # Generate complete response (passing images if supported)
-            if hasattr(llm, 'generate_complete_multimodal'):
-                 # Future proofing if we add explicit multimodal method
-                 response = llm.generate_complete_multimodal(final_user_text, images=images)
+            send_typing_indicator(sender, self.signal_number, True)
+        except Exception as e:
+            logger.warning(f"Failed to send typing indicator: {e}")
+
+        try:
+            # Generate response using ChatService OR LLM directly
+            if self.chat_service:
+                logger.info(f"Using ChatService for response generation: mode={mode}")
+                response_gen = self.chat_service.generate_response(final_user_text, images=images, stream=True)
+                response = ""
+                for chunk in response_gen:
+                    response += chunk
+                logger.info(f"ChatService response length: {len(response)}")
             else:
-                 # Standard generate, now supporting images arg in our modified LLMs
-                 # We need to access the underlying generate method which supports streaming, 
-                 # but baseLLM.generate_complete wraps it.
-                 # We'll update BaseLLM.generate_complete to accept kwargs too.
-                 response = llm.generate_complete(final_user_text, images=images)
-                 
+                logger.info(f"Using direct LLM call for response generation: mode={mode}")
+                response = llm.generate_complete(final_user_text, images=images)
+                logger.info(f"Direct LLM response length: {len(response)}")
+
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             response = f"Error generating response: {e}"
         finally:
-            send_typing_indicator(sender, self.signal_number, False)
+            try:
+                send_typing_indicator(sender, self.signal_number, False)
+            except Exception as e:
+                logger.warning(f"Failed to stop typing indicator: {e}")
 
         # 5. React Done
         send_reaction(sender, message_timestamp, "✅", self.signal_number)
@@ -189,10 +308,16 @@ class SignalBot:
         """Process attachments: Transcribe audio, return image paths."""
         text_parts = []
         image_paths = []
-        
-        data_path = self.config.get("SIGNAL_DATA_PATH", "")
-        if not data_path:
+
+        # Validate base path before joining
+        base_path = self.config.get("SIGNAL_DATA_PATH", "/Users/Shared/Server/AssistedVoice/signal_data")
+        if not base_path:
             logger.warning("SIGNAL_DATA_PATH not set, cannot process attachments")
+            return "", []
+
+        data_path = os.path.join(base_path, "attachments")
+        if not os.path.exists(data_path):
+            logger.warning(f"Attachments directory not found: {data_path}")
             return "", []
 
         for att in attachments:
@@ -248,10 +373,18 @@ class SignalBot:
         
         action_data = self.pending_commands.pop(sender)
         mode = action_data.get("mode", "agent")
-        
-        send_typing_indicator(sender, self.signal_number, True)
+
+        try:
+            send_typing_indicator(sender, self.signal_number, True)
+        except Exception as e:
+            logger.warning(f"Failed to send typing indicator: {e}")
+
         result = execute_action(action_data)
-        send_typing_indicator(sender, self.signal_number, False)
+
+        try:
+            send_typing_indicator(sender, self.signal_number, False)
+        except Exception as e:
+            logger.warning(f"Failed to stop typing indicator: {e}")
         
         send_reaction(sender, timestamp, "✅", self.signal_number)
         send_signal_reply(sender, format_markdown_for_signal(f"[{mode.upper()} - Executed]\n\n{result}"))

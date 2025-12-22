@@ -55,7 +55,7 @@ def main():
         logger.info("Initializing Signal Bot Service...")
         bot_service = SignalBotService(config)
         
-        # Start the bot
+        # Start the bot (SignalBotService.start now handles ChatService internally)
         bot_service.start(audio_service)
         
         logger.info("Signal Bot is running. Press Ctrl+C to stop.")

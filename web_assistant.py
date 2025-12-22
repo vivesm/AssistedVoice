@@ -109,7 +109,8 @@ async def initialize_components():
         from services.reading_service import ReadingService
         from services.mcp_service import (
             get_brave_search, get_context7, get_playwright,
-            get_docker, get_desktop_commander, get_memory, get_sequential_thinking
+            get_docker, get_desktop_commander, get_memory, get_sequential_thinking,
+            get_video_vives
         )
         
         # Collect available MCP services
@@ -121,6 +122,7 @@ async def initialize_components():
             'desktop': get_desktop_commander(),
             'memory': get_memory(),
             'thinking': get_sequential_thinking(),
+            'video': get_video_vives(),
         }
         
         app_state['model_service'] = ModelService(app_state['llm'], app_state['config'])

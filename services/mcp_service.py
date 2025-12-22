@@ -117,6 +117,172 @@ class MCPClient:
         return "\n".join(texts)
 
 
+class SSH_MCPClient:
+    """MCP client that executes tools on a remote host via SSH"""
+    
+    def __init__(self, host: str, user: str = "root"):
+        """
+        Initialize SSH MCP client
+        
+        Args:
+            host: Remote hostname or IP
+            user: SSH user
+        """
+        self.host = host
+        self.user = user
+        self._host_checked = False
+        
+    def _check_host_available(self) -> bool:
+        """Check if remote host is reachable via SSH"""
+        if self._host_checked:
+            return True
+            
+        try:
+            # Simple check to see if we can connect
+            result = subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=5", f"{self.user}@{self.host}" if self.user else self.host, "echo 1"],
+                capture_output=True,
+                timeout=7
+            )
+            available = result.returncode == 0
+            self._host_checked = available
+            return available
+        except Exception:
+            return False
+            
+    def call_tool(self, script_path: str, tool_name: str, arguments: dict, 
+                  env_vars: Optional[Dict[str, str]] = None) -> Optional[dict]:
+        """
+        Call an MCP tool on a remote host via SSH
+        
+        Args:
+            script_path: Path to the MCP server script on the remote host
+            tool_name: Name of the MCP tool
+            arguments: Tool arguments
+            env_vars: Optional environment variables to pass
+            
+        Returns:
+            Tool result or None on error
+        """
+        # MCP Handshake + Tool Call sequence that worked in manual tests
+        init_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "AssistedVoice", "version": "1.0"}
+            }
+        }
+        
+        tool_request = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments
+            }
+        }
+        
+        try:
+            # Build script command with env vars
+            env_cmd = ""
+            if env_vars:
+                for key, value in env_vars.items():
+                    env_cmd += f"{key}={value} "
+            
+            # Combine requests into a single stream for SSH piping
+            # FastMCP processes them sequentially from stdin
+            full_payload = json.dumps(init_request) + "\n" + json.dumps(tool_request) + "\n"
+            
+            # Use python3 to run the remote script as an MCP server
+            remote_cmd = f"{env_cmd}python3 {script_path}"
+            
+            # Use subprocess without shell to avoid escaping issues
+            ssh_target = f"{self.user}@{self.host}" if self.user else self.host
+            
+            # Use robust SSH options (similar to run_command_on_host)
+            # Try multiple common identity file paths for robustness across dev environments
+            identity_files = ["/root/.ssh/id_rsa", os.path.expanduser("~/.ssh/id_rsa")]
+            id_args = []
+            for id_file in identity_files:
+                if os.path.exists(id_file):
+                    id_args = ["-i", id_file]
+                    break
+            
+            ssh_cmd = ["ssh"] + id_args + [
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ConnectTimeout=10",
+                ssh_target,
+                remote_cmd
+            ]
+            
+            logger.debug(f"Calling remote tool {tool_name} on {self.host}")
+            
+            result = subprocess.run(
+                ssh_cmd,
+                input=full_payload,
+                capture_output=True,
+                text=True,
+                timeout=600  # Longer timeout for video transcription
+            )
+            
+            if result.returncode != 0:
+                error_msg = f"SSH command failed with code {result.returncode}: {result.stderr}"
+                logger.error(error_msg)
+                return {"error": error_msg}
+                
+            # Parse responses (we might get multiple lines in stdout)
+            responses = []
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line or not (line.startswith('{') and line.endswith('}')):
+                    continue
+                try:
+                    responses.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            
+            # Find the tool result (id=2 in our sequence)
+            for resp in responses:
+                if resp.get("id") == 2:
+                    if "error" in resp:
+                        logger.error(f"SSH MCP error ({self.host}): {resp['error']}")
+                        return {"error": str(resp['error'])}
+                    return resp.get("result")
+             
+            if not responses:
+                error_msg = f"No JSON responses received from SSH MCP call to {self.host}"
+                logger.error(error_msg)
+                if result.stdout:
+                    logger.debug(f"Raw stdout: {result.stdout[:200]}...")
+                return {"error": error_msg}
+            
+            return None
+                
+        except subprocess.TimeoutExpired:
+            error_msg = f"SSH MCP request timed out ({self.host})"
+            logger.error(error_msg)
+            return {"error": error_msg}
+        except Exception as e:
+            error_msg = f"SSH MCP call failed ({self.host}): {e}"
+            logger.error(error_msg)
+            return {"error": error_msg}
+        
+        return None
+    
+    def get_text_content(self, result: dict) -> str:
+        """Extract text content from MCP result"""
+        content = result.get("content", [])
+        texts = []
+        for item in content:
+            if item.get("type") == "text":
+                texts.append(item.get("text", ""))
+        return "\n".join(texts)
+
+
 class BraveSearchService:
     """Brave Search MCP service"""
     
@@ -562,6 +728,34 @@ class SequentialThinkingService:
         return "\n".join(thoughts)
 
 
+class VideoVivesService:
+    """Video Vives MCP service (Remote on atom)"""
+    
+    SCRIPT_PATH = "/home/melvin/server/onlinevideodownloader/mcp_transcriber.py"
+    
+    def __init__(self, client: SSH_MCPClient):
+        self.client = client
+    
+    def is_available(self) -> bool:
+        return self.client._check_host_available()
+    
+    def transcribe(self, url: str) -> str:
+        """Transcribe a video URL"""
+        result = self.client.call_tool(
+            self.SCRIPT_PATH,
+            "transcribe_video",
+            {"url": url}
+        )
+        
+        if not result:
+            return f"❌ Failed to transcribe video from {url}: Unknown error"
+        
+        if isinstance(result, dict) and "error" in result:
+            return f"❌ Failed to transcribe video from {url}: {result['error']}"
+            
+        return self.client.get_text_content(result)
+
+
 # Global instances
 _mcp_client: Optional[MCPClient] = None
 _brave_search: Optional[BraveSearchService] = None
@@ -571,6 +765,8 @@ _docker: Optional[DockerService] = None
 _desktop_commander: Optional[DesktopCommanderService] = None
 _memory: Optional[MemoryService] = None
 _sequential_thinking: Optional[SequentialThinkingService] = None
+_video_vives: Optional[VideoVivesService] = None
+_ssh_mcp_client: Optional[SSH_MCPClient] = None
 
 
 def get_mcp_client() -> MCPClient:
@@ -635,6 +831,23 @@ def get_sequential_thinking() -> SequentialThinkingService:
     if _sequential_thinking is None:
         _sequential_thinking = SequentialThinkingService(get_mcp_client())
     return _sequential_thinking
+
+
+def get_ssh_mcp_client() -> SSH_MCPClient:
+    """Get or create the global SSH MCP client"""
+    global _ssh_mcp_client
+    if _ssh_mcp_client is None:
+        # Configuration for atom host
+        _ssh_mcp_client = SSH_MCPClient(host="atom", user="melvin")
+    return _ssh_mcp_client
+
+
+def get_video_vives() -> VideoVivesService:
+    """Get or create the Video Vives service"""
+    global _video_vives
+    if _video_vives is None:
+        _video_vives = VideoVivesService(get_ssh_mcp_client())
+    return _video_vives
 
 
 # Backwards compatibility

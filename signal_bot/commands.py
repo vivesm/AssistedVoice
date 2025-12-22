@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any
 from .utils import run_command_on_host, classify_operation
 from .ha_client import HAClient
+from .config import CONFIG
 
 ha = HAClient()
 
@@ -33,24 +34,17 @@ def execute_action(action_data: Dict[str, Any]) -> str:
             return "Error: No URL provided for transcription."
             
         logging.info(f"AGENT MODE: Transcribing video: {url}")
-        
-        # Call the helper script on the host
-        # We assume the path is fixed as we just created it
-        helper_path = "/home/melvin/server/onlinevideodownloader/transcribe_and_share.py"
-        cmd = f"python3 {helper_path} '{url}'"
-        
-        # This might take a while, we should increase timeout (1200 seconds = 20 mins)
-        raw_result = run_command_on_host(cmd, timeout=1200) 
-        
+
+        from services.mcp_service import get_video_vives
         try:
-            # The result should be JSON from our helper
-            data = json.loads(raw_result)
-            if data.get("success"):
-                return f"✅ Transcription complete!\n\nView it here: {data.get('shortUrl')}"
+            video_service = get_video_vives()
+            result = video_service.transcribe(url)
+            if result:
+                return f"✅ Transcription results for {url}:\n\n{result}"
             else:
-                return f"❌ Transcription failed: {data.get('error')}\nDetails: {data.get('details', 'N/A')}"
-        except json.JSONDecodeError:
-            return f"❌ Error: Unexpected response from transcription helper:\n```\n{raw_result}\n```"
+                return "❌ Transcription failed or returned empty result."
+        except Exception as e:
+            return f"❌ Transcription failed with error: {str(e)}"
 
     if action == "homeassistant_action":
         domain = params.get("domain")

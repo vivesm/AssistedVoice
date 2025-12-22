@@ -201,11 +201,15 @@ def extract_actions_from_response(response: str) -> List[Dict[str, Any]]:
         except:
             continue
 
-    # 4. Code blocks (shell)
-    code_blocks = re.findall(r'```(?:bash|sh|shell)?\s*\n(.+?)\n```', response, re.DOTALL)
+    # 4. Code blocks (shell) - updated to ignore json blocks specifically
+    # Use a negative lookahead to skip ```json blocks
+    code_blocks = re.findall(r'```(?!json)(?:bash|sh|shell)?\s*\n(.+?)\n```', response, re.DOTALL)
     for block in code_blocks:
         cmd = block.strip()
-        # Check if it's actually a JSON action
+        if not cmd:
+            continue
+            
+        # Check if it's accidentally still a JSON action (fallback check)
         if cmd.startswith('{') and '"action"' in cmd:
             try:
                 data = json.loads(cmd)

@@ -19,10 +19,8 @@ CONFIG = {
     # HTTP API URL
     "SIGNAL_API_URL": os.environ.get("SIGNAL_API_URL", "http://signal-api:8080"),
     
-    # List of allowed sender phone numbers
-    "ALLOWED_USERS": [
-        "+13475332155", # Add your number here
-    ],
+    # List of allowed sender phone numbers (comma-separated in .env)
+    "ALLOWED_USERS": os.environ.get("ALLOWED_USERS", "+13475332155").split(","),
     
     # Maximum length of message to process (safety)
     "MAX_MSG_LEN": int(os.environ.get("MAX_MSG_LEN", "4000")),  # Increased default
@@ -44,6 +42,15 @@ CONFIG = {
 
     # Signal Data Path (for attachments)
     "SIGNAL_DATA_PATH": os.environ.get("SIGNAL_DATA_PATH", ""),
+
+    # Backend API URL (AssistedVoice web server for model switching)
+    "BACKEND_URL": os.environ.get("BACKEND_URL", "http://localhost:5001"),
+
+    # Video transcription helper script path
+    "VIDEO_TRANSCRIBE_HELPER": os.environ.get(
+        "VIDEO_TRANSCRIBE_HELPER",
+        "/home/melvin/server/onlinevideodownloader/transcribe_and_share.py"
+    ),
 }
 
 # Pass last N messages to AI (Memory)

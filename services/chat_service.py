@@ -45,6 +45,11 @@ INTENT_PATTERNS = {
         r'\b(think|analyze|problem solve|step by step)\b',
         r'\b(let\'?s|please) think about\b',
     ],
+    'video': [
+        r'\b(transcribe|caption|get script|video to text)\b',
+        r'\bwhat (is said|are they saying) in (this|that|the) video\b',
+        r'https?://(www\.)?(youtube\.com|youtu\.be|facebook\.com/share/r/|tiktok\.com|instagram\.com/reels/)',
+    ],
 }
 
 
@@ -117,9 +122,18 @@ class ChatService:
             for pattern in patterns:
                 match = re.search(pattern, prompt_lower)
                 if match:
+                    # Special case: If it's a direct URL match, extract the full URL
+                    if match.group(0).startswith('http'):
+                        # Find the full URL starting at match.start()
+                        url_match = re.search(r'https?://[^\s]+', prompt[match.start():])
+                        if url_match:
+                            return tool_type, url_match.group(0).strip()
+                        return tool_type, match.group(0).strip()
+                        
                     # Extract text after the match as the query
                     query = prompt[match.end():].strip()
                     if not query:
+                        # If no query after pattern, use the whole prompt as query (fallback)
                         query = prompt.strip()
                     return tool_type, query
         
@@ -288,6 +302,42 @@ Thinking Process:
 
 Based on this analysis, provide a final solution."""
 
+    def _augment_with_video(self, prompt: str, url: str) -> str:
+        """Augment prompt with video transcription from atom host"""
+        video = self.mcp_services.get('video')
+        if not video or not video.is_available():
+            logger.warning("Video transcription service not available")
+            return prompt
+            
+        # Extract URL from query
+        url_match = re.search(r'https?://[^\s]+', url)
+        if url_match:
+            video_url = url_match.group(0)
+        else:
+            video_url = url
+            
+        logger.info(f"🎬 Transcribing video: {video_url}")
+        transcription = video.transcribe(video_url)
+        
+        if not transcription or "Failed" in transcription:
+            return prompt
+            
+        # Truncate transcription if too long
+        max_chars = 4500
+        if len(transcription) > max_chars:
+            transcription = transcription[:max_chars] + "\n... [transcription truncated]"
+            
+        return f"""The user asked: {prompt}
+
+Here is the video transcription (SRT format):
+
+{transcription}
+
+Based on this transcription, answer the user's request accurately. 
+
+NOTE: This video has ALREADY been transcribed for you. Do NOT suggest or use the 'transcribe_video' action for this URL unless the user specifically asks for another transcription or a different processing of the same video."""
+
+
     def generate_response(self, prompt: str, images: list = None, stream: bool = True) -> Generator[str, None, None]:
         """
         Generate response from LLM with MCP tool augmentation
@@ -322,6 +372,8 @@ Based on this analysis, provide a final solution."""
                         prompt = self._augment_with_memory(prompt, query)
                     elif tool_type == 'thinking':
                         prompt = self._augment_with_thinking(prompt, query)
+                    elif tool_type == 'video':
+                        prompt = self._augment_with_video(prompt, query)
             
             # Generate response using LLM
             for chunk in self.llm.generate(prompt, images=images, stream=stream):

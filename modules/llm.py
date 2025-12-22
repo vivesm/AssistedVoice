@@ -20,8 +20,9 @@ class OllamaLLM(BaseLLM):
         super().__init__(config)
         self.server_config = get_server_config(config)
         self.client = None
-        self.model = config['ollama']['model']
-        self.fallback_model = config['ollama'].get('fallback_model')
+        ollama_config = config.get('ollama', {})
+        self.model = ollama_config.get('model', 'llama3.2:latest')
+        self.fallback_model = ollama_config.get('fallback_model')
         # Conversation manager is initialized in BaseLLM
         self.setup()
     
@@ -159,9 +160,17 @@ class OllamaLLM(BaseLLM):
 
         
         # Get conversation context (now includes images in dict)
+        # Prioritize root-level system_prompt (used by Signal bot) over ollama-specific one
+        system_prompt = self.config.get('system_prompt') or self.config.get('ollama', {}).get('system_prompt')
         messages = self.conversation.get_context(
-            system_prompt=self.config['ollama'].get('system_prompt')
+            system_prompt=system_prompt
         )
+        
+        logger.info(f"Ollama Request: model={self.model}, system_prompt_len={len(system_prompt) if system_prompt else 0}, msg_count={len(messages)}")
+        # Log the last user message for confirmation
+        user_msgs = [m for m in messages if m['role'] == 'user']
+        if user_msgs:
+            logger.info(f"Last User Message: {user_msgs[-1]['content'][:100]}...")
 
         # Process images: Ollama library expects bytes or stripped base64 strings
         # We'll convert them to bytes for robustness and resize them if too large
@@ -189,9 +198,10 @@ class OllamaLLM(BaseLLM):
                 msg['images'] = processed_images
         
         # Generation parameters
+        ollama_config = self.config.get('ollama', {})
         options = {
-            'temperature': self.config['ollama'].get('temperature', 0.7),
-            'num_predict': self.config['ollama'].get('max_tokens', 500),
+            'temperature': ollama_config.get('temperature', 0.7),
+            'num_predict': ollama_config.get('max_tokens', 500),
         }
         
         try:
@@ -203,8 +213,8 @@ class OllamaLLM(BaseLLM):
             current_model = self.model
             
             # Switch to vision model if images are present
-            if images and self.config['ollama'].get('vision_model'):
-                vision_model = self.config['ollama']['vision_model']
+            vision_model = ollama_config.get('vision_model')
+            if images and vision_model:
                 logger.info(f"Images detected, switching to vision model: {vision_model}")
                 current_model = vision_model
 
@@ -300,9 +310,10 @@ class OptimizedOllamaLLM(OllamaLLM):
     
     def __init__(self, config: dict):
         super().__init__(config)
+        performance_config = config.get('performance', {})
         self.cache = ResponseCache(
-            max_size=config['performance'].get('max_cache_size', 100)
-        ) if config['performance'].get('cache_responses', True) else None
+            max_size=performance_config.get('max_cache_size', 100)
+        ) if performance_config.get('cache_responses', True) else None
     
     def generate(self, prompt: str, stream: bool = True, images: Optional[List[str]] = None) -> Generator[str, None, None]:
         """Generate with caching support"""

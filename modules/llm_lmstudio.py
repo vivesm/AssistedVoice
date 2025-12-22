@@ -35,7 +35,7 @@ class LMStudioLLM(BaseLLM):
                                      config.get('ollama', {}).get('temperature', 0.7))
         self.max_tokens = config.get('lm_studio', {}).get('max_tokens', 
                                     config.get('ollama', {}).get('max_tokens', 500))
-        self.system_prompt = config.get('lm_studio', {}).get('system_prompt',
+        self.system_prompt = config.get('system_prompt') or config.get('lm_studio', {}).get('system_prompt',
                                        config.get('ollama', {}).get('system_prompt'))
         
         # Initialize conversation manager

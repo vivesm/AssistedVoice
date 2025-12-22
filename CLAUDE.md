@@ -23,10 +23,7 @@ The system is designed to run in a distributed manner:
 
 ### Setup and Installation
 ```bash
-# Install dependencies and set up virtual environment
-./setup.sh
-
-# Manual setup if needed
+# Set up virtual environment and install dependencies
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -51,20 +48,21 @@ docker pull mcp/sequential-thinking
 ```
 
 ### Running the Application
+
+**Web Interface (AssistedVoice Backend)**
 ```bash
 # 1. (Optional) Create .env file for configuration
 cp .env.example .env
-# Edit .env to set SECRET_KEY, CORS_ALLOWED_ORIGINS, etc.
+# Edit .env to set SECRET_KEY, CORS_ALLOWED_ORIGINS, BRAVE_API_KEY, etc.
 
 # 2. Start Ollama service (required for Ollama backend)
 ollama serve
 
-# 3. Start AssistedVoice manually (recommended)
-source venv/bin/activate
-python web_assistant.py
+# 3. Start AssistedVoice web server (recommended method)
+./start.sh
 
-# Development mode with auto-reload (default)
-# Auto-reload is enabled by default when FLASK_DEBUG=True (in .env)
+# Or manually:
+source venv/bin/activate
 python web_assistant.py
 
 # Or use uvicorn directly:
@@ -75,6 +73,157 @@ uvicorn web_assistant:socket_app --reload --port 5001
 # - API Docs (Swagger): http://localhost:5001/docs
 # - API Docs (ReDoc): http://localhost:5001/redoc
 ```
+
+**Signal Bot (Standalone Client)**
+```bash
+# 1. Configure Signal credentials in .env
+# Add: SIGNAL_NUMBER, OPENAI_API_KEY, GEMINI_API_KEY
+
+# 2. Ensure backend is running (on sagan or locally)
+# Update config.yaml whisper.remote_url if using remote backend
+
+# 3. Start Signal bot
+source venv/bin/activate
+python run_bot.py
+
+# The bot will listen for Signal messages and respond using the configured backend
+```
+
+### Signal Bot Setup (signal-cli-rest-api)
+
+The Signal bot requires `signal-cli-rest-api` to send/receive Signal messages.
+
+**Docker Setup (Recommended)**
+```bash
+# 1. Create Docker network for inter-container communication (if not already exists)
+docker network create assistedvoice-net
+
+# 2. Run signal-cli-rest-api container
+docker run -d \
+  --name signal-api \
+  --network assistedvoice-net \
+  -p 8080:8080 \
+  -v ~/signal-data:/home/.local/share/signal-cli \
+  bbernhard/signal-cli-rest-api:latest
+
+# 3. Register your phone number (one-time setup)
+# Visit http://localhost:8080/v1/qrcodelink?device_name=signal-bot
+# Scan the QR code with your Signal app: Settings > Linked Devices > Link New Device
+
+# 4. Verify registration
+curl -X GET http://localhost:8080/v1/about
+
+# 5. Update .env with your Signal number and allowed users
+echo "SIGNAL_NUMBER=+1234567890" >> .env
+echo "SIGNAL_API_URL=http://signal-api:8080" >> .env
+echo "ALLOWED_USERS=+1234567890,+0987654321" >> .env
+```
+
+**Native Installation (Alternative)**
+```bash
+# Install signal-cli (requires Java 17+)
+# macOS
+brew install signal-cli
+
+# Linux (Debian/Ubuntu)
+wget https://github.com/AsamK/signal-cli/releases/download/v0.11.11/signal-cli-0.11.11.tar.gz
+tar xf signal-cli-0.11.11.tar.gz -C /opt
+sudo ln -sf /opt/signal-cli-0.11.11/bin/signal-cli /usr/local/bin/
+
+# Register your number
+signal-cli -u +1234567890 register
+
+# Verify with code received via SMS
+signal-cli -u +1234567890 verify [CODE]
+
+# Start signal-cli in daemon mode
+signal-cli -u +1234567890 daemon --http 0.0.0.0:8080
+
+# Update .env
+echo "SIGNAL_API_URL=http://localhost:8080" >> .env
+```
+
+**Configuration**
+
+The Signal bot uses the following environment variables from `.env`:
+
+```bash
+# Required
+SIGNAL_NUMBER=+13475332155           # Your Signal bot number
+ALLOWED_USERS=+13475332155           # Comma-separated allowed users
+SIGNAL_API_URL=http://signal-api:8080  # signal-cli-rest-api endpoint
+
+# Backend Integration (for distributed setup)
+BACKEND_URL=http://sagan.local:5001  # AssistedVoice backend for STT/LLM
+
+# Optional Features
+HA_URL=http://homeassistant:8123     # Home Assistant integration
+HA_TOKEN=your-ha-token               # HA Long-Lived Access Token
+VIDEO_TRANSCRIBE_HELPER=/path/to/transcribe_and_share.py  # Video transcription
+SIGNAL_DATA_PATH=/path/to/signal-data  # For voice/image attachments
+HOST_USER=root                       # SSH user for agent mode
+HOST_ADDR=host.docker.internal       # SSH host for agent mode
+```
+
+**Distributed Setup (Client-Server)**
+
+For running the Signal bot on one machine (`atom`) and the backend on another (`sagan`):
+
+```bash
+# On Backend Server (sagan)
+# 1. Start AssistedVoice backend
+cd /path/to/AssistedVoice
+source venv/bin/activate
+python web_assistant.py  # Runs on http://sagan.local:5001
+
+# On Client Machine (atom)
+# 2. Configure .env to point to remote backend
+echo "BACKEND_URL=http://sagan.local:5001" >> .env
+
+# 3. Update config.yaml for remote Whisper STT
+# Edit config.yaml:
+whisper:
+  mode: remote
+  remote_url: "http://sagan.local:5001/transcribe"
+
+# 4. Start Signal bot
+python run_bot.py
+```
+
+**Verifying Setup**
+
+```bash
+# Test signal-api is running
+curl http://localhost:8080/v1/about
+
+# Test backend connectivity (if remote)
+curl http://sagan.local:5001/config
+
+# Start Signal bot with logging
+python run_bot.py
+
+# Send test message to your bot via Signal
+# Send: "ping"
+# Expected response: "Pong! 🏓"
+
+# Test help command
+# Send: "/help"
+# Expected: Detailed help message with available commands
+
+# Test model switching
+# Send: "/model llama3.2:latest"
+# Expected: Model switch confirmation with ✅ reaction
+```
+
+**Troubleshooting**
+
+Common issues:
+- **"SIGNAL_NUMBER not configured"**: Add `SIGNAL_NUMBER` to `.env` file
+- **"Connection refused to signal-api"**: Check if signal-api container/service is running with `docker ps` or `curl localhost:8080/v1/about`
+- **"Attachments not working"**: Check `SIGNAL_DATA_PATH` points to signal-cli data directory (usually `~/signal-data` or `/home/.local/share/signal-cli`)
+- **"Model switching fails"**: Verify `BACKEND_URL` points to running AssistedVoice backend (test with `curl $BACKEND_URL/api/models`)
+- **"Home Assistant commands fail"**: Ensure `HA_TOKEN` is set to valid Long-Lived Access Token
+- **"Video transcription fails"**: Check `VIDEO_TRANSCRIBE_HELPER` path exists and is executable
 
 **Note**: The server runs with **uvicorn** (ASGI) with automatic code reloading enabled in development mode.
 
@@ -134,6 +283,16 @@ pytest --cov=modules tests/
 - Factory pattern via create_tts_engine()
 - Async support for Edge TTS
 
+**Signal Bot** (`signal_bot/chatops_bot.py` and `run_bot.py`)
+- Standalone Signal messaging integration (runs independently from web server)
+- Per-user LLM session management (separate instances per Signal user)
+- Voice message transcription via remote/local Whisper backend
+- Mode detection: ASK (read-only), DO (action execution), AGENT (SSH commands)
+- Command execution system with confirmation workflows
+- Home Assistant integration for smart home control
+- User preference persistence (JSON-based storage)
+- Multi-backend support: uses same LLM factory as web interface
+
 ### API Endpoints
 
 **Core**
@@ -188,17 +347,24 @@ pytest --cov=modules tests/
 - `FLASK_DEBUG` - Enable debug mode (default: `True`)
 - `HOST` - Server host binding (default: `0.0.0.0`)
 - `PORT` - Server port (default: `5001`)
+- `BRAVE_API_KEY` - Brave Search API key for MCP web search tool
+- `OPENAI_API_KEY` - OpenAI API key (for cloud LLM backend)
+- `GEMINI_API_KEY` - Google Gemini API key (for cloud LLM backend)
+- `SIGNAL_NUMBER` - Bot's Signal phone number (for Signal bot integration)
+- `SIGNAL_API_URL` - Signal API endpoint (default: `http://signal-api:8080`)
 
 Create `.env` from `.env.example`: `cp .env.example .env`
 
 **Application Settings** (`config.yaml`)
 - `server`: Backend server settings (type: ollama/lm-studio, host, port, timeout)
-- `whisper`: Speech recognition settings (model, language, device, compute_type)
-- `ollama`: Ollama-specific LLM settings (model, temperature, max_tokens, system_prompt)
+- `whisper`: Speech recognition settings (model, language, device, compute_type, **mode: remote/local**, **remote_url**)
+- `ollama`: Ollama-specific LLM settings (model, temperature, max_tokens, system_prompt, **vision_model**)
+- `lm_studio`: LM Studio-specific settings (model, fallback_model, context_window)
 - `tts`: Text-to-speech settings (engine: edge-tts/macos/none, voice, rate)
 - `audio`: Recording settings (sample_rate, channels, silence_threshold)
 - `vad`: Voice Activity Detection settings (enabled, mode, speech_timeout)
 - `performance`: Optimization flags (cache_responses, response_streaming)
+- `reading_mode`: Text extraction and TTS reading settings (enabled, chunk_size, share_base_url)
 
 ### Frontend
 
@@ -251,10 +417,18 @@ Create `.env` from `.env.example`: `cp .env.example .env`
 
 ### LLM Backend Flexibility
 The app uses a factory pattern to support multiple LLM backends:
-- Configure `server.type` in config.yaml as `ollama`, `lm-studio`, or `custom`
-- Factory (`create_llm()`) instantiates appropriate class
-- All backends implement `BaseLLM` interface for consistency
+- Configure `server.type` in config.yaml as `ollama`, `lm-studio`, `openai`, or `gemini`
+- Factory (`create_llm()`) instantiates appropriate class from `modules/llm_factory.py`
+- All backends implement `BaseLLM` interface for consistency and multimodal support
 - OptimizedOllamaLLM adds response caching when `performance.cache_responses: true`
+- Cloud backends (OpenAI, Gemini) require API keys in `.env`
+
+### Remote Backend Architecture
+The Signal bot (`run_bot.py`) can operate in client mode, delegating heavy tasks to a remote backend:
+- **Whisper STT**: Configure `whisper.mode: remote` and `whisper.remote_url` in config.yaml to use backend's `/transcribe` endpoint
+- **LLM**: Signal bot creates its own LLM instances using the factory, but can connect to remote Ollama/LM Studio servers via `server.host`
+- **Network Setup**: Backend runs on `sagan.local:5001`, client runs on `atom` - both share same config.yaml structure
+- This allows resource-intensive operations (Whisper, Ollama) to run on powerful hardware while lightweight clients handle I/O
 
 ### Audio Processing Pipeline
 1. Client records audio in browser (push-to-talk button)

@@ -1,0 +1,4 @@
+config:
+  <multi-account>:
+    tcp_port: 6001
+    fifo_pathname: /tmp/sigsocket1

@@ -62,7 +62,6 @@ playwright-report/
 test-results/
 .pytest_cache/
 .ruff_cache/
-.agent/
 .env
 
 signal_data/

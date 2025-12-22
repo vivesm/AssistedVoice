@@ -45,8 +45,8 @@ WORKDIR /app
 COPY --chown=appuser:appuser . .
 
 # Create directories for persistent data
-RUN mkdir -p /app/logs /app/models && \
-    chown -R appuser:appuser /app/logs /app/models
+RUN mkdir -p /app/logs /app/models /app/data /app/signal_data && \
+    chown -R appuser:appuser /app/logs /app/models /app/data /app/signal_data
 
 # Switch to non-root user
 USER appuser

@@ -337,5 +337,6 @@ if __name__ == '__main__':
         host=host,
         port=port,
         reload=debug_mode,
+        reload_excludes=["logs/*", "data/*", "*.log", "*.db"],
         log_level="info"
     )

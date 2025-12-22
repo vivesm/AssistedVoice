@@ -23,9 +23,6 @@ def execute_action(action_data: Dict[str, Any]) -> str:
         logging.info(f"AGENT MODE: Executing command: {cmd}")
         result = run_command_on_host(cmd)
         
-        if len(result) > 1000:
-            result = result[:1000] + "\n...(truncated)"
-            
         return f"Output:\n```\n{result}\n```"
 
     if action == "transcribe_video":

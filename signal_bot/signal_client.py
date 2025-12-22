@@ -34,7 +34,9 @@ def on_ws_open(ws):
 def run_signal_receive():
     """Generator for incoming Signal messages via WebSocket."""
     ws_url = CONFIG['SIGNAL_API_URL'].replace("http", "ws")
-    ws_url = f"{ws_url}/v1/receive/{CONFIG['SIGNAL_NUMBER']}"
+    from urllib.parse import quote
+    ws_number = quote(CONFIG['SIGNAL_NUMBER'])
+    ws_url = f"{ws_url}/v1/receive/{ws_number}"
 
     logging.info(f"Starting Signal WebSocket listener: {ws_url}")
 

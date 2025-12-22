@@ -6,38 +6,40 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: assistedvoice-dev
+    container_name: assistedvoice
     restart: unless-stopped
     ports:
       - "5001:5001"
     volumes:
-      # Persist logs
       - ./logs:/app/logs
-      # Persist Whisper models (downloaded on first run)
       - ./models:/app/models
-      # Mount config for easy editing
+      - ./data:/app/data
       - ./config.yaml:/app/config.yaml
-      # Mount source code for development (Hot Reloading)
-      - ./modules:/app/modules
-      - ./routers:/app/routers
-      - ./services:/app/services
-      - ./web_assistant.py:/app/web_assistant.py
-      - ./static:/app/static
-      - ./templates:/app/templates
+      - ./signal_data:/app/signal_data
     environment:
       - HOST=0.0.0.0
       - PORT=5001
-      - FLASK_DEBUG=True
+      - FLASK_DEBUG=False
       - SECRET_KEY=dev-secret-change-in-production
       - CORS_ALLOWED_ORIGINS=*
+      - SIGNAL_API_URL=http://signal-api:8080
+      - SIGNAL_DATA_PATH=/app/signal_data
+      - BACKEND_URL=http://assistedvoice:5001
     extra_hosts:
-      - "sagan.local:192.168.7.252"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5001/" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - signal-api
+
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./signal_data/data:/home/.local/share/signal-cli/data
+    environment:
+      - MODE=json-rpc
 
 # Note: For LLM connectivity, ensure your config.yaml points to an accessible
 # Ollama or LM Studio server (not localhost when running in Docker).

@@ -10,6 +10,7 @@ from .config import CONFIG, SHARED_PROMPTS, load_user_preferences, save_user_pre
 from .utils import detect_mode, parse_mode, classify_operation, extract_actions_from_response, format_markdown_for_signal
 from .signal_client import run_signal_receive, send_signal_reply, send_reaction, send_typing_indicator
 from .commands import execute_action
+from services.sharing_service import SharingService
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,11 @@ class SignalBot:
         self.signal_number = os.environ.get("SIGNAL_NUMBER", CONFIG.get("SIGNAL_NUMBER"))
         self.allowed_users = CONFIG.get("ALLOWED_USERS", [])
         self.backend_url = self.config.get("BACKEND_URL", "http://localhost:5001")
+        
+        # Initialize Sharing Service
+        self.sharing_service = SharingService(self.config)
+        self.max_msg_len = self.config.get("MAX_MSG_LEN", 4000)
+        self.share_threshold = self.config.get("SHARE_THRESHOLD", 1000)
 
         # Validate required configuration
         if not self.signal_number:
@@ -302,7 +308,20 @@ Reply yes to confirm suggested actions."""
         final_reply = self._process_actions(sender, mode, response, message_timestamp)
         
         # 7. Send Reply
-        send_signal_reply(sender, format_markdown_for_signal(final_reply))
+        final_reply = format_markdown_for_signal(final_reply)
+        
+        # Auto-share if too long
+        if len(final_reply) > self.share_threshold:
+            logger.info(f"Reply too long ({len(final_reply)} chars), sharing via link...")
+            share_url = self.sharing_service.share_text_sync(final_reply)
+            if share_url:
+                final_reply = f"📝 Response is too long for Signal. View full content here:\n\n{share_url}"
+            else:
+                # Fallback: Truncate if sharing fails
+                if len(final_reply) > self.max_msg_len:
+                    final_reply = final_reply[:self.max_msg_len - 50] + "... (truncated)"
+        
+        send_signal_reply(sender, final_reply)
 
     def _handle_attachments(self, attachments: list) -> tuple[str, list]:
         """Process attachments: Transcribe audio, return image paths."""
@@ -387,7 +406,22 @@ Reply yes to confirm suggested actions."""
             logger.warning(f"Failed to stop typing indicator: {e}")
         
         send_reaction(sender, timestamp, "✅", self.signal_number)
-        send_signal_reply(sender, format_markdown_for_signal(f"[{mode.upper()} - Executed]\n\n{result}"))
+        
+        reply_text = f"[{mode.upper()} - Executed]\n\n{result}"
+        reply_text = format_markdown_for_signal(reply_text)
+        
+        # Auto-share if result is too long
+        if len(reply_text) > self.share_threshold:
+            logger.info(f"Execution result too long ({len(reply_text)} chars), sharing via link...")
+            share_url = self.sharing_service.share_text_sync(reply_text)
+            if share_url:
+                reply_text = f"📝 Execution result is too long for Signal. View full output here:\n\n{share_url}"
+            else:
+                # Fallback: Truncate if sharing fails
+                if len(reply_text) > self.max_msg_len:
+                    reply_text = reply_text[:self.max_msg_len - 50] + "... (truncated)"
+
+        send_signal_reply(sender, reply_text)
 
     def _process_actions(self, sender, mode, response, timestamp) -> str:
         """Extract and process actions from response"""

@@ -65,3 +65,4 @@ test-results/
 .agent/
 .env
 
+signal_data/
